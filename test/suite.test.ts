@@ -72,4 +72,5 @@ test('case 6 follows each journey closure and preserves unrelated proofs', () =>
   } finally {
     rmSync(env.PROOF_STATE_DIR, { recursive: true, force: true });
   }
-});
+  // About 25 CLI processes: Bun's 5 s default fails it when other clones load this shared Mac.
+}, 30_000);

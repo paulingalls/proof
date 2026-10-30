@@ -115,6 +115,56 @@ exempt:
 - **`coverage` and `exempt`**: `proof lint` reports every covered file that no task selects and
   no exemption names.
 
+## Providers
+
+Declare shared resources at the root and name them in each dependent task:
+
+```yaml
+version: 1
+project: provider-demo
+providers:
+  stack:
+    start: echo stack-ready
+    stop: echo stack-stopped
+tasks:
+  gate:
+    run: cat input
+    inputs: [input]
+    needs: [stack]
+```
+
+With a committed `input` file, `proof plan` prints
+`RUN gate: no proof for key; providers: stack`. `proof run` prints the complete selected plan,
+then `stack-ready`, the input contents, and `stack-stopped`. A second run reuses the proof and
+starts nothing. `proof run --tasks gate` considers only that task and its providers.
+
+`start` must return when the resource is ready; a long-lived resource detaches itself.
+Each needed provider starts at most once, only for a task currently RUN. Optional `stop` runs
+once after the last selected dependent, including on task failure, startup failure or interruption.
+Providers execute through `sh -c` in the checkout with the caller's environment. Dependent tasks
+keep their sandbox and declared environment. Included tasks use the root provider names;
+unknown names are declaration errors.
+
+A failed start prevents its dependents from executing and records `incomplete`; existing proofs
+and contests stay intact. Dirty inputs use the existing committed-key recording path with the
+dirty flag. A dirty declaration or uncomputable committed input instead prints `not recorded`
+with a reason. Independent tasks still run. A failed start or stop names the provider and makes
+`run` exit 1; other stops still run and recorded task results are retained.
+
+SIGINT/SIGTERM reaches the running task or start process group. No further tasks or providers
+start; pending RUN dependents of attempted providers record incomplete, and cleanup finishes
+before exit 130/143. The first signal during `stop` lets teardown finish; a second signal kills
+its running group.
+
+Provider declarations and `needs` do not enter task keys. A selected file such as `proof.yaml`
+or a provider script still enters the key by its bytes. Declare the resource's relevant inputs
+on each task (a named `$stack` set can share them). Startup edits are re-evaluated before task
+execution and prevent publishing proof for the pre-start view.
+
+`proof plan --json` remains an array of task decisions. RUN rows with needs also have
+`"providers":["stack"]`; their distinct union is the set a run would start. PROVEN rows and
+provider-free tasks have no `providers` field. Neither plan form starts resources.
+
 ## Commands
 
 ```
@@ -126,7 +176,7 @@ proof check <cases.yaml>     run a requirement suite
 proof doctor                 which store is in use, and whether it's reachable
 ```
 
-`run` exits 0 when every task is proven or green, 1 when one is red, 130/143 when interrupted;
+`run` exits 0 when every task is proven or green, 1 when a task is red/incomplete or a provider fails, 130/143 when interrupted;
 any command exits 2 on a usage, declaration or store error.
 
 `proof check` compares the exact RUN set between committed refs without executing the declared
