@@ -1,5 +1,5 @@
 export function refuseDuplicateKeys(source: string): void {
-  const text = source.replace(/^\uFEFF/, '');
+  const text = source.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
   let pos = 0;
   const line = (offset: number) => text.slice(0, offset).split('\n').length;
   const column = () => pos - (text.lastIndexOf('\n', pos - 1) + 1);

@@ -281,11 +281,17 @@ test('glob boundaries preserve exact selections beside neighboring paths', () =>
 
 test('a duplicate key in the cases file fails loudly', () => {
   const { r, a } = based();
-  r.write(
-    '.git/cases.yaml',
-    `- name: dup\n  from: ${a}\n  to: ${a}\n  expect: [lint]\n  expect: []\n`,
-  );
-  const result = r.cli(['check', '.git/cases.yaml']);
-  expect(result.code).toBe(2);
-  expect(result.err).toContain("duplicate key 'expect'");
+  for (const newline of ['\n', '\r\n', '\r']) {
+    r.write(
+      '.git/cases.yaml',
+      `- name: dup\n  from: ${a}\n  to: ${a}\n  expect: [lint]\n  expect: []\n`.replaceAll(
+        '\n',
+        newline,
+      ),
+    );
+    const result = r.cli(['check', '.git/cases.yaml']);
+    expect(result.code).toBe(2);
+    expect(result.err).toContain('.git/cases.yaml');
+    expect(result.err).toContain("line 5: duplicate key 'expect'");
+  }
 });

@@ -44,6 +44,25 @@ test('refuses duplicate declarations through check, plan and record', () => {
   }
 });
 
+test('refuses CR-separated duplicate tasks and coverage at the CLI boundary', () => {
+  repo = new Repo();
+  for (const [body, key, line] of [
+    [`tasks: {lint: ${task}}\ntasks: {}\ncoverage: [scripts/**]\ncoverage: []`, 'tasks', 4],
+    [`${lint}coverage: [scripts/**]\ncoverage: []`, 'coverage', 6],
+  ] as const) {
+    const ref = repo.commit({
+      'proof.yaml': `${header}${body}\n`.replaceAll('\n', '\r'),
+      'src/a.ts': 'a',
+      'scripts/verify.sh': 'echo ok',
+    });
+    for (const result of [...commands(ref), repo.cli(['lint'])]) {
+      expect(result.code).toBe(2);
+      expect(result.err).toContain('proof.yaml');
+      expect(result.err).toContain(`line ${line}: duplicate key '${key}'`);
+    }
+  }
+});
+
 test('decodes keys and tracks mapping boundaries in accepted YAML and JSON', () => {
   repo = new Repo();
   const fixtures: [string, string, number][] = [
