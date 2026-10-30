@@ -32,4 +32,7 @@ which starts and removes its own labelled container; those tests are `*.slow.tes
 
 **Conventions**: Single quotes, semicolons, 2-space indent, 100 columns (Biome
 enforces). Every task the planner decides to skip has a printable reason; every
-task it runs has one too.
+task it runs has one too. The README is the user's manual: a card that adds or
+changes a command, flag, declaration field, exit code or setup step updates
+`README.md` in the same card, with examples run before they are written, and moves
+a command from Planned to Commands when it ships. Reviewers check it.
