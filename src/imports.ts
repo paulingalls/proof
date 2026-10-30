@@ -15,12 +15,12 @@ export function source(tree: RefTree, dirty?: string[]): Source {
       tree.files.has(path) && !dirty?.includes(path)
         ? tree.read(path)
         : dirty
-          ? workingFile(path)?.bytes.toString()
+          ? workingFile(path, true)?.bytes.toString()
           : undefined,
     mode: (path) =>
       tree.files.has(path) && !dirty?.includes(path)
         ? tree.modes.get(path)
-        : dirty && workingFile(path)
+        : dirty && workingFile(path, true)
           ? '100644'
           : undefined,
   };

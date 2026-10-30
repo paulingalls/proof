@@ -1,5 +1,6 @@
 import { declarations } from './declarations';
 import { RefTree } from './git';
+import { closure, source } from './imports';
 import { matching, selects } from './key';
 
 export function lint() {
@@ -11,6 +12,9 @@ export function lint() {
       if (typeof input === 'string') {
         if (!input.startsWith('!') && matching(tree, input).next().done)
           findings.push(`task '${id}': unmatched input '${input}'`);
+      } else if ('imports-of' in input) {
+        const found = closure(input['imports-of'], source(tree));
+        if (found.reason) findings.push(`task '${id}': ${found.reason}`);
       } else if ('path' in input && !tree.files.has(input.path)) {
         findings.push(`task '${id}': missing input '${input.path}'`);
       }

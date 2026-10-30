@@ -1,3 +1,4 @@
+import { Database } from 'bun:sqlite';
 import { afterEach, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -180,4 +181,88 @@ test('workspace, aliases, self references and baseUrl imports cannot publish an 
       expect(row?.reason).toContain(word);
   }
   expect(rows.at(-1)?.state).toBe('PROVEN');
+});
+
+test('named closures own only index-reachable files and respect exclusions', () => {
+  const r = fixture(
+    { a: { run: 'true', inputs: ['$closure'] } },
+    {},
+    {
+      inputs: { closure: [input('src/a.ts')] },
+      coverage: ['src/lib/x.ts'],
+    },
+  );
+  expect(r.cli(['lint']).code).toBe(0);
+  r.write('src/a.ts', 'export {};');
+  expect(r.cli(['lint']).code).toBe(0);
+  r.git('add', 'src/a.ts');
+  expect(r.cli(['lint']).out).toContain("unowned 'src/lib/x.ts'");
+  r.write('src/a.ts', "import './lib/x';");
+  expect(r.cli(['lint']).code).toBe(1);
+  r.git('add', 'src/a.ts');
+  expect(r.cli(['lint']).code).toBe(0);
+  const doc = JSON.parse(r.git('show', 'HEAD:proof.yaml'));
+  doc.tasks.a.inputs.push('!src/lib/x.ts');
+  r.write('proof.yaml', JSON.stringify(doc));
+  r.git('add', 'proof.yaml');
+  expect(r.cli(['lint']).out).toContain("unowned 'src/lib/x.ts'");
+  doc.tasks.owner = { run: 'true', inputs: ['src/lib/x.ts'] };
+  r.write('proof.yaml', JSON.stringify(doc));
+  r.git('add', 'proof.yaml');
+  expect(r.cli(['lint']).code).toBe(0);
+});
+
+test('missing entries and malformed adapter declarations fail visibly', () => {
+  const r = fixture({ a: task('missing.ts') });
+  expect(plan(r)[0]?.reason).toContain('missing.ts');
+  expect(r.cli(['lint']).out).toContain('missing.ts');
+  const doc = JSON.parse(r.git('show', 'HEAD:proof.yaml'));
+  doc.tasks.a.inputs = [{ 'imports-of': 'src/a.ts', surprise: true }];
+  r.commit({ 'proof.yaml': JSON.stringify(doc) });
+  expect(r.cli(['plan']).err).toContain('surprise');
+});
+
+test('dirty leaves and new working edges materialize with the committed key', () => {
+  const r = fixture(
+    { a: task('src/a.ts', `${process.execPath} src/a.ts`) },
+    {
+      'src/a.ts': "import {x} from './lib/x'; if (x !== 2) throw Error('wrong bytes');",
+    },
+  );
+  const env = state();
+  expect(r.cli(['record', 'a', '--outcome', 'green'], env).code).toBe(0);
+  expect(plan(r, env)[0]?.state).toBe('PROVEN');
+  for (const staged of [false, true]) {
+    r.write('src/lib/x.ts', 'export const x = 2;');
+    if (staged) r.git('add', 'src/lib/x.ts');
+    expect(plan(r, env)[0]?.reason).toContain("dirty input 'src/lib/x.ts'");
+    const run = r.cli(['run'], env);
+    expect(run.code, run.err + run.out).toBe(0);
+    expect(run.out).toContain('green a; no proof published');
+    expect(r.cli(['record', 'a', '--outcome', 'red'], env).out).toContain('contests nothing');
+    r.git('reset', '--hard', 'HEAD');
+    expect(plan(r, env)[0]?.state).toBe('PROVEN');
+  }
+  r.write('src/a.ts', "import {x} from './extra'; if(x !== 3) throw Error('missing closure');");
+  r.write('src/extra.ts', "export {x} from './more';");
+  r.write('src/more/index.ts', 'export const x = 3;');
+  expect(plan(r, env)[0]?.reason).toContain('undecidable');
+  const run = r.cli(['run'], env);
+  expect(run.code, run.err + run.out).toBe(0);
+  expect(run.out).toContain('green a; no proof published');
+  const db = new Database(join(env.PROOF_STATE_DIR, 'proof.db'));
+  try {
+    const rows = db.query('SELECT key, dirty FROM results ORDER BY id').all() as {
+      key: string;
+      dirty: number;
+    }[];
+    expect(rows).toHaveLength(6);
+    expect(new Set(rows.map((row) => row.key)).size).toBe(1);
+    expect(rows.map((row) => row.dirty)).toEqual([0, 1, 1, 1, 1, 1]);
+  } finally {
+    db.close();
+  }
+  r.git('reset', '--hard', 'HEAD');
+  r.git('clean', '-fd');
+  expect(plan(r, env)[0]?.state).toBe('PROVEN');
 });
