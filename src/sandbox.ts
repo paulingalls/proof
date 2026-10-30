@@ -11,12 +11,12 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { RefTree } from './git';
 
 type File = { bytes: Buffer; executable: boolean };
 
-function workingFile(path: string): File | undefined {
+export function workingFile(path: string, candidate = false): File | undefined {
   // Refuse links in parent directories too: a working-tree read must never follow a link.
   const parts = path.split('/');
   for (let i = 1; i <= parts.length; i++) {
@@ -29,6 +29,11 @@ function workingFile(path: string): File | undefined {
       throw error;
     }
     if (stat.isSymbolicLink()) throw new Error(`selected path '${part}': symlink`);
+    if (
+      candidate &&
+      ((i < parts.length && !stat.isDirectory()) || (i === parts.length && !stat.isFile()))
+    )
+      return undefined;
     if (i < parts.length && !stat.isDirectory())
       throw new Error(`selected path '${part}': not a directory`);
     if (i === parts.length) {
@@ -52,10 +57,19 @@ function entries(path: string) {
   }
 }
 
-export function inspectLinks(paths: string[], tracked: Iterable<string>) {
+type ModuleEntry = { path: string; redirect?: string };
+type ModuleDirectory = { scopes: string[]; entries: ModuleEntry[] };
+
+export function inspectLinks(
+  paths: string[],
+  tracked: Iterable<string>,
+  workspaceNames: () => Map<string, string>,
+  materialized?: Map<string, ModuleDirectory>,
+) {
   const trusted: string[] = [];
   const escapes: string[] = [];
-  if (!paths.length) return { trusted, escapes };
+  const modules = new Map<string, ModuleDirectory>();
+  if (!paths.length) return { trusted, escapes, modules };
   const trackedPaths = [...tracked];
   const repo = realpathSync('.');
   for (const path of paths) {
@@ -83,7 +97,17 @@ export function inspectLinks(paths: string[], tracked: Iterable<string>) {
         continue;
       }
       const before = escapes.length;
-      const check = (file: string) => {
+      const layout: ModuleDirectory = { scopes: [], entries: [] };
+      const nodeModules = basename(path) === 'node_modules';
+      if (nodeModules) modules.set(path, layout);
+      const names = (file: string) => {
+        try {
+          return workspaceNames();
+        } catch (error) {
+          escapes.push(`link escape '${file}': workspace discovery: ${error}`);
+        }
+      };
+      const check = (file: string, packageName?: string) => {
         let target: string;
         try {
           target = realpathSync(file);
@@ -91,17 +115,81 @@ export function inspectLinks(paths: string[], tracked: Iterable<string>) {
           if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
           throw error;
         }
-        if (within(repo, target) && !within(root, target))
+        if (within(repo, target) && !within(root, target)) {
+          const mapped = packageName ? names(file)?.get(packageName) : undefined;
+          if (mapped !== undefined && target === resolve(repo, mapped)) {
+            const entry = layout.entries.find((entry) => entry.path === file);
+            if (entry) entry.redirect = mapped;
+            if (
+              materialized &&
+              materialized.get(path)?.entries.find((entry) => entry.path === file)?.redirect !==
+                mapped
+            )
+              escapes.push(`workspace redirect changed '${file}'`);
+            return;
+          }
           escapes.push(`link escape '${file}' -> '${target}'`);
+          return;
+        }
+        if (!packageName) return;
+        const manifest = join(file, 'package.json');
+        let text: string;
+        try {
+          text = readFileSync(manifest, 'utf8');
+        } catch (error) {
+          if (['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) return;
+          throw error;
+        }
+        try {
+          const doc = JSON.parse(text);
+          const dependencies = new Set<string>();
+          for (const field of ['dependencies', 'peerDependencies', 'optionalDependencies']) {
+            if (doc[field] !== undefined) {
+              if (!doc[field] || typeof doc[field] !== 'object' || Array.isArray(doc[field]))
+                throw new Error(`invalid ${field}`);
+              for (const name of Object.keys(doc[field])) dependencies.add(name);
+            }
+          }
+          if (dependencies.size) {
+            const packages = names(file);
+            for (const name of dependencies) {
+              if (packages?.has(name))
+                escapes.push(
+                  `link escape installed package '${packageName}' declares workspace '${name}'`,
+                );
+            }
+          }
+        } catch (error) {
+          escapes.push(`link escape '${manifest}': ${error}`);
+        }
       };
       for (const child of readdirSync(root)) {
         const file = join(path, child);
         const stat = lstatSync(file);
-        if (stat.isSymbolicLink()) check(file);
-        else if (stat.isDirectory()) {
+        let scope = false;
+        if (nodeModules && child.startsWith('@')) {
+          try {
+            scope = lstatSync(realpathSync(file)).isDirectory();
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+          }
+        }
+        if (scope) {
+          layout.scopes.push(file);
           for (const entry of readdirSync(file)) {
             const nested = join(file, entry);
-            if (lstatSync(nested).isSymbolicLink()) check(nested);
+            layout.entries.push({ path: nested });
+            check(nested, `${child}/${entry}`);
+          }
+        } else {
+          if (nodeModules) layout.entries.push({ path: file });
+          if (nodeModules && !child.startsWith('.')) check(file, child);
+          else if (stat.isSymbolicLink()) check(file);
+          if (stat.isDirectory()) {
+            for (const entry of readdirSync(file)) {
+              const nested = join(file, entry);
+              if (lstatSync(nested).isSymbolicLink()) check(nested);
+            }
           }
         }
       }
@@ -129,7 +217,7 @@ export function inspectLinks(paths: string[], tracked: Iterable<string>) {
       throw new Error(`link '${path}': ${error}`);
     }
   }
-  return { trusted, escapes };
+  return { trusted, escapes, modules };
 }
 
 export class Sandbox {
@@ -142,10 +230,9 @@ export class Sandbox {
       if (relative(this.path, target).startsWith('..') || path.split('/').includes('.git'))
         throw new Error(`unsafe selected path '${path}'`);
       const mode = tree.modes.get(path);
-      const file = dirty.includes(path)
-        ? workingFile(path)
-        : mode === undefined
-          ? undefined
+      const file =
+        dirty.includes(path) || mode === undefined
+          ? workingFile(path)
           : this.committedFile(path, mode, tree);
       this.files.set(path, file);
       if (!file) continue;
@@ -155,7 +242,7 @@ export class Sandbox {
     }
   }
 
-  link(paths: string[]) {
+  link(paths: string[], inspection: ReturnType<typeof inspectLinks>) {
     for (const path of paths) {
       try {
         const source = realpathSync(resolve(path));
@@ -172,7 +259,17 @@ export class Sandbox {
             throw new Error(`destination overlaps selected content or another link`);
           if (i < parts.length && !stat) mkdirSync(target);
         }
-        symlinkSync(source, join(this.path, path));
+        const layout = inspection.modules.get(path);
+        if (layout) {
+          mkdirSync(join(this.path, path));
+          for (const scope of layout.scopes) mkdirSync(join(this.path, scope));
+          for (const entry of layout.entries) {
+            symlinkSync(
+              entry.redirect === undefined ? resolve(entry.path) : join(this.path, entry.redirect),
+              join(this.path, entry.path),
+            );
+          }
+        } else symlinkSync(source, join(this.path, path));
       } catch (error) {
         throw new Error(`link '${path}': ${error}`);
       }

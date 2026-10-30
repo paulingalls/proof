@@ -12,7 +12,7 @@ pre-commit:
     tests:
       # Quick tests. Keep this under a minute: it runs on every commit.
       priority: 3
-      run: bun test
+      run: bun test --path-ignore-patterns '**/*.slow.test.ts'
 pre-merge-commit:
   commands:
     secrets:

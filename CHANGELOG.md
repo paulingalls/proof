@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0
+
+- `{imports-of: <entry>}` inputs: a TypeScript import closure computed from git blobs at any ref,
+  following relative imports, workspace packages (`exports` resolved as Bun does), tsconfig `paths`,
+  `baseUrl` and `extends`. Every `package.json` and `tsconfig.json` consulted is keyed. Anything it
+  cannot follow (a computed import, an unresolved specifier) makes the task undecidable, so it runs.
+- A linked `node_modules` (root or per-package) reaches workspace packages inside the sandbox, through
+  the task's own keyed files, so tasks importing workspace packages can publish. An installed package
+  that declares a workspace dependency still blocks publication.
+- The commit hook runs the fast tests; `*.slow.test.ts` run at push and in the release suite.
+
 ## 0.3.0
 
 - `proof run [--tasks ...]`: executes each RUN task in a sandbox holding only its selected inputs

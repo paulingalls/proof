@@ -165,10 +165,22 @@ test('check keys use normalized declarations without accessing link targets', ()
   expect(result.code).toBe(0);
 });
 
-for (const name of ['example', '@app/shared']) {
-  test(`workspace escape ${name} runs green without publishing or reusing an old proof`, () => {
+for (const [name, declared] of [
+  ['example', false],
+  ['@app/shared', false],
+  ['@app/shared', true],
+] as const) {
+  test(`workspace escape ${name}, declared ${declared} runs green without publishing or reusing an old proof`, () => {
     const { repo, env, cli, declare, run } = fixture();
-    repo.commit({ 'packages/shared/index.js': 'export default 1;' });
+    repo.commit({
+      'packages/shared/index.js': 'export default 1;',
+      ...(declared
+        ? {
+            'package.json': '{"workspaces":["packages/*"]}',
+            'packages/declared/package.json': JSON.stringify({ name }),
+          }
+        : {}),
+    });
     repo.write('main.ts', `import value from '${name}'; if (value !== 1) process.exit(1);`);
     declare(['node_modules']);
     const target = join(repo.path, 'node_modules', name);
@@ -205,15 +217,21 @@ for (const name of ['example', '@app/shared']) {
 
 test('both pre-run and post-run escape observations prevent publication', () => {
   const { repo, env, declare, run } = fixture();
-  repo.commit({ 'packages/shared/index.js': 'export default 1;' });
+  repo.commit({
+    'package.json': '{"workspaces":["packages/*"]}',
+    'packages/shared/package.json': '{"name":"workspace"}',
+    'packages/shared/index.js': 'export default 1;',
+    'wrong/index.js': 'export default 1;',
+  });
   const target = join(repo.path, 'node_modules/workspace');
-  declare(['node_modules'], `ln -s ../packages/shared '${target}'`);
+  symlinkSync('../packages/shared', target);
+  declare(['node_modules'], `rm '${target}'; ln -s ../wrong '${target}'`);
   let result = run();
   expect(result.code).toBe(0);
   expect(result.out).toContain('no proof published:');
   expect(result.out).toContain('node_modules/workspace');
   expect(rows(env, 'proofs')).toEqual([]);
-  declare(['node_modules'], `rm '${target}'`);
+  declare(['node_modules'], `rm '${target}'; ln -s ../packages/shared '${target}'`);
   result = run();
   expect(result.code).toBe(0);
   expect(result.out).toContain('no proof published:');
@@ -224,7 +242,11 @@ test('both pre-run and post-run escape observations prevent publication', () => 
 for (const relativeEntry of [false, true]) {
   test(`Python ${relativeEntry ? 'relative' : 'absolute'} pth paths cannot publish workspace proof`, () => {
     const { repo, env, cli, declare, run } = fixture();
-    repo.commit({ 'packages/shared/index.js': 'export default 1;' });
+    repo.commit({
+      'package.json': '{"workspaces":["packages/*"]}',
+      'packages/shared/package.json': '{"name":"@app/shared"}',
+      'packages/shared/index.js': 'export default 1;',
+    });
     const pth = '.venv/lib/python3.13/site-packages/local.pth';
     repo.write(
       pth,

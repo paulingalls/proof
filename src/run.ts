@@ -2,8 +2,8 @@ import { hostname } from 'node:os';
 import { declarationPaths } from './declarations';
 import { dirtyPaths, RefTree } from './git';
 import { key, scope, selection } from './key';
-import { currentTree, decide } from './plan';
-import { inspectLinks, Sandbox } from './sandbox';
+import { currentTree, decide, inspectTaskLinks } from './plan';
+import { Sandbox } from './sandbox';
 import { Store } from './store';
 
 function signalGroup(pid: number, signal: NodeJS.Signals | 0) {
@@ -52,7 +52,7 @@ export async function run(args: string[]) {
       const { tree, project, tasks, include, dirty, declaration } = currentTree();
       const task = tasks.get(id);
       if (!task) throw new Error(`undeclared task '${id}'`);
-      const inspection = inspectLinks(task.links ?? [], tree.files.keys());
+      const inspection = inspectTaskLinks(task, tree, dirty);
       const decision = decide(id, task, tree, dirty, declaration, project, store, inspection);
       console.log(`${decision.state} ${id}: ${decision.reason}`);
       if (decision.state === 'PROVEN') {
@@ -65,7 +65,7 @@ export async function run(args: string[]) {
       const sandbox = new Sandbox();
       try {
         sandbox.materialize(selection(task, tree, dirty), tree, dirty);
-        sandbox.link(task.links ?? []);
+        sandbox.link(task.links ?? [], inspection);
         const env: Record<string, string> = {};
         for (const name of ['PATH', 'HOME', 'TMPDIR', ...(task.env ?? [])]) {
           const value = process.env[name];
@@ -93,7 +93,7 @@ export async function run(args: string[]) {
           if (new RefTree('HEAD').commit !== tree.commit) unpublished = 'HEAD changed';
           else {
             const changed = sandbox.changed();
-            const added = dirtyPaths(scope(tasks.values(), declarationPaths(include))).find(
+            const added = dirtyPaths(scope(tasks.values(), declarationPaths(include), tree)).find(
               (path) => !dirty.includes(path),
             );
             if (changed) unpublished = `selected path changed '${changed}'`;
@@ -103,7 +103,7 @@ export async function run(args: string[]) {
         const escapes = [
           ...new Set([
             ...inspection.escapes,
-            ...inspectLinks(task.links ?? [], tree.files.keys()).escapes,
+            ...inspectTaskLinks(task, tree, dirty, inspection).escapes,
           ]),
         ];
         if (escapes.length) unpublished = [unpublished, ...escapes].filter(Boolean).join('; ');

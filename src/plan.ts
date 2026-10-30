@@ -1,9 +1,11 @@
 import type { Task } from './declarations';
 import { declarationPaths, declarations, dirtyDeclaration } from './declarations';
 import { dirtyPaths, RefTree } from './git';
+import { source } from './imports';
 import { key, scope } from './key';
 import { inspectLinks } from './sandbox';
 import { Store } from './store';
+import { workspaces } from './workspaces';
 
 export function plan() {
   const { tree, project, tasks, dirty, declaration } = currentTree();
@@ -17,6 +19,24 @@ export function plan() {
   }
 }
 
+export function inspectTaskLinks(
+  task: Task,
+  tree: RefTree,
+  dirty: string[],
+  materialized?: ReturnType<typeof inspectLinks>,
+) {
+  let view: ReturnType<typeof source> | undefined;
+  return inspectLinks(
+    task.links ?? [],
+    tree.files.keys(),
+    () => {
+      view ??= source(tree, dirty.length ? dirty : undefined);
+      return workspaces(view).names();
+    },
+    materialized?.modules,
+  );
+}
+
 export function decide(
   task: string,
   decl: Task,
@@ -25,7 +45,7 @@ export function decide(
   declaration: string | undefined,
   project: string,
   store: Store,
-  inspection = inspectLinks(decl.links ?? [], tree.files.keys()),
+  inspection = inspectTaskLinks(decl, tree, dirty),
 ) {
   const links = [
     ...(inspection.trusted.length ? [`trusted links: ${inspection.trusted.join(', ')}`] : []),
@@ -62,11 +82,11 @@ export function decide(
 export function currentTree() {
   const tree = new RefTree('HEAD');
   let document = declarations(tree);
-  let dirty = dirtyPaths(scope(document.tasks.values(), declarationPaths(document.include)));
+  let dirty = dirtyPaths(scope(document.tasks.values(), declarationPaths(document.include), tree));
   const declaration = dirtyDeclaration(dirty, document.include);
   if (declaration) {
     document = declarations(tree, true);
-    dirty = dirtyPaths(scope(document.tasks.values(), declarationPaths(document.include)));
+    dirty = dirtyPaths(scope(document.tasks.values(), declarationPaths(document.include), tree));
   }
   return { tree, ...document, dirty, declaration };
 }
