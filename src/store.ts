@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { statePath, storeUrl } from './config';
+import { redacted, statePath, storeUrl } from './config';
 import { postgres, UnreachableStore } from './postgres';
 
 export type Sharing = 'local' | 'shared' | 'not shared' | 'sharing uncertain';
@@ -106,7 +106,8 @@ export class Store {
   ) {}
 
   static async diagnose() {
-    const backend = sqlite();
+    const url = storeUrl();
+    const backend = url ? postgres(url) : sqlite();
     let version: number;
     try {
       version = await initialize(backend);
@@ -119,7 +120,7 @@ export class Store {
       throw error;
     }
     await backend.close();
-    return { store: sqlitePath(), replica: sqlitePath(), version };
+    return { store: url ? redacted(url) : sqlitePath(), replica: sqlitePath(), version };
   }
 
   static async open() {
