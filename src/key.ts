@@ -161,8 +161,21 @@ export function key(id: string, task: Task, tree: RefTree, dirty: string[] = [])
   selected.push(
     ...[...members.values()].sort(([ap, am], [bp, bm]) => compare(ap, bp) || compare(am, bm)),
   );
-  const hash = new Bun.CryptoHasher('sha256')
-    .update(JSON.stringify([1, id, { run: task.run }, selected]))
-    .digest('hex');
+  const tuple: unknown[] = [1, id, { run: task.run }, selected];
+  if (task.env?.length) {
+    tuple.push(
+      task.env.map((name) => {
+        const value = process.env[name];
+        return [
+          'env',
+          name,
+          value === undefined
+            ? 'absent'
+            : new Bun.CryptoHasher('sha256').update(value).digest('hex'),
+        ];
+      }),
+    );
+  }
+  const hash = new Bun.CryptoHasher('sha256').update(JSON.stringify(tuple)).digest('hex');
   return { key: hash };
 }

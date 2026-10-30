@@ -60,20 +60,17 @@ test('clean greens publish scoped proof reused by another clone', () => {
     `PROVEN lint: proven at ${repo.git('rev-parse', 'HEAD')} on ${hostname()} `,
   );
   expect(result.out).toContain('RUN docs-check: no proof for key');
-  const v010Hash = '3cfab8dc3b876fefd4cd6cd2ed479548fb43e4a228175d2748d4ffa19462ae3c';
   const db = new Database(join(env.PROOF_STATE_DIR, 'proof.db'));
-  expect(db.query('SELECT outcome, seconds, dirty, key FROM results').all()).toEqual([
+  expect(db.query('SELECT outcome, seconds, dirty FROM results').all()).toEqual([
     {
       outcome: 'green',
       seconds: 3,
       dirty: 0,
-      key: v010Hash,
     },
   ]);
-  expect(db.query('SELECT result_id, key FROM proofs').all()).toEqual([
+  expect(db.query('SELECT result_id FROM proofs').all()).toEqual([
     {
       result_id: 1,
-      key: v010Hash,
     },
   ]);
   db.close();

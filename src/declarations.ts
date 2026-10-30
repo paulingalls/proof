@@ -2,7 +2,7 @@ import type { RefTree } from './git';
 import { refuseDuplicateKeys } from './yaml-keys';
 
 export type Input = string | { path: string; json: string[] };
-export type Task = { run: string; inputs: Input[] };
+export type Task = { run: string; inputs: Input[]; env?: string[] };
 
 export function mapping(value: unknown, context: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -82,10 +82,16 @@ export function declarations(tree: RefTree) {
       const label = `${context} task '${id}'`;
       if (tasks.has(id)) throw new Error(`${label}: duplicate task '${id}'`);
       const task = mapping(value, label);
-      fields(task, ['run', 'inputs'], label);
+      fields(task, ['run', 'inputs', 'env'], label);
+      let env: string[] | undefined;
+      if ('env' in task) {
+        if (!Array.isArray(task.env)) throw new Error(`${label}: env must be a list`);
+        env = [...new Set(task.env.map((name) => text(name, `${label} env name`)))].sort();
+      }
       tasks.set(id, {
         run: text(task.run, `${label} run`),
         inputs: patterns(task.inputs, label),
+        env,
       });
     }
     return doc;
