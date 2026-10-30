@@ -61,3 +61,32 @@ test('checks exact RUN sets, new tasks, and reports mismatches while continuing'
   expect(wrong.out).toContain('extra: lint');
   expect(wrong.out).toContain('PASS changelog');
 });
+
+test('keys reflect selected paths and command meaning, not positive order or set names', () => {
+  const r = repo();
+  const yaml = (name: string, inputs: string, run = 'exit 99') => `version: 1
+project: fixture
+inputs:
+  ${name}: [src/**]
+tasks:
+  lint:
+    run: ${run}
+    inputs: ${inputs}
+`;
+  const a = baseline(r, yaml('source', '[$source, docs/guide/**]'));
+  const b = r.commit({ 'proof.yaml': yaml('renamed', '[docs/guide/**, $renamed]') });
+  const c = r.commit({ 'src/a.ts': 'changed' });
+  const d = r.commit({ 'proof.yaml': yaml('renamed', '[docs/guide/**, $renamed]', 'exit 98') });
+  r.git('mv', 'src/a.ts', 'src/b.ts');
+  const e = r.commit({});
+  const result = r.check([
+    item('equivalent', a, b),
+    item('content', b, c, ['lint']),
+    item('command', c, d, ['lint']),
+    item('path', d, e, ['lint']),
+  ]);
+  expect(result.code).toBe(0);
+  for (const name of ['equivalent', 'content', 'command', 'path']) {
+    expect(result.out).toContain(`PASS ${name}`);
+  }
+});
