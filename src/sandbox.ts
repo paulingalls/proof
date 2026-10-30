@@ -4,11 +4,13 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import type { RefTree } from './git';
 
 type File = { bytes: Buffer; executable: boolean };
@@ -55,6 +57,30 @@ export class Sandbox {
       mkdirSync(dirname(target), { recursive: true });
       writeFileSync(target, file.bytes);
       chmodSync(target, file.executable ? 0o755 : 0o644);
+    }
+  }
+
+  link(paths: string[]) {
+    for (const path of paths) {
+      try {
+        const source = realpathSync(resolve(path));
+        const parts = path.split('/');
+        for (let i = 1; i <= parts.length; i++) {
+          const target = join(this.path, ...parts.slice(0, i));
+          let stat: ReturnType<typeof lstatSync> | undefined;
+          try {
+            stat = lstatSync(target);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+          }
+          if (stat && (i === parts.length || !stat.isDirectory() || stat.isSymbolicLink()))
+            throw new Error(`destination overlaps selected content or another link`);
+          if (i < parts.length && !stat) mkdirSync(target);
+        }
+        symlinkSync(source, join(this.path, path));
+      } catch (error) {
+        throw new Error(`link '${path}': ${error}`);
+      }
     }
   }
 

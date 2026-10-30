@@ -61,6 +61,7 @@ export async function run(args: string[]) {
       const sandbox = new Sandbox();
       try {
         sandbox.materialize(selection(task, tree, dirty), tree, dirty);
+        sandbox.link(task.links ?? []);
         const env: Record<string, string> = {};
         for (const name of ['PATH', 'HOME', 'TMPDIR', ...(task.env ?? [])]) {
           const value = process.env[name];

@@ -1,10 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 import { dirtyPaths, type RefTree } from './git';
 import { scope } from './key';
 import { refuseDuplicateKeys } from './yaml-keys';
 
 export type Input = string | { path: string; json: string[] };
-export type Task = { run: string; inputs: Input[]; env?: string[] };
+export type Task = { run: string; inputs: Input[]; env?: string[]; links?: string[] };
 
 export function mapping(value: unknown, context: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -86,16 +87,34 @@ export function declarations(tree: RefTree, working = false) {
       const label = `${context} task '${id}'`;
       if (tasks.has(id)) throw new Error(`${label}: duplicate task '${id}'`);
       const task = mapping(value, label);
-      fields(task, ['run', 'inputs', 'env'], label);
+      fields(task, ['run', 'inputs', 'env', 'links'], label);
       let env: string[] | undefined;
       if ('env' in task) {
         if (!Array.isArray(task.env)) throw new Error(`${label}: env must be a list`);
         env = [...new Set(task.env.map((name) => text(name, `${label} env name`)))].sort();
       }
+      let links: string[] | undefined;
+      if ('links' in task) {
+        if (!Array.isArray(task.links)) throw new Error(`${label}: links must be a list`);
+        links = [
+          ...new Set(
+            task.links.map((value) => {
+              const path = text(value, `${label} link '${String(value)}'`);
+              if (
+                isAbsolute(path) ||
+                path.split('/').some((p) => ['', '.', '..', '.git'].includes(p))
+              )
+                throw new Error(`${label}: unsafe link '${path}'`);
+              return path;
+            }),
+          ),
+        ].sort();
+      }
       tasks.set(id, {
         run: text(task.run, `${label} run`),
         inputs: patterns(task.inputs, label),
         env,
+        links,
       });
     }
     return doc;

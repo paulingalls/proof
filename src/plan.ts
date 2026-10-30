@@ -25,25 +25,30 @@ export function decide(
   project: string,
   store: Store,
 ) {
-  if (declaration)
-    return { task, state: 'RUN', reason: `undecidable: dirty declaration '${declaration}'` };
-  const current = key(task, decl, tree, dirty);
-  if (current.key === undefined)
-    return { task, state: 'RUN', reason: `undecidable: ${current.reason}` };
-  const proof = store.proof(project, task, current.key);
-  if (proof?.red_commit)
-    return {
-      task,
-      state: 'RUN',
-      reason: `contested: red at ${proof.red_commit} on ${proof.red_host} after green`,
-    };
-  return proof
-    ? {
+  const links = decl.links?.length ? `; trusted links: ${decl.links.join(', ')}` : '';
+  const decision = decideProof();
+  return { ...decision, reason: decision.reason + links };
+  function decideProof() {
+    if (declaration)
+      return { task, state: 'RUN', reason: `undecidable: dirty declaration '${declaration}'` };
+    const current = key(task, decl, tree, dirty);
+    if (current.key === undefined)
+      return { task, state: 'RUN', reason: `undecidable: ${current.reason}` };
+    const proof = store.proof(project, task, current.key);
+    if (proof?.red_commit)
+      return {
         task,
-        state: 'PROVEN',
-        reason: `proven at ${proof.commit} on ${proof.host} ${proof.finished_at}`,
-      }
-    : { task, state: 'RUN', reason: 'no proof for key' };
+        state: 'RUN',
+        reason: `contested: red at ${proof.red_commit} on ${proof.red_host} after green`,
+      };
+    return proof
+      ? {
+          task,
+          state: 'PROVEN',
+          reason: `proven at ${proof.commit} on ${proof.host} ${proof.finished_at}`,
+        }
+      : { task, state: 'RUN', reason: 'no proof for key' };
+  }
 }
 
 export function currentTree() {
