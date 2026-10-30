@@ -16,7 +16,7 @@ import type { RefTree } from './git';
 
 type File = { bytes: Buffer; executable: boolean };
 
-function workingFile(path: string): File | undefined {
+export function workingFile(path: string): File | undefined {
   // Refuse links in parent directories too: a working-tree read must never follow a link.
   const parts = path.split('/');
   for (let i = 1; i <= parts.length; i++) {

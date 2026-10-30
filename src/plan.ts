@@ -62,11 +62,11 @@ export function decide(
 export function currentTree() {
   const tree = new RefTree('HEAD');
   let document = declarations(tree);
-  let dirty = dirtyPaths(scope(document.tasks.values(), declarationPaths(document.include)));
+  let dirty = dirtyPaths(scope(document.tasks.values(), declarationPaths(document.include), tree));
   const declaration = dirtyDeclaration(dirty, document.include);
   if (declaration) {
     document = declarations(tree, true);
-    dirty = dirtyPaths(scope(document.tasks.values(), declarationPaths(document.include)));
+    dirty = dirtyPaths(scope(document.tasks.values(), declarationPaths(document.include), tree));
   }
   return { tree, ...document, dirty, declaration };
 }
