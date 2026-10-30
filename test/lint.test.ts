@@ -82,3 +82,38 @@ test('lint rejects an empty exemption reason as a declaration error', () => {
   expect(result.code).toBe(2);
   expect(result.err).toContain("exempt 'scripts/a.sh' reason: expected a nonempty string");
 });
+
+test('covered paths require ordered ownership or an exemption', () => {
+  const r = new Repo();
+  repos.push(r);
+  const tasks = declaration.replace(
+    '[src/**]',
+    "['scripts/**', '!scripts/verify-*.sh', scripts/verify-z.sh]",
+  );
+  const coverage = 'coverage: [scripts/verify-*.sh]\n';
+  r.commit({
+    'proof.yaml': `${tasks}coverage: [scripts/verify-*.sh, tools/*.sh]\n`,
+    'scripts/lib.sh': '',
+    'scripts/verify-x.sh': '',
+    'scripts/verify-y.sh': '',
+    'scripts/verify-z.sh': '',
+    'notes.md': '',
+  });
+  expect(r.cli(['lint'])).toEqual({
+    code: 1,
+    err: '',
+    out: "coverage: unmatched pattern 'tools/*.sh'\nunowned 'scripts/verify-x.sh'\nunowned 'scripts/verify-y.sh'\n",
+  });
+  r.write(
+    'proof.yaml',
+    `${tasks.replace('scripts/verify-z.sh]', 'scripts/verify-z.sh, scripts/verify-x.sh, scripts/verify-y.sh]')}${coverage}`,
+  );
+  r.git('add', 'proof.yaml');
+  expect(r.cli(['lint'])).toEqual({ code: 0, out: '', err: '' });
+  r.write(
+    'proof.yaml',
+    `${tasks}${coverage}exempt: {scripts/verify-x.sh: manual, scripts/verify-y.sh: external}\n`,
+  );
+  r.git('add', 'proof.yaml');
+  expect(r.cli(['lint'])).toEqual({ code: 0, out: '', err: '' });
+});
