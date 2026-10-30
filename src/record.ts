@@ -1,7 +1,7 @@
 import { hostname } from 'node:os';
-import { declarations, dirtyDeclaration } from './declarations';
+import { declarationPaths, declarations, dirtyDeclaration } from './declarations';
 import { dirtyPaths, RefTree } from './git';
-import { key } from './key';
+import { key, scope } from './key';
 import { Store } from './store';
 
 export function record(args: string[]) {
@@ -30,7 +30,7 @@ export function record(args: string[]) {
   if (!task) throw new Error(`undeclared task '${id}'`);
   const current = key(id, task, tree);
   if (current.key === undefined) throw new Error(`undecidable: ${current.reason}`);
-  const dirty = dirtyPaths();
+  const dirty = dirtyPaths(scope(tasks.values(), declarationPaths(include)));
   // A red about other bytes (a dirty input or declaration) says nothing about this key.
   const declaration = dirtyDeclaration(dirty, include);
   const otherBytes =

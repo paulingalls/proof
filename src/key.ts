@@ -1,5 +1,5 @@
 import type { Task } from './declarations';
-import type { RefTree } from './git';
+import type { RefTree, Scope } from './git';
 
 type Key = { key: string; reason?: never } | { key?: never; reason: string };
 
@@ -20,6 +20,35 @@ function select(task: Task, inventory: Iterable<string>) {
     if (!matched) return { reason: `unmatched input '${pattern}'` };
   }
   return { paths };
+}
+
+function selects(task: Task, path: string) {
+  let selected = false;
+  for (const pattern of task.inputs) {
+    const negative = pattern.startsWith('!');
+    if (new Bun.Glob(negative ? pattern.slice(1) : pattern).match(path)) selected = !negative;
+  }
+  return selected;
+}
+
+// The literal directory before a pattern's first glob character: a superset for git pathspecs.
+function prefix(pattern: string) {
+  const glob = pattern.search(/[*?[{\\]/);
+  if (glob === -1) return pattern;
+  return pattern.slice(0, pattern.lastIndexOf('/', glob) + 1) || undefined;
+}
+
+export function scope(tasks: Iterable<Task>, declarations: string[]): Scope {
+  const list = [...tasks];
+  const patterns = [...declarations, ...list.flatMap((t) => t.inputs)].filter(
+    (p) => !p.startsWith('!'),
+  );
+  const prefixes = patterns.map(prefix);
+  return {
+    selects: (path) =>
+      declarations.some((d) => new Bun.Glob(d).match(path)) || list.some((t) => selects(t, path)),
+    prefixes: prefixes.includes(undefined) ? undefined : [...new Set(prefixes as string[])],
+  };
 }
 
 export function key(id: string, task: Task, tree: RefTree, dirty: string[] = []): Key {

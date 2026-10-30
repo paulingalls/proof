@@ -1,12 +1,12 @@
-import { declarations, dirtyDeclaration } from './declarations';
+import { declarationPaths, declarations, dirtyDeclaration } from './declarations';
 import { dirtyPaths, RefTree } from './git';
-import { key } from './key';
+import { key, scope } from './key';
 import { Store } from './store';
 
 export function plan() {
   const tree = new RefTree('HEAD');
   const { project, tasks, include } = declarations(tree);
-  const dirty = dirtyPaths();
+  const dirty = dirtyPaths(scope(tasks.values(), declarationPaths(include)));
   const declaration = dirtyDeclaration(dirty, include);
   const store = new Store();
   try {

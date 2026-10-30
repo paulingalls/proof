@@ -35,19 +35,32 @@ export class RefTree {
 }
 
 // Explicit flags override status.renames, status.showUntrackedFiles and submodule ignore config.
-export function dirtyPaths() {
+export type Scope = { selects: (path: string) => boolean; prefixes?: string[] };
+
+export function dirtyPaths(scope: Scope) {
   const paths = git(
     'status',
     '--porcelain=v1',
     '-z',
     '--no-renames',
     '--untracked-files=all',
-    '--ignored=traditional',
     '--ignore-submodules=none',
   )
     .split('\0')
     .filter(Boolean)
     .map((entry) => entry.slice(3));
+  // An ignored file counts only when a declaration selects it: dependency trees such as
+  // node_modules would otherwise block every publication and cost seconds to list.
+  const ignored = git(
+    'ls-files',
+    '-z',
+    '--others',
+    '--ignored',
+    '--exclude-standard',
+    '--',
+    ...(scope.prefixes ?? []),
+  );
+  for (const path of ignored.split('\0')) if (path && scope.selects(path)) paths.push(path);
   // Status trusts these index flags, so cleanliness cannot be established for their paths.
   for (const entry of git('ls-files', '-v', '-z').split('\0')) {
     if (/^[a-zS] /.test(entry)) paths.push(entry.slice(2));

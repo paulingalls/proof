@@ -212,6 +212,14 @@ test('ignored selected files block proof reuse and publication without contestin
   ]);
 });
 
+test('ignored files no task selects do not block publication', () => {
+  const { repo, record, proof } = setup();
+  repo.commit({ '.gitignore': 'node_modules/\n' });
+  repo.write('node_modules/x/index.js', 'dependency');
+  expect(record('green').out).toContain('; proof published');
+  expect(proof()).toEqual([{ result_id: 2 }]);
+});
+
 for (const flag of ['assume-unchanged', 'skip-worktree']) {
   for (const path of ['src/a.ts', 'proof.yaml', 'proof.d/tasks.yaml']) {
     test(`${flag} on ${path} blocks proof reuse, publication and contests without changing the index`, () => {
