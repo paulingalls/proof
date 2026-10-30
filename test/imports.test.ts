@@ -138,6 +138,7 @@ test('computed calls and unresolved imports are undecidable with file and expres
     ['import(name)', 'name'],
     ["require('./lib/' + name)", "'./lib/' + name"],
     [`import(\`./\${name}\`)`, `\${name}`],
+    [`import(\`\${name}\`)`, `\${name}`],
     ['require /* comment */ (name)', 'name'],
     ["import './missing'", './missing'],
     ["import './bad'", 'bad.ts'],
@@ -156,6 +157,8 @@ test('computed calls and unresolved imports are undecidable with file and expres
 test('workspace, aliases, self references and baseUrl imports cannot publish an external proof', () => {
   const cases: [string, string, string, string][] = [
     ['workspace', "import '@local/pkg/sub';", 'workspace import not followed', '@local/pkg/sub'],
+    ['spelled', "import '@local/lib';", 'workspace import not followed', '@local/lib'],
+    ['absolute', "import '/abs/x';", 'local import not followed', '/abs/x'],
     ['alias', "import 'alias/value';", 'workspace import not followed', 'alias/value'],
     ['self', "import 'root/sub';", 'local import not followed', 'root/sub'],
     ['subpath', "import '#local';", 'local import not followed', '#local'],
@@ -166,8 +169,9 @@ test('workspace, aliases, self references and baseUrl imports cannot publish an 
   const r = fixture(tasks, {
     ...Object.fromEntries(cases.map(([name, code]) => [`src/${name}.ts`, code])),
     'external.ts': "import 'example'; import 'bun:sqlite';",
-    'package.json': '{"name":"root","workspaces":["packages/*"]}',
+    'package.json': '{"name":"root","workspaces":["./packages/*","libs/*/"]}',
     'packages/p/package.json': '{"name":"@local/pkg"}',
+    'libs/l/package.json': '{"name":"@local/lib"}',
     'config.json': '{"compilerOptions":{"paths":{"alias/*":["src/*"]}}}',
     'src/tsconfig.json':
       '{/*comment*/"extends":"../config.json","compilerOptions":{"baseUrl":"."}}',
@@ -220,6 +224,8 @@ test('missing entries and malformed adapter declarations fail visibly', () => {
   doc.tasks.a.inputs = [{ 'imports-of': 'src/a.ts', surprise: true }];
   r.commit({ 'proof.yaml': JSON.stringify(doc) });
   expect(r.cli(['plan']).err).toContain('surprise');
+  const undecidable = fixture({ a: task('src/a.ts') }, { 'src/a.ts': 'require(name);' });
+  expect(undecidable.cli(['lint']).code).toBe(0);
 });
 
 test('dirty leaves and new working edges materialize with the committed key', () => {
@@ -311,6 +317,18 @@ test('reached symlinks are undecidable before their target bytes can masquerade 
   symlinkSync('lib/x.ts', join(r.path, 'src/link.ts'));
   r.commit({});
   expect(plan(r)[0]?.reason).toContain('src/link.ts: unsupported mode 120000');
+});
+
+test('an ignored file shadowing a closure file cannot publish a proof of its bytes', () => {
+  const r = fixture(
+    { a: task('src/a.ts', `${process.execPath} src/a.ts`) },
+    { 'src/a.ts': "import {x} from './lib/x'; if (x !== 1) throw Error('wrong bytes');" },
+  );
+  r.write('.git/info/exclude', '/node_modules/\nsrc/lib/x.tsx\n');
+  r.write('src/lib/x.tsx', 'export const x = 2;');
+  const run = r.cli(['run'], state());
+  expect(run.code, run.err + run.out).toBe(0);
+  expect(run.out).toContain('green a; proof published');
 });
 
 test('ordered exclusions remove newly reached ignored working targets', () => {

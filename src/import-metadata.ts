@@ -31,9 +31,12 @@ export function metadata(view: Source, resolve: (path: string) => string | undef
       const patterns = root.workspaces;
       if (!Array.isArray(patterns) || patterns.some((p) => typeof p !== 'string'))
         throw new Error('unsupported workspaces');
+      const globs = patterns.map(
+        (p: string) => new Bun.Glob(`${p.replace(/^\.\//, '').replace(/\/+$/, '')}/package.json`),
+      );
       for (const path of view.paths) {
         if (!path.endsWith('/package.json')) continue;
-        if (!patterns.some((p) => new Bun.Glob(`${p}/package.json`).match(path))) continue;
+        if (!globs.some((glob) => glob.match(path))) continue;
         const pkg = object(JSON.parse(view.read(path) ?? 'null'));
         if (typeof pkg.name !== 'string') throw new Error(`${path}: missing package name`);
         workspaces.push(pkg.name);

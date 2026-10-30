@@ -51,8 +51,13 @@ function* candidates(available: string[], pattern: string, dirty: string[]) {
   yield* dirty;
 }
 
-function select(task: Task, tree: RefTree, dirty: string[] = [], working = false) {
-  const available = inventory(tree);
+function select(
+  task: Task,
+  tree: RefTree,
+  dirty: string[] = [],
+  working = false,
+  available = inventory(tree),
+) {
   const view = source(tree, working ? dirty : undefined);
   const paths = new Set<string>();
   let reason: string | undefined;
@@ -82,7 +87,8 @@ function select(task: Task, tree: RefTree, dirty: string[] = [], working = false
 }
 
 export function selection(task: Task, tree: RefTree, dirty: string[] = []) {
-  const selected = select(task, tree, dirty, true);
+  // A clean tree publishes under the committed key: an ignored file must not win resolution.
+  const selected = select(task, tree, dirty, dirty.length > 0);
   return new Set([
     ...selected.paths,
     ...task.inputs.flatMap((input) =>
@@ -100,7 +106,7 @@ export function* matching(tree: RefTree, pattern: string) {
 
 export function selects(task: Task, path: string, tree: RefTree) {
   return (
-    select(task, tree, [path]).paths.has(path) ||
+    select(task, tree, [path], false, []).paths.has(path) ||
     task.inputs.some((input) => typeof input !== 'string' && 'path' in input && input.path === path)
   );
 }

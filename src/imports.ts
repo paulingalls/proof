@@ -9,6 +9,16 @@ export type Source = {
   mode(path: string): string | undefined;
 };
 const sources = new WeakMap<RefTree, Source>();
+const blobs = new Map<string, string>();
+function committed(tree: RefTree, path: string) {
+  const blob = tree.files.get(path) as string;
+  let text = blobs.get(blob);
+  if (text === undefined) {
+    text = tree.read(path);
+    blobs.set(blob, text);
+  }
+  return text;
+}
 export function source(tree: RefTree, dirty?: string[]): Source {
   const cached = dirty === undefined ? sources.get(tree) : undefined;
   if (cached) return cached;
@@ -16,7 +26,7 @@ export function source(tree: RefTree, dirty?: string[]): Source {
     paths: [...tree.files.keys()],
     read: (path) =>
       tree.files.has(path) && !dirty?.includes(path)
-        ? tree.read(path)
+        ? committed(tree, path)
         : dirty
           ? workingFile(path, true)?.bytes.toString()
           : undefined,
@@ -106,11 +116,6 @@ export function closure(entry: string, view: Source) {
       reason ??= `${path}: ${mode ? `unsupported mode ${mode}` : 'missing entry'}`;
       return;
     }
-    const text = view.read(path);
-    if (text === undefined) {
-      reason ??= `${path}: missing entry`;
-      return;
-    }
     const ext = posix.extname(path);
     const loader = ['.ts', '.mts', '.cts'].includes(ext)
       ? 'ts'
@@ -122,6 +127,11 @@ export function closure(entry: string, view: Source) {
             ? 'js'
             : undefined;
     if (!loader) return;
+    const text = view.read(path);
+    if (text === undefined) {
+      reason ??= `${path}: missing entry`;
+      return;
+    }
     const scanned = scan(text, loader);
     if (scanned.reason) reason ??= `${path}: ${scanned.reason}`;
     for (const edge of scanned.edges) {
