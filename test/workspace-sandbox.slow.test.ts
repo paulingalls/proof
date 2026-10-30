@@ -148,3 +148,40 @@ test('a physical child inside a symlinked scope remains an unrecognized escape',
   expect(result.out).toContain('node_modules/@app/extra');
   expect(plan().state).toBe('RUN');
 });
+
+test('a per-package node_modules (isolated installs) reaches workspace source inside the sandbox', () => {
+  const repo = new Repo();
+  repos.push(repo);
+  const state = mkdtempSync(join(tmpdir(), 'proof-workspace-sandbox-'));
+  states.push(state);
+  repo.commit({
+    '.gitignore': 'node_modules/\n',
+    'package.json': '{"workspaces":["packages/*"]}',
+    'packages/shared/package.json': '{"name":"@app/shared","exports":"./src/index.ts"}',
+    'packages/shared/src/index.ts': "export default 'shared-one';",
+    'packages/db/package.json': '{"name":"@app/db"}',
+    'packages/db/src/q.ts': "import value from '@app/shared'; console.log(value);",
+    'proof.yaml': JSON.stringify({
+      version: 1,
+      project: 'isolated',
+      tasks: {
+        db: {
+          run: `'${process.execPath}' --no-install packages/db/src/q.ts`,
+          inputs: [{ 'imports-of': 'packages/db/src/q.ts' }],
+          links: ['packages/db/node_modules'],
+        },
+      },
+    }),
+  });
+  mkdirSync(join(repo.path, 'packages/db/node_modules/@app'), { recursive: true });
+  symlinkSync('../../../shared', join(repo.path, 'packages/db/node_modules/@app/shared'));
+  const cli = (...args: string[]) => repo.cli(args, { PROOF_STATE_DIR: state });
+  let result = cli('run');
+  expect(result.code, result.err).toBe(0);
+  expect(result.out).toContain('shared-one');
+  expect(result.out).toContain('green db; proof published');
+  repo.commit({ 'packages/shared/src/index.ts': "export default 'shared-two';" });
+  result = cli('run');
+  expect(result.out).toContain('shared-two');
+  expect(result.out).toContain('green db; proof published');
+});
