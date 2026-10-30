@@ -11,7 +11,10 @@ function signalGroup(pid: number, signal: NodeJS.Signals | 0) {
     process.kill(-pid, signal);
     return true;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+    const code = (error as NodeJS.ErrnoException).code;
+    // macOS answers EPERM while the group's only members are zombies awaiting their reaper.
+    if (code === 'EPERM') return true;
+    if (code !== 'ESRCH') throw error;
     return false;
   }
 }
