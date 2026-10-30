@@ -1,6 +1,6 @@
 import { hostname } from 'node:os';
 import { declarations } from './declarations';
-import { RefTree } from './git';
+import { dirtyPaths, RefTree } from './git';
 import { key } from './key';
 import { Store } from './store';
 
@@ -28,10 +28,13 @@ export function record(args: string[]) {
   if (!task) throw new Error(`undeclared task '${id}'`);
   const current = key(id, task, tree);
   if (current.key === undefined) throw new Error(`undecidable: ${current.reason}`);
+  const dirty = dirtyPaths();
   const store = new Store();
   try {
-    store.record(project, id, current.key, seconds, hostname(), tree.commit, false);
-    return `recorded green ${id}; proof published`;
+    store.record(project, id, current.key, seconds, hostname(), tree.commit, dirty.length > 0);
+    return dirty.length
+      ? `recorded green ${id}; no proof published: dirty path '${dirty[0]}'`
+      : `recorded green ${id}; proof published`;
   } finally {
     store.close();
   }

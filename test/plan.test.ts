@@ -128,3 +128,23 @@ test('restored historical bytes are undecidable until committed', () => {
   repo.write('src/a.ts', 'a');
   expect(repo.cli(['plan'], env).out).toContain("RUN lint: undecidable: dirty input 'src/a.ts'");
 });
+
+test('dirty records retain results without publishing even for unrelated dirtiness', () => {
+  for (const path of ['src/a.ts', 'notes/todo.md']) {
+    const repo = fixture();
+    const env = state();
+    repo.write(path, 'dirty');
+    const result = record(repo, env, []);
+    expect(result.code).toBe(0);
+    expect(result.out).toContain(`no proof published: dirty path '${path}'`);
+    const db = new Database(join(env.PROOF_STATE_DIR, 'proof.db'));
+    expect(db.query('SELECT outcome, seconds, dirty FROM results').all()).toEqual([
+      { outcome: 'green', seconds: null, dirty: 1 },
+    ]);
+    expect(db.query('SELECT * FROM proofs').all()).toEqual([]);
+    db.close();
+    repo.git('restore', '.');
+    if (path.startsWith('notes/')) rmSync(join(repo.path, path));
+    expect(repo.cli(['plan'], env).out).toContain('RUN lint: no proof for key');
+  }
+});
