@@ -26,6 +26,10 @@ export function suiteCases(r: Repo, baseline: string) {
         'gate:health',
         'gate:queue',
         'image:worker',
+        'native:alpha',
+        'native:beta',
+        'native:smoke',
+        'web:landing',
       ],
     },
     { name: 'case 9', from: source, to: hook, expect: [] },
@@ -39,6 +43,10 @@ export function suiteCases(r: Repo, baseline: string) {
         'gate:health',
         'gate:queue',
         'pytest:worker-acceptance',
+        'native:alpha',
+        'native:beta',
+        'native:smoke',
+        'web:landing',
       ],
     },
     {
@@ -90,6 +98,7 @@ tasks:
       - apps/mobile/flows/alpha.yaml
       - apps/mobile/src/alpha/**
       - apps/mobile/scripts/lib/**
+      - $stack
   native:beta:
     run: sh apps/mobile/scripts/beta.sh
     inputs:
@@ -97,15 +106,17 @@ tasks:
       - apps/mobile/flows/beta.yaml
       - apps/mobile/src/beta/**
       - apps/mobile/scripts/lib/**
+      - $stack
   native:smoke:
     run: sh apps/mobile/scripts/smoke.sh
     inputs:
       - apps/mobile/scripts/smoke.sh
       - apps/mobile/flows/smoke.yaml
       - apps/mobile/scripts/lib/**
+      - $stack
   web:landing:
     run: sh apps/web/scripts/landing.sh
-    inputs: [apps/web/scripts/landing.sh, apps/web/src/**, apps/web/e2e/**]
+    inputs: [apps/web/scripts/landing.sh, apps/web/src/**, apps/web/e2e/**, $stack]
 `,
     'apps/worker/src/worker.py': worker('Process work.'),
     'apps/worker/tests/unit/test_worker.py':
