@@ -1,4 +1,5 @@
 import type { RefTree } from './git';
+import { refuseDuplicateKeys } from './yaml-keys';
 
 export type Task = { run: string; inputs: string[] };
 
@@ -39,7 +40,9 @@ export function declarations(tree: RefTree) {
     const context = `ref '${tree.ref}' ${path}`;
     let parsed: unknown;
     try {
-      parsed = Bun.YAML.parse(tree.read(path));
+      const source = tree.read(path);
+      parsed = Bun.YAML.parse(source);
+      refuseDuplicateKeys(source);
     } catch (error) {
       throw new Error(`${context}: ${error}`);
     }
