@@ -208,3 +208,20 @@ test('rejects malformed case documents rather than accepting an empty check', ()
     expect(result.err).toContain('cases');
   }
 });
+
+test('a submodule pointer bump re-runs the task whose glob covers it', () => {
+  const r = repo();
+  const yaml =
+    'version: 1\nproject: fixture\ntasks:\n  v:\n    run: exit 99\n    inputs: [vendor/**]\n';
+  r.commit({ 'proof.yaml': yaml, 'vendor/README': 'r' });
+  const pin = (oid: string) => {
+    r.git('update-index', '--add', '--cacheinfo', `160000,${oid},vendor/sub`);
+    r.git('commit', '-qm', 'pin');
+    return r.git('rev-parse', 'HEAD');
+  };
+  const a = pin('1'.repeat(40));
+  const b = pin('2'.repeat(40));
+  const result = r.check([item('bump', a, b, ['v'])]);
+  expect(result.out).toContain('PASS bump');
+  expect(result.code).toBe(0);
+});

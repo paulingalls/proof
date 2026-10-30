@@ -14,7 +14,9 @@ export class RefTree {
         if (!entry) continue;
         const tab = entry.indexOf('\t');
         const [, type, blob] = entry.slice(0, tab).split(' ');
-        if (type === 'blob' && blob) this.files.set(entry.slice(tab + 1), blob);
+        // A gitlink's commit oid is its content: a submodule bump must change the key.
+        if ((type === 'blob' || type === 'commit') && blob)
+          this.files.set(entry.slice(tab + 1), blob);
       }
     } catch (error) {
       throw new Error(`ref '${ref}': ${error}`);
