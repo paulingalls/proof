@@ -1,6 +1,15 @@
 import { Database } from 'bun:sqlite';
 import { afterEach, expect, test } from 'bun:test';
-import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Task } from '../src/declarations';
@@ -192,4 +201,127 @@ test('dirty red retains the HEAD proof without a contradiction', () => {
   expect(rows(env, 'results').map((r) => r.outcome)).toEqual(['green', 'red']);
   repo.git('restore', 'src/a.ts');
   expect(repo.cli(['plan'], env).out).toContain('PROVEN ok');
+});
+
+test('no-key tasks still materialize all available inputs and report unrecorded outcomes', () => {
+  const { repo, env, run } = fixture({
+    glob: task('test -f src/a.ts && test -f later', ['src/a.ts', 'missing/**', 'later']),
+    nofile: { run: 'test ! -e absent.json', inputs: [{ path: 'absent.json', json: ['x'] }] },
+    badjson: { run: 'grep invalid invalid.json', inputs: [{ path: 'invalid.json', json: ['x'] }] },
+    redless: task('exit 1', ['missing/**']),
+  });
+  repo.commit({ later: 'later', 'invalid.json': 'invalid' });
+  const result = run();
+  expect(result.code).toBe(1);
+  for (const [id, reason] of [
+    ['glob', "unmatched input 'missing/**'"],
+    ['nofile', "missing input 'absent.json'"],
+    ['badjson', "input 'invalid.json': invalid JSON"],
+    ['redless', "unmatched input 'missing/**'"],
+  ])
+    expect(result.out).toContain(
+      `${id === 'redless' ? 'red' : 'green'} ${id}; not recorded: ${reason}`,
+    );
+  expect(rows(env, 'results')).toEqual([]);
+  expect(readdirSync(env.TMPDIR)).toEqual([]);
+});
+
+test('sandbox exposes only declared paths and environment names', () => {
+  const { repo, env, run } = fixture({
+    read: {
+      run: 'test ! -e .git && test "$MODE" = selected && test -z "$OTHER" && cat docs/guide.md',
+      inputs: ['src/a.ts'],
+      env: ['MODE'],
+    },
+  });
+  repo.commit({ 'docs/guide.md': 'guide' });
+  const result = repo.cli(['run'], { ...env, MODE: 'selected', OTHER: 'hidden' });
+  expect(result.code).toBe(1);
+  expect(result.err).toMatch(/docs\/guide.md.*(No such file|no such file)/);
+  const doc = JSON.parse(repo.git('show', 'HEAD:proof.yaml'));
+  doc.tasks.read.inputs.push('docs/guide.md');
+  repo.commit({ 'proof.yaml': JSON.stringify(doc) });
+  const next = repo.cli(['run'], { ...env, MODE: 'selected', OTHER: 'hidden' });
+  expect(next.code).toBe(0);
+  expect(rows(env, 'proofs')).toHaveLength(1);
+  const invalid = run('--tasks', 'read', 'nope');
+  expect(invalid.code).toBe(2);
+  expect(invalid.err).toContain("undeclared task 'nope'");
+  expect(rows(env, 'results')).toHaveLength(2);
+});
+
+test('refuses selected symlinks without recording and removes the sandbox', () => {
+  const { repo, env, run } = fixture({ link: task('cat link', ['link']) });
+  symlinkSync('src/a.ts', join(repo.path, 'link'));
+  repo.commit({});
+  const result = run();
+  expect(result.code).toBe(2);
+  expect(result.err).toContain("selected path 'link': symlink");
+  expect(rows(env, 'results')).toEqual([]);
+  expect(readdirSync(env.TMPDIR)).toEqual([]);
+});
+
+test('preserves raw blobs and executable modes; a mode-only commit invalidates proof', () => {
+  const { repo, env, run } = fixture({
+    bytes: {
+      run: './script.sh && grep full config.json',
+      inputs: ['script.sh', 'binary', { path: 'config.json', json: ['key'] }],
+    },
+  });
+  repo.write('script.sh', '#!/bin/sh\nprintf "\\000\\377\\200a" | cmp - binary\n');
+  chmodSync(join(repo.path, 'script.sh'), 0o755);
+  writeFileSync(join(repo.path, 'binary'), Buffer.from([0, 255, 128, 97]));
+  const before = repo.commit({ 'config.json': '{"key":1,"extra":"full"}' });
+  expect(run().code).toBe(0);
+  expect(rows(env, 'proofs')).toHaveLength(1);
+  chmodSync(join(repo.path, 'config.json'), 0o755);
+  const projectedMode = repo.commit({});
+  chmodSync(join(repo.path, 'script.sh'), 0o644);
+  const after = repo.commit({});
+  const checked = repo.check([
+    { name: 'projection mode', from: before, to: projectedMode, expect: ['bytes'] },
+    { name: 'script mode', from: projectedMode, to: after, expect: ['bytes'] },
+  ]);
+  expect(checked.code).toBe(0);
+  const result = run();
+  expect(result.code).toBe(1);
+  expect(result.out).toContain('red bytes');
+});
+
+test('staged root and dirty includes execute working declarations without records or contests', () => {
+  const { repo, env, run } = fixture({ old: task('exit 0') });
+  expect(repo.cli(['record', 'old', '--outcome', 'green'], env).code).toBe(0);
+  repo.write(
+    'proof.yaml',
+    JSON.stringify({
+      version: 1,
+      project: 'run',
+      include: 'proof.d/*.yaml',
+      tasks: {
+        old: task('exit 1'),
+        new: task('echo staged-new'),
+      },
+    }),
+  );
+  repo.git('add', 'proof.yaml');
+  repo.write(
+    'proof.d/extra.yaml',
+    JSON.stringify({ tasks: { included: task('echo working-include') } }),
+  );
+  const planned = repo.cli(['plan', '--json'], env);
+  expect(planned.code).toBe(0);
+  expect(JSON.parse(planned.out).map((r: { task: string }) => r.task)).toEqual([
+    'old',
+    'new',
+    'included',
+  ]);
+  const result = run();
+  expect(result.code).toBe(1);
+  expect(result.out).toContain('staged-new');
+  expect(result.out).toContain('working-include');
+  for (const id of ['old', 'new', 'included'])
+    expect(result.out).toContain(`${id}; not recorded: dirty declaration`);
+  expect(rows(env, 'results')).toHaveLength(1);
+  expect(rows(env, 'contradictions')).toEqual([]);
+  expect(readdirSync(env.TMPDIR)).toEqual([]);
 });

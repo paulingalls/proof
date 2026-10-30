@@ -5,15 +5,12 @@ import { key, scope } from './key';
 import { Store } from './store';
 
 export function plan() {
-  const tree = new RefTree('HEAD');
-  const { project, tasks, include } = declarations(tree);
-  const dirty = dirtyPaths(scope(tasks.values(), declarationPaths(include)));
-  const declaration = dirtyDeclaration(dirty, include);
+  const { tree, project, tasks, dirty, declaration } = currentTree();
   const store = new Store();
   try {
-    return [...tasks].map(([task, decl]) => {
-      return decide(task, decl, tree, dirty, declaration, project, store);
-    });
+    return [...tasks].map(([task, decl]) =>
+      decide(task, decl, tree, dirty, declaration, project, store),
+    );
   } finally {
     store.close();
   }
@@ -47,4 +44,16 @@ export function decide(
         reason: `proven at ${proof.commit} on ${proof.host} ${proof.finished_at}`,
       }
     : { task, state: 'RUN', reason: 'no proof for key' };
+}
+
+export function currentTree() {
+  const tree = new RefTree('HEAD');
+  let document = declarations(tree);
+  let dirty = dirtyPaths(scope(document.tasks.values(), declarationPaths(document.include)));
+  const declaration = dirtyDeclaration(dirty, document.include);
+  if (declaration) {
+    document = declarations(tree, true);
+    dirty = dirtyPaths(scope(document.tasks.values(), declarationPaths(document.include)));
+  }
+  return { tree, ...document, dirty, declaration };
 }

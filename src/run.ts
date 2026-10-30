@@ -1,8 +1,8 @@
 import { hostname } from 'node:os';
-import { declarationPaths, declarations, dirtyDeclaration } from './declarations';
+import { declarationPaths } from './declarations';
 import { dirtyPaths, RefTree } from './git';
 import { key, scope, selection } from './key';
-import { decide } from './plan';
+import { currentTree, decide } from './plan';
 import { Sandbox } from './sandbox';
 import { Store } from './store';
 
@@ -12,7 +12,7 @@ export async function run(args: string[]) {
     (args[0] !== '--tasks' || args.length < 2 || args.slice(1).some((id) => id.startsWith('--')))
   )
     throw new Error('usage: proof run [--tasks <id> ...]');
-  const roster = declarations(new RefTree('HEAD')).tasks;
+  const roster = currentTree().tasks;
   for (const id of args.slice(1)) if (!roster.has(id)) throw new Error(`undeclared task '${id}'`);
   const ids = [...roster.keys()].filter((id) => !args.length || args.slice(1).includes(id));
   const store = new Store();
@@ -20,26 +20,18 @@ export async function run(args: string[]) {
   let red = false;
   try {
     for (const id of ids) {
-      const tree = new RefTree('HEAD');
-      const { project, tasks, include } = declarations(tree);
+      const { tree, project, tasks, include, dirty, declaration } = currentTree();
       const task = tasks.get(id);
       if (!task) throw new Error(`undeclared task '${id}'`);
-      const dirty = dirtyPaths(scope(tasks.values(), declarationPaths(include)));
-      const decision = decide(
-        id,
-        task,
-        tree,
-        dirty,
-        dirtyDeclaration(dirty, include),
-        project,
-        store,
-      );
+      const decision = decide(id, task, tree, dirty, declaration, project, store);
       console.log(`${decision.state} ${id}: ${decision.reason}`);
       if (decision.state === 'PROVEN') {
         summary.push(`PROVEN ${id}: ${decision.reason}`);
         continue;
       }
-      const current = key(id, task, tree);
+      const current = declaration
+        ? { reason: `dirty declaration '${declaration}'`, key: undefined }
+        : key(id, task, tree);
       const sandbox = new Sandbox();
       try {
         sandbox.materialize(selection(task, tree, dirty), tree, dirty);

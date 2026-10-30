@@ -1,4 +1,6 @@
-import type { RefTree } from './git';
+import { readFileSync } from 'node:fs';
+import { dirtyPaths, type RefTree } from './git';
+import { scope } from './key';
 import { refuseDuplicateKeys } from './yaml-keys';
 
 export type Input = string | { path: string; json: string[] };
@@ -43,7 +45,7 @@ function patterns(value: unknown, context: string): Input[] {
   });
 }
 
-export function declarations(tree: RefTree) {
+export function declarations(tree: RefTree, working = false) {
   const sets = new Map<string, Input[]>();
   const tasks = new Map<string, Task>();
   const contexts = new Map<string, string>();
@@ -51,7 +53,7 @@ export function declarations(tree: RefTree) {
     const context = `ref '${tree.ref}' ${path}`;
     let parsed: unknown;
     try {
-      const source = tree.read(path);
+      const source = working ? readFileSync(path, 'utf8') : tree.read(path);
       parsed = Bun.YAML.parse(source);
       refuseDuplicateKeys(source);
     } catch (error) {
@@ -102,7 +104,11 @@ export function declarations(tree: RefTree) {
   if ('include' in root) {
     const pattern = text(root.include, 'proof.yaml include');
     const glob = new Bun.Glob(pattern);
-    const paths = [...tree.files.keys()].filter((path) => glob.match(path)).sort();
+    const available = new Set([
+      ...tree.files.keys(),
+      ...(working ? dirtyPaths(scope([], [pattern])) : []),
+    ]);
+    const paths = [...available].filter((path) => glob.match(path)).sort();
     if (!paths.length) throw new Error(`ref '${tree.ref}': unmatched include '${pattern}'`);
     for (const path of paths) read(path, false);
   }
