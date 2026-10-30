@@ -62,7 +62,11 @@ export async function decide(
     .map((reason) => `; ${reason}`)
     .join('');
   const decision = await decideProof();
-  return { ...decision, reason: decision.reason + links };
+  return {
+    ...decision,
+    reason: decision.reason + links,
+    ...(decision.state === 'RUN' && decl.needs?.length ? { providers: decl.needs } : {}),
+  };
   async function decideProof() {
     if (declaration)
       return { task, state: 'RUN', reason: `undecidable: dirty declaration '${declaration}'` };
@@ -97,4 +101,8 @@ export function currentTree() {
     dirty = dirtyPaths(scope(document.tasks.values(), declarationPaths(document.include), tree));
   }
   return { tree, ...document, dirty, declaration };
+}
+
+export function renderDecision(row: Awaited<ReturnType<typeof decide>>) {
+  return `${row.state} ${row.task}: ${row.reason}${row.providers?.length ? `; providers: ${row.providers.join(', ')}` : ''}`;
 }

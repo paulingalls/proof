@@ -4,7 +4,7 @@ import pkg from '../package.json';
 import { check } from './check';
 import { doctor } from './doctor';
 import { lint } from './lint';
-import { plan } from './plan';
+import { plan, renderDecision } from './plan';
 import { record } from './record';
 import { run } from './run';
 
@@ -36,7 +36,7 @@ if (command === '--version') {
         throw new Error('usage: proof plan [--json]');
       const rows = await plan();
       if (args[0] === '--json') console.log(JSON.stringify(rows));
-      else for (const row of rows) console.log(`${row.state} ${row.task}: ${row.reason}`);
+      else for (const row of rows) console.log(renderDecision(row));
     } else {
       if (args.length !== 1 || !args[0]) throw new Error('usage: proof check <cases.yaml>');
       process.exitCode = await check(args[0]);

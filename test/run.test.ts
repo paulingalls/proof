@@ -182,7 +182,8 @@ test('re-decides a previously proven later task after an earlier checkout edit',
   expect(repo.cli(['record', 'later', '--outcome', 'green'], env).code).toBe(0);
   const result = run();
   expect(result.code).toBe(0);
-  expect(result.out).not.toContain('PROVEN later');
+  expect(result.out).toContain('PROVEN later');
+  expect(result.out.indexOf('PROVEN later')).toBeLessThan(result.out.indexOf('RUN later'));
   expect(result.out).toContain('green later');
   expect(result.out).toContain("undecidable: dirty input 'src/a.ts'");
   expect(rows(env, 'results').map((r) => r.outcome)).toEqual(['green', 'green', 'green']);
