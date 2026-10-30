@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S bun --no-env-file
 import { resolve } from 'node:path';
 import pkg from '../package.json';
 import { check } from './check';
@@ -26,11 +26,11 @@ if (command === '--version') {
       for (const finding of findings) console.log(finding);
       process.exitCode = findings.length ? 1 : 0;
     } else if (command === 'record') {
-      console.log(record(args));
+      console.log(await record(args));
     } else if (command === 'plan') {
       if (args.length && (args.length !== 1 || args[0] !== '--json'))
         throw new Error('usage: proof plan [--json]');
-      const rows = plan();
+      const rows = await plan();
       if (args[0] === '--json') console.log(JSON.stringify(rows));
       else for (const row of rows) console.log(`${row.state} ${row.task}: ${row.reason}`);
     } else {

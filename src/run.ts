@@ -28,7 +28,7 @@ export async function run(args: string[]) {
   const roster = currentTree().tasks;
   for (const id of args.slice(1)) if (!roster.has(id)) throw new Error(`undeclared task '${id}'`);
   const ids = [...roster.keys()].filter((id) => !args.length || args.slice(1).includes(id));
-  const store = new Store();
+  const store = await Store.open();
   const summary: string[] = [];
   let failed = false;
   let interrupted: 'SIGINT' | 'SIGTERM' | undefined;
@@ -53,7 +53,8 @@ export async function run(args: string[]) {
       const task = tasks.get(id);
       if (!task) throw new Error(`undeclared task '${id}'`);
       const inspection = inspectTaskLinks(task, tree, dirty);
-      const decision = decide(id, task, tree, dirty, declaration, project, store, inspection);
+      const decision = await decide(id, task, tree, dirty, declaration, project, store, inspection);
+      if (interrupted) break;
       console.log(`${decision.state} ${id}: ${decision.reason}`);
       if (decision.state === 'PROVEN') {
         summary.push(`PROVEN ${id}: ${decision.reason}`);
@@ -108,7 +109,7 @@ export async function run(args: string[]) {
         ];
         if (escapes.length) unpublished = [unpublished, ...escapes].filter(Boolean).join('; ');
         if (current.key !== undefined) {
-          store.record(
+          await store.record(
             project,
             id,
             current.key,
@@ -132,9 +133,16 @@ export async function run(args: string[]) {
     }
     console.log(summary.join('\n'));
     return interrupted ? (interrupted === 'SIGINT' ? 130 : 143) : failed ? 1 : 0;
+  } catch (error) {
+    try {
+      await store.close();
+    } catch {
+      /* Preserve the command failure. */
+    }
+    throw error;
   } finally {
     process.off('SIGINT', onInt);
     process.off('SIGTERM', onTerm);
-    store.close();
+    await store.close();
   }
 }
