@@ -124,8 +124,8 @@ commands. After the Quickstart's `src/text.ts` edit and commit, save this as `ca
 
 ```yaml
 - name: unchanged baseline
-  from: HEAD
-  to: HEAD
+  from: HEAD~1
+  to: HEAD~1
   expect: []
 - name: text source edit
   from: HEAD~1
@@ -136,8 +136,9 @@ commands. After the Quickstart's `src/text.ts` edit and commit, save this as `ca
 Run `bunx proof check cases.yaml`. It prints `PASS unchanged baseline` and `PASS text source edit`
 and exits 0. A mismatched set prints `FAIL` with `missing:` and `extra:` task ids and exits 1.
 Unresolved inputs can produce `RUN` diagnostics even on a `PASS`; check those diagnostics before
-claiming the suite proves selection. Include an unchanged baseline to expose unresolved inputs
-that would otherwise look like correctly selected tasks.
+claiming the suite proves selection. `check` prints them only for a case's `to` ref, so give any
+`from` ref that is no case's `to` an unchanged baseline, as above: an unresolved input there would
+otherwise look like a correctly selected task.
 
 Planned, specified in [R16](docs/2026-10-30-proof-requirements.md) and design §4.6:
 
