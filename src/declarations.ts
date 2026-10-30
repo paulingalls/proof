@@ -60,7 +60,9 @@ export function declarations(tree: RefTree) {
     const doc = mapping(parsed, context);
     fields(
       doc,
-      root ? ['version', 'project', 'inputs', 'tasks', 'include'] : ['inputs', 'tasks'],
+      root
+        ? ['version', 'project', 'inputs', 'tasks', 'include', 'coverage', 'exempt']
+        : ['inputs', 'tasks'],
       context,
     );
     if (root) {
@@ -118,9 +120,25 @@ export function declarations(tree: RefTree) {
   for (const [id, task] of tasks) {
     task.inputs = expand(task.inputs, `ref '${tree.ref}' task '${id}'`);
   }
+  const context = `ref '${tree.ref}' proof.yaml`;
+  const coverage: string[] = [];
+  if ('coverage' in root) {
+    if (!Array.isArray(root.coverage)) throw new Error(`${context} coverage: expected a list`);
+    coverage.push(...root.coverage.map((pattern) => text(pattern, `${context} coverage pattern`)));
+  }
+  const exempt = Object.fromEntries(
+    Object.entries(mapping('exempt' in root ? root.exempt : {}, `${context} exempt`)).map(
+      ([path, reason]) => [
+        text(path, `${context} exempt path`),
+        text(reason, `${context} exempt '${path}' reason`),
+      ],
+    ),
+  );
   return {
     project: text(root.project, 'proof.yaml project'),
     tasks,
+    coverage,
+    exempt,
     include: 'include' in root ? text(root.include, 'proof.yaml include') : undefined,
   };
 }
