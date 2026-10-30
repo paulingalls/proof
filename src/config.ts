@@ -38,3 +38,10 @@ export function statePath() {
   if (!base) throw new Error('set PROOF_STATE_DIR, XDG_STATE_HOME or HOME for the proof store');
   return base;
 }
+
+export function redacted(value: string) {
+  const url = new URL(value);
+  if (url.password) url.password = 'REDACTED';
+  url.searchParams.delete('password');
+  return url.href;
+}
