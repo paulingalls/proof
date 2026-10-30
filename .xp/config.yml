@@ -1,0 +1,23 @@
+# trunk: develop           # only when releases do not land on the default branch
+versioning: on             # consumers pin a git tag (git+https://...proof.git#vX.Y.Z)
+version_files: package.json
+worktree_setup: bun install
+# Must be safe to re-run in an existing worktree; post-merge setup failure keeps it.
+# worktree_teardown: sh scripts/stop-worktree.sh   # after free PR handoff and before removal
+# Must be safe to run twice; nonzero warns and cleanup continues.
+# lifecycle_command: sh scripts/lifecycle.sh   # appended event + id; red refuses open/merge/tag
+# Projects bound their scripts and tolerate retries; free patches emit no lifecycle events.
+debt_budget: 0.2
+# codex_sandbox: danger-full-access   # workspace-write | danger-full-access
+roles:                     # harness/model[/effort]; a card's Executor: line overrides
+  # Each seat that argues with work sits in the other family from the
+  # seat that wrote it. Judgment seats on codex's frontier model; long multi-step seats on
+  # the cheaper workhorse at medium.
+  lead: claude/claude-opus-5-5
+  planner: codex/gpt-6-astra/medium
+  executor: codex/gpt-6.1-sol/medium
+  reviewer: claude/claude-opus-5-5/medium      # cross-family look at a codex executor
+  plan-reviewer: claude/claude-opus-5-5/high
+  slate-reviewer: codex/gpt-6-astra/medium     # the lead authors the slate on claude
+  angle-reviewer: codex/gpt-6-astra/medium
+  fixer: codex/gpt-6.1-sol/medium
