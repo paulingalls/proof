@@ -42,6 +42,7 @@ export function dirtyPaths() {
     '-z',
     '--no-renames',
     '--untracked-files=all',
+    '--ignored=traditional',
     '--ignore-submodules=none',
   )
     .split('\0')

@@ -90,6 +90,7 @@ test('plan gates selected dirty inputs but ignores unrelated files and tags', ()
     'src/c d.ts': 'space',
     'src/gen/x.ts': 'excluded',
     'src/gen/keep.ts': 'included',
+    '.gitignore': 'src/gen/ignored.ts\n',
   });
   const env = state();
   expect(record(repo, env).code).toBe(0);
@@ -98,6 +99,7 @@ test('plan gates selected dirty inputs but ignores unrelated files and tags', ()
   repo.git('tag', 'release');
   expect(repo.cli(['plan'], env).out).toContain('PROVEN lint');
   repo.write('src/gen/x.ts', 'changed');
+  repo.write('src/gen/ignored.ts', 'ignored and excluded');
   expect(repo.cli(['plan'], env).out).toContain('PROVEN lint');
   repo.git('restore', '.');
   for (const [path, stage, remove] of [
@@ -178,6 +180,7 @@ test('dirty root or included declarations make every task undecidable', () => {
   root.include = 'proof.d/*.yaml';
   repo.commit({
     'proof.yaml': JSON.stringify(root),
+    '.gitignore': 'proof.d/new.yaml\n',
     'proof.d/extra.yaml': JSON.stringify({
       tasks: {
         missing: { run: 'exit 99', inputs: ['absent/**'] },
