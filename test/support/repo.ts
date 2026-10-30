@@ -19,8 +19,8 @@ export function isolatedEnv() {
   return { ...env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
 }
 
-// Each distinct starting repo is built once per process; every test gets a copy-on-write clone,
-// so fixtures cost one directory copy instead of a dozen git spawns and fresh disk writes.
+// A copy-on-write clone costs one directory copy; building a repo costs a dozen git spawns and
+// fresh disk writes.
 const templates = new Map<string, Repo>();
 process.on('exit', () => {
   for (const template of templates.values()) template.close();
@@ -94,12 +94,25 @@ export class Repo {
     return this.cli(['check', '.git/cases.yaml']);
   }
 
-  cli(args: string[], overrides: Record<string, string | undefined> = {}) {
+  private cliEnv(overrides: Record<string, string | undefined>) {
     const env: Record<string, string | undefined> = isolatedEnv();
     for (const name of ['PROOF_STATE_DIR', 'XDG_STATE_HOME', 'HOME']) delete env[name];
+    return { ...env, ...overrides };
+  }
+
+  spawnCli(args: string[], overrides: Record<string, string | undefined> = {}, cwd = this.path) {
+    return Bun.spawn([process.execPath, cli, ...args], {
+      cwd,
+      env: this.cliEnv(overrides),
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+  }
+
+  cli(args: string[], overrides: Record<string, string | undefined> = {}, cwd = this.path) {
     const result = Bun.spawnSync([process.execPath, cli, ...args], {
-      cwd: this.path,
-      env: { ...env, ...overrides },
+      cwd,
+      env: this.cliEnv(overrides),
     });
     return {
       code: result.exitCode,

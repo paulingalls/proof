@@ -90,15 +90,15 @@ test('env requires a list of nonempty string names', () => {
   }
 });
 
-test('missing and empty env preserve the pinned 0.1.0 key', () => {
+test('missing and empty env preserve the pinned version-2 key', () => {
   const { repo, state } = fixture();
   expect(success(repo.cli(record, state))).toContain('proof published');
   expect(success(repo.cli(['plan'], state))).toContain('PROVEN lint');
   const db = new Database(join(state.PROOF_STATE_DIR, 'proof.db'));
   try {
-    const v010Hash = '3cfab8dc3b876fefd4cd6cd2ed479548fb43e4a228175d2748d4ffa19462ae3c';
-    expect(db.query('SELECT key FROM results').all()).toEqual([{ key: v010Hash }]);
-    expect(db.query('SELECT key FROM proofs').all()).toEqual([{ key: v010Hash }]);
+    const v2Hash = 'a213f1b967ee4e6bf9c291dcfea6eb19bd02ae96e18d7242d960268e77e446ef';
+    expect(db.query('SELECT key FROM results').all()).toEqual([{ key: v2Hash }]);
+    expect(db.query('SELECT key FROM proofs').all()).toEqual([{ key: v2Hash }]);
   } finally {
     db.close();
   }
