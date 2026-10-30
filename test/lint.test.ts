@@ -34,3 +34,51 @@ test('coverage and exemptions do not contribute to task keys', () => {
     out: 'PASS coverage\nPASS exemption\nPASS reason\nPASS source\n',
   });
 });
+
+test('lint checks every positive input in the index and ignores unstaged edits', () => {
+  const r = new Repo();
+  repos.push(r);
+  r.commit({
+    'proof.yaml': declaration.replace(
+      '[src/**]',
+      "[scripts/gone/**, {path: config/app.json, json: [name]}, '!absent/**', src/**]",
+    ),
+    'src/a.ts': 'a',
+  });
+  const missing = {
+    code: 1,
+    err: '',
+    out: "task 'verify': unmatched input 'scripts/gone/**'\ntask 'verify': missing input 'config/app.json'\n",
+  };
+  expect(r.cli(['lint'])).toEqual(missing);
+  r.write('scripts/gone/a.sh', 'exit 0');
+  r.write('config/app.json', 'not parsed by lint');
+  expect(r.cli(['lint'])).toEqual(missing);
+  r.git('add', 'scripts', 'config');
+  r.write('proof.yaml', ': invalid yaml [');
+  expect(r.cli(['lint'])).toEqual({ code: 0, out: '', err: '' });
+  r.git('commit', '-qm', 'repair inputs');
+  r.git('rm', 'scripts/gone/a.sh');
+  expect(r.cli(['lint'])).toEqual({
+    code: 1,
+    err: '',
+    out: "task 'verify': unmatched input 'scripts/gone/**'\n",
+  });
+  expect(r.cli(['lint', 'extra'])).toEqual({
+    code: 2,
+    out: '',
+    err: 'proof: usage: proof lint\n',
+  });
+});
+
+test('lint rejects an empty exemption reason as a declaration error', () => {
+  const r = new Repo();
+  repos.push(r);
+  r.commit({
+    'proof.yaml': `${declaration}exempt: {scripts/a.sh: ''}\n`,
+    'src/a.ts': 'a',
+  });
+  const result = r.cli(['lint']);
+  expect(result.code).toBe(2);
+  expect(result.err).toContain("exempt 'scripts/a.sh' reason: expected a nonempty string");
+});

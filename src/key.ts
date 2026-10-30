@@ -70,7 +70,14 @@ function select(task: Task, available: string[], dirty: string[] = []) {
   return { paths };
 }
 
-function selects(task: Task, path: string) {
+export function* matching(tree: RefTree, pattern: string) {
+  const glob = new Bun.Glob(pattern);
+  for (const path of candidates(inventory(tree), pattern, [])) {
+    if (glob.match(path)) yield path;
+  }
+}
+
+export function selects(task: Task, path: string) {
   let selected = false;
   for (const pattern of task.inputs) {
     if (typeof pattern !== 'string') continue;
