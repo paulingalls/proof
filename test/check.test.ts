@@ -90,3 +90,18 @@ tasks:
     expect(result.out).toContain(`PASS ${name}`);
   }
 });
+
+test('applies negation in order over the complete inventory', () => {
+  const r = repo();
+  const excluded = declaration.replace('[src/**]', '["src/**", "!src/gen/**"]');
+  baseline(r, excluded);
+  const b = r.commit({ 'src/gen/g.ts': 'generated' });
+  const c = r.commit({ 'src/gen/g.ts': 'changed' });
+  const d = r.commit({
+    'proof.yaml': excluded.replace('["src/**", "!src/gen/**"]', '["!src/gen/**", "src/**"]'),
+  });
+  const result = r.check([item('excluded bytes', b, c), item('order grows', c, d, ['lint'])]);
+  expect(result.code).toBe(0);
+  expect(result.out).toContain('PASS excluded bytes');
+  expect(result.out).toContain('PASS order grows');
+});
