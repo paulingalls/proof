@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -20,6 +20,10 @@ export class Repo {
     this.git('config', 'user.name', 'Proof Test');
     this.git('config', 'user.email', 'proof@example.invalid');
     this.git('config', 'commit.gpgsign', 'false');
+    appendFileSync(join(this.path, '.git/info/exclude'), '\n/node_modules/\n');
+    this.write('node_modules/example/package.json', '{"name":"example"}');
+    this.write('node_modules/example/index.js', 'export default 1;');
+    this.write('node_modules/.cache/example', 'cached');
   }
 
   git(...args: string[]) {
