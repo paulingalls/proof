@@ -75,6 +75,7 @@ export class Store {
     host: string,
     commit: string,
     dirty: boolean,
+    dirtyInputs: boolean,
   ) {
     this.db.transaction(() => {
       const result = this.db
@@ -100,14 +101,14 @@ export class Store {
         ON CONFLICT (project, task, key) DO UPDATE SET result_id = excluded.result_id
       `)
           .run(project, task, key, result.lastInsertRowid);
-      if (outcome === 'red') {
+      if (outcome === 'red' && !dirtyInputs) {
         const proof = this.proof(project, task, key);
         if (!proof) return;
         this.db
           .query(`
           INSERT INTO contradictions
             (project, task, key, green_result, red_result, kind, deleted_proof, recorded_at)
-          VALUES (?, ?, ?, ?, ?, 'ordinary', 0, ?)
+          VALUES (?, ?, ?, ?, ?, 'ordinary', ?, ?)
         `)
           .run(
             project,
@@ -115,8 +116,15 @@ export class Store {
             key,
             proof.result_id,
             result.lastInsertRowid,
+            Number(proof.red_commit !== null),
             new Date().toISOString(),
           );
+        if (proof.red_commit !== null)
+          this.db
+            .query(`
+            DELETE FROM proofs WHERE project = ? AND task = ? AND key = ? AND result_id = ?
+          `)
+            .run(project, task, key, proof.result_id);
       }
     })();
   }

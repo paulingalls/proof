@@ -42,6 +42,7 @@ export function record(args: string[]) {
       hostname(),
       tree.commit,
       dirty.length > 0,
+      outcome === 'red' && key(id, task, tree, dirty).key === undefined,
     );
     if (outcome !== 'green') return `recorded ${outcome} ${id}`;
     return dirty.length
