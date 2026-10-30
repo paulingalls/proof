@@ -359,3 +359,55 @@ test('a workspace package directory cannot be shadowed by a sibling source file'
     ['packages/shared.ts', 'export const n = 2;', []],
   ]);
 });
+
+test('a guessed resolution stays undecidable: alias typo, twin package, two candidates, baseUrl', () => {
+  for (const [files, why] of [
+    [
+      {
+        'packages/db/src/q.ts': "import 'alias';",
+        'tsconfig.json': '{"compilerOptions":{"paths":{"alias":["./missing.ts"]}}}',
+      },
+      'unresolved paths alias',
+    ],
+    [
+      {
+        'packages/twin/package.json': '{"name":"@app/shared","main":"./i.ts"}',
+        'packages/twin/i.ts': 'export {};',
+      },
+      'duplicate workspace package',
+    ],
+    [
+      {
+        'packages/db/src/q.ts': "import '@app/shared/sub';",
+        'packages/shared/package.json': '{"name":"@app/shared"}',
+        'packages/shared/sub.ts': 'export {};',
+        'packages/shared/sub.js': 'export {};',
+      },
+      'ambiguous import target',
+    ],
+    [
+      {
+        'tsconfig.json': '{"compilerOptions":{"baseUrl":"."}}',
+        '@app/shared.ts': 'export {};',
+      },
+      'local import not followed (baseUrl)',
+    ],
+  ] as [Record<string, string>, string][]) {
+    const reason = plan(fixture(files))[0]?.reason;
+    expect(reason).toContain('undecidable');
+    expect(reason).toContain(why);
+  }
+});
+
+test('the longest alias prefix wins whatever the declaration order', () => {
+  const r = fixture({
+    'packages/db/src/q.ts': "import 'a/b/x';",
+    'tsconfig.json': '{"compilerOptions":{"paths":{"a/*":["./wrong/*"],"a/b/*":["./right/*"]}}}',
+    'right/x.ts': 'export {};',
+    'wrong/b/x.ts': 'export {};',
+  });
+  changes(r, [
+    ['right/x.ts', 'export const n = 1;', ['a']],
+    ['wrong/b/x.ts', 'export const n = 1;', []],
+  ]);
+});
