@@ -142,10 +142,17 @@ test('computed calls and unresolved imports are undecidable with file and expres
     ['require /* comment */ (name)', 'name'],
     ["import './missing'", './missing'],
     ["import './bad'", 'bad.ts'],
+    ["import './pkg'", 'local import not followed'],
   ] as const) {
     const r = fixture(
       { a: task('src/a.tsx') },
-      { 'src/a.tsx': code, 'src/bad.ts': 'export const = ;' },
+      {
+        'src/a.tsx': code,
+        'src/bad.ts': 'export const = ;',
+        'src/pkg/package.json': '{"main":"main.ts"}',
+        'src/pkg/main.ts': 'export {};',
+        'src/pkg/index.ts': 'export {};',
+      },
     );
     const row = plan(r)[0];
     expect(row?.reason).toContain('undecidable');

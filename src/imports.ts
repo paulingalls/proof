@@ -144,8 +144,15 @@ export function closure(entry: string, view: Source) {
         }
         continue;
       }
-      const target = resolveImport(posix.join(posix.dirname(path), edge), view);
-      if (target) visit(target);
+      const joined = posix.join(posix.dirname(path), edge);
+      const target = resolveImport(joined, view);
+      // Bun resolves a directory through its package.json before index.*; that is not followed here.
+      if (
+        target?.startsWith(`${joined}/index`) &&
+        view.mode(`${joined}/package.json`) !== undefined
+      )
+        reason ??= `${path}: local import not followed: '${edge}'`;
+      else if (target) visit(target);
       else reason ??= `${path}: unresolved import '${edge}'`;
     }
   }
