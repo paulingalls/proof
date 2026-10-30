@@ -14,6 +14,10 @@ export class Providers {
     return needs.some((name) => this.attempts.has(name));
   }
 
+  live() {
+    return [...this.attempts.values()].some((attempt) => !attempt.stopped);
+  }
+
   async start(name: string, declaration: Provider) {
     const previous = this.attempts.get(name);
     if (previous) return this.ready(name);

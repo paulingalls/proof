@@ -325,7 +325,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
       f.commit(
         {
           a: {
-            ...f.task(during === 'task' ? command : f.mark('a'), ['wait.ts']),
+            ...f.task(during === 'task' ? command : f.mark('a'), ['wait.ts'], ['stack', 'second']),
             env: ['CONTROL'],
           },
           later: f.task(f.mark('later')),
@@ -337,6 +337,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
             start: during === 'start' ? command : f.mark('start'),
             stop: `test -f "$CONTROL/exited" && ${f.mark('stop')}`,
           },
+          second: { start: f.mark('second') },
         },
         {
           'wait.ts': `import { writeFileSync } from 'node:fs';
@@ -369,7 +370,7 @@ writeFileSync(process.env.CONTROL + '/ready', String(process.pid));`,
         expect(err).toBe('');
         expect(out).toContain('incomplete a');
         expect(readFileSync(join(f.control, 'received'), 'utf8')).toBe(signal);
-        expect(f.log()).toEqual(during === 'start' ? ['stop'] : ['start', 'stop']);
+        expect(f.log()).toEqual(during === 'start' ? ['stop'] : ['start', 'second', 'stop']);
         expect(
           f
             .rows()

@@ -71,7 +71,7 @@ export async function run(args: string[]) {
   const providers = new Providers(
     async (command, stopping = false) => {
       const result = await execute(command, process.cwd(), process.env, stopping);
-      return result.code === 0 && !result.signal && (stopping || !interrupted);
+      return result.code === 0 && !result.signal;
     },
     (message) => {
       failed = true;
@@ -97,6 +97,7 @@ export async function run(args: string[]) {
       console.log(renderDecision(row));
     }
     for (const [index, id] of ids.entries()) {
+      if (interrupted && !providers.live()) break;
       const baseline = currentTree();
       let view = baseline;
       let task = view.tasks.get(id);
