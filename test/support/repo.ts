@@ -23,7 +23,10 @@ export class Repo {
 
   git(...args: string[]) {
     const result = Bun.spawnSync(['git', ...args], { cwd: this.path, env: isolatedEnv() });
-    if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+    if (result.exitCode !== 0)
+      throw new Error(
+        `git ${args.join(' ')}: ${result.stderr.toString()}${result.stdout.toString()}`,
+      );
     return result.stdout.toString().trim();
   }
 

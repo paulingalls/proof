@@ -136,3 +136,71 @@ test('reads included declarations at each ref despite dirty checkout declaration
   expect(result.code).toBe(0);
   expect(result.out).toContain('PASS web change');
 });
+
+test('schema errors identify offending declarations and refs override prior mismatches', () => {
+  const r = repo();
+  const a = baseline(r);
+  const b = r.commit({
+    'proof.yaml': declaration.replace('run: exit 99', 'surprise: true\n    run: exit 99'),
+  });
+  const result = r.check([item('bad task', a, b)]);
+  expect(result.code).toBe(2);
+  for (const word of ['proof.yaml', 'lint', 'surprise']) expect(result.err).toContain(word);
+  for (const field of ['from', 'to']) {
+    const c = { ...item('bad ref', a, a), [field]: '--unknown-ref' };
+    const bad = r.check([item('wrong first', a, a, ['lint']), c]);
+    expect(bad.code).toBe(2);
+    expect(bad.out).toContain('FAIL wrong first');
+    expect(bad.err).toContain('--unknown-ref');
+  }
+});
+
+test('rejects silent declaration corruption at the CLI boundary', () => {
+  const fixtures: [string, Record<string, string>, string[]][] = [
+    [
+      'duplicate task',
+      { 'proof.d/web.yaml': 'tasks:\n  lint:\n    run: x\n    inputs: [src/**]' },
+      ['duplicate', 'lint'],
+    ],
+    [
+      'duplicate set',
+      { 'proof.d/web.yaml': 'inputs:\n  source: [src/**]' },
+      ['duplicate', 'source'],
+    ],
+    ['unknown set', { 'proof.yaml': declaration.replace('[src/**]', '[$unknown]') }, ['unknown']],
+    [
+      'cycle',
+      {
+        'proof.yaml': declaration
+          .replace('tasks:', 'inputs:\n  a: [$b]\n  b: [$a]\ntasks:')
+          .replace('[src/**]', '[$a]'),
+      },
+      ['cyclic', 'a'],
+    ],
+    ['empty inputs', { 'proof.yaml': declaration.replace('[src/**]', '[]') }, ['lint', 'inputs']],
+    [
+      'unquoted negation',
+      { 'proof.yaml': declaration.replace('[src/**]', '\n      - !src/gen/**') },
+      ['lint', 'quote', '!'],
+    ],
+  ];
+  for (const [name, files, words] of fixtures) {
+    const r = repo();
+    baseline(r, `${declaration}inputs:\n  source: [src/**]\ninclude: proof.d/*.yaml\n`);
+    r.write('proof.d/web.yaml', 'tasks: {}');
+    const b = r.commit(files);
+    const result = r.check([item(name, b, b)]);
+    expect(result.code).toBe(2);
+    for (const word of words) expect(result.err).toContain(word);
+  }
+});
+
+test('rejects malformed case documents rather than accepting an empty check', () => {
+  const r = repo();
+  const a = baseline(r);
+  for (const cases of [[], {}, [item('valid', a, a), { ...item('bad', a, a), typo: true }]]) {
+    const result = r.check(cases);
+    expect(result.code).toBe(2);
+    expect(result.err).toContain('cases');
+  }
+});

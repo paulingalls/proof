@@ -1,11 +1,31 @@
-import { declarations } from './declarations';
+import { declarations, fields, mapping, text } from './declarations';
 import { RefTree } from './git';
 import { key } from './key';
 
 type Case = { name: string; from: string; to: string; expect: string[] };
 
 export async function check(path: string) {
-  const cases = Bun.YAML.parse(await Bun.file(path).text()) as Case[];
+  let parsed: unknown;
+  try {
+    parsed = Bun.YAML.parse(await Bun.file(path).text());
+  } catch (error) {
+    throw new Error(`cases '${path}': ${error}`);
+  }
+  if (!Array.isArray(parsed) || !parsed.length) {
+    throw new Error(`cases '${path}': expected a nonempty sequence`);
+  }
+  const cases: Case[] = parsed.map((entry, index) => {
+    const context = `cases '${path}' entry ${index + 1}`;
+    const c = mapping(entry, context);
+    fields(c, ['name', 'from', 'to', 'expect'], context);
+    if (!Array.isArray(c.expect)) throw new Error(`${context}: expect must be a string list`);
+    return {
+      name: text(c.name, `${context} name`),
+      from: text(c.from, `${context} from`),
+      to: text(c.to, `${context} to`),
+      expect: c.expect.map((id) => text(id, `${context} expect`)),
+    };
+  });
   let failed = false;
   for (const c of cases) {
     const from = new RefTree(c.from);
