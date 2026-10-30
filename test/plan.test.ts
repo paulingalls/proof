@@ -12,20 +12,21 @@ afterEach(() => {
   for (const state of states.splice(0)) rmSync(state, { recursive: true, force: true });
 });
 function fixture(project = 'example') {
-  const repo = new Repo();
-  repos.push(repo);
-  repo.commit({
-    'proof.yaml': JSON.stringify({
-      version: 1,
-      project,
-      tasks: {
-        lint: { run: 'exit 99', inputs: ['src/**'] },
-        'docs-check': { run: 'exit 99', inputs: ['docs/guide/**'] },
-      },
+  const repo = Repo.from(`plan:${project}`, (template) =>
+    template.commit({
+      'proof.yaml': JSON.stringify({
+        version: 1,
+        project,
+        tasks: {
+          lint: { run: 'exit 99', inputs: ['src/**'] },
+          'docs-check': { run: 'exit 99', inputs: ['docs/guide/**'] },
+        },
+      }),
+      'src/a.ts': 'a',
+      'docs/guide/start.md': 'guide',
     }),
-    'src/a.ts': 'a',
-    'docs/guide/start.md': 'guide',
-  });
+  );
+  repos.push(repo);
   return repo;
 }
 function state() {

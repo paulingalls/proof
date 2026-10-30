@@ -3,7 +3,7 @@ import { afterEach, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Repo } from './support/repo';
+import { copyDir, Repo } from './support/repo';
 
 const repos: Repo[] = [];
 const states: string[] = [];
@@ -14,31 +14,46 @@ afterEach(() => {
   for (const path of states.splice(0)) rmSync(path, { recursive: true, force: true });
 });
 function fixture(project = 'example') {
-  const repo = new Repo();
-  repos.push(repo);
-  repo.commit({
-    'proof.yaml': JSON.stringify({
-      version: 1,
-      project,
-      tasks: { lint: { run: 'exit 99', inputs: ['src/**'] } },
+  const repo = Repo.from(`contested:${project}`, (template) =>
+    template.commit({
+      'proof.yaml': JSON.stringify({
+        version: 1,
+        project,
+        tasks: { lint: { run: 'exit 99', inputs: ['src/**'] } },
+      }),
+      'src/a.ts': 'a',
     }),
-    'src/a.ts': 'a',
-  });
+  );
+  repos.push(repo);
   return repo;
 }
+// The recorded store is built once per shape too; clones share the fixture's commit, so its
+// proofs hold for every copy.
+const stores = new Map<string, string>();
+process.on('exit', () => {
+  for (const path of stores.values()) rmSync(path, { recursive: true, force: true });
+});
 function setup(other?: Repo) {
   const repo = fixture();
-  const path = mkdtempSync(join(tmpdir(), 'proof-state-'));
-  states.push(path);
-  const env = { PROOF_STATE_DIR: path };
+  const shape = other ? 'other' : 'solo';
   function record(outcome: string, target = repo, task = 'lint') {
     const result = target.cli(['record', task, '--outcome', outcome], env);
     expect(result.code).toBe(0);
     expect(result.out).toContain(`recorded ${outcome} ${task}`);
     return result;
   }
-  if (other) record('green', other);
-  record('green');
+  let template = stores.get(shape);
+  let env = { PROOF_STATE_DIR: '' };
+  if (!template) {
+    template = mkdtempSync(join(tmpdir(), 'proof-state-'));
+    env = { PROOF_STATE_DIR: template };
+    if (other) record('green', other);
+    record('green');
+    stores.set(shape, template);
+  }
+  const path = copyDir(template, 'proof-state-');
+  states.push(path);
+  env = { PROOF_STATE_DIR: path };
   const db = new Database(join(path, 'proof.db'));
   databases.push(db);
   function plan(expected: string, target = repo) {
