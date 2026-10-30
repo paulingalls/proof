@@ -119,6 +119,26 @@ proof doctor                 which store is in use, and whether it's reachable
 `run` exits 0 when every task is proven or green, 1 when one is red, 130/143 when interrupted;
 any command exits 2 on a usage, declaration or store error.
 
+`proof check` compares the exact RUN set between committed refs without executing the declared
+commands. After the Quickstart's `src/text.ts` edit and commit, save this as `cases.yaml`:
+
+```yaml
+- name: unchanged baseline
+  from: HEAD
+  to: HEAD
+  expect: []
+- name: text source edit
+  from: HEAD~1
+  to: HEAD
+  expect: [text]
+```
+
+Run `bunx proof check cases.yaml`. It prints `PASS unchanged baseline` and `PASS text source edit`
+and exits 0. A mismatched set prints `FAIL` with `missing:` and `extra:` task ids and exits 1.
+Unresolved inputs can produce `RUN` diagnostics even on a `PASS`; check those diagnostics before
+claiming the suite proves selection. Include an unchanged baseline to expose unresolved inputs
+that would otherwise look like correctly selected tasks.
+
 Planned, specified in [R16](docs/2026-10-30-proof-requirements.md) and design §4.6:
 
 ```
