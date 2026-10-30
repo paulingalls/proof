@@ -190,6 +190,33 @@ test('self references and baseUrl imports cannot publish an external proof', () 
   expect(rows.at(-1)?.state).toBe('PROVEN');
 });
 
+test('file URL imports run undecidable and never publish or reuse proof', () => {
+  const r = new Repo();
+  repos.push(r);
+  const specifier = new URL(`file://${r.path}/hidden.ts`).href;
+  r.commit({
+    'proof.yaml': JSON.stringify({
+      version: 1,
+      project: 'file-url',
+      tasks: { a: task('main.ts', `'${process.execPath}' main.ts`) },
+    }),
+    'main.ts': `import value from '${specifier}'; if (value !== 1) throw Error('bad value');`,
+    'hidden.ts': 'export default 1;',
+  });
+  const env = state();
+  const run = r.cli(['run'], env);
+  expect(run.code, run.err).toBe(0);
+  expect(run.out).toContain('green a; not recorded:');
+  for (const word of ['undecidable', 'main.ts', specifier, 'local import not followed'])
+    expect(plan(r, env)[0]?.reason).toContain(word);
+  r.commit({ 'hidden.ts': 'export default 2;' });
+  expect(plan(r, env)[0]?.state).toBe('RUN');
+  const red = r.cli(['run'], env);
+  expect(red.code).toBe(1);
+  expect(red.err).toContain('bad value');
+  expect(red.out).toContain('red a; not recorded:');
+});
+
 test('named closures own only index-reachable files and respect exclusions', () => {
   const r = fixture(
     { a: { run: 'true', inputs: ['$closure'] } },

@@ -134,7 +134,8 @@ export function closure(entry: string, view: Source) {
       try {
         const deps = new Set<string>();
         const spec = edge.specifier;
-        if (spec.startsWith('/')) throw new Error('local import not followed');
+        if (spec.startsWith('/') || spec.startsWith('file:'))
+          throw new Error('local import not followed');
         const target = spec.startsWith('.')
           ? local.resolve(posix.join(posix.dirname(path), spec), deps)
           : local.bare(path, edge, deps);
