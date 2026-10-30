@@ -1,5 +1,6 @@
 import { posix } from 'node:path';
 import type { Source } from './imports';
+import { refuseDuplicateKeys } from './yaml-keys';
 
 type Closure = { paths: Set<string>; reason?: string };
 const closures = new WeakMap<Source, Map<string, Closure>>();
@@ -45,6 +46,9 @@ export function maestro(entry: string, view: Source): Closure {
       const text = view.read(path);
       if (text === undefined) return fail(flow, reference, 'missing tracked file');
       const docs = Bun.YAML.parse(text);
+      // The parser keeps the last of a repeated key; whether Maestro does too is unknown, so a
+      // flow with one can't be keyed by what Maestro will run.
+      refuseDuplicateKeys(text);
       if (
         !Array.isArray(docs) ||
         docs.length !== 2 ||

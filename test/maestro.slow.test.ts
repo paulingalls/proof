@@ -97,6 +97,12 @@ test('undecidable flows name references and still run without recording', () => 
     ['shape', '- runFlow: {when: {true: false}}', 'runFlow', 'expected file or commands'],
     ['retry', '- retry: {maxRetries: 2}', 'retry', 'expected file or commands'],
     ['documents', '- launchApp\n---\n- launchApp', 'flows/documents.yaml', 'parse failure'],
+    [
+      'duplicate',
+      '- runFlow: one.yaml\n  runFlow: two.yaml',
+      'flows/duplicate.yaml',
+      "duplicate key 'runFlow'",
+    ],
   ];
   const files = Object.fromEntries(
     cases
