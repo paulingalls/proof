@@ -359,3 +359,29 @@ test('a terminated shared proof read falls back to the local proof once', async 
     await locker`ROLLBACK`;
   }
 }, 30_000);
+
+for (const failure of ['schema', 'authentication', 'query']) {
+  test(`${failure} errors stay loud with a usable replica`, async () => {
+    const { repo, a, sql, record, rows } = await setup();
+    record('green');
+    expect(rows('SELECT * FROM proofs')).toHaveLength(1);
+    expect(repo.cli(['plan'], { PROOF_STATE_DIR: a.PROOF_STATE_DIR }).out).toContain('PROVEN lint');
+    let expected = 'result_id';
+    if (failure === 'schema') {
+      await sql`UPDATE schema_version SET version = 2`;
+      expected = 'store schema version 2';
+    } else if (failure === 'authentication') {
+      const url = new URL(a.PROOF_STORE);
+      url.password = 'wrong-password';
+      a.PROOF_STORE = url.href;
+      expected = 'password authentication failed';
+    } else await sql`ALTER TABLE proofs RENAME COLUMN result_id TO missing_result_id`;
+    for (const args of [['plan'], ['record', 'lint', '--outcome', 'green'], ['run']]) {
+      const result = repo.cli(args, a);
+      expect(result.code).toBe(2);
+      expect(result.err).toContain(expected);
+      expect(result.err).not.toContain('using this machine');
+      expect(result.out).not.toMatch(/PROVEN|executed-/);
+    }
+  }, 15_000);
+}
