@@ -70,6 +70,14 @@ function select(task: Task, available: string[], dirty: string[] = []) {
   return { paths };
 }
 
+export function selection(task: Task, tree: RefTree, dirty: string[] = []) {
+  const selected = select(task, inventory(tree), dirty);
+  return new Set([
+    ...(selected.paths ?? []),
+    ...task.inputs.flatMap((input) => (typeof input === 'string' ? [] : [input.path])),
+  ]);
+}
+
 export function* matching(tree: RefTree, pattern: string) {
   const glob = new Bun.Glob(pattern);
   for (const path of candidates(inventory(tree), pattern, [])) {

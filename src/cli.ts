@@ -4,14 +4,17 @@ import { check } from './check';
 import { lint } from './lint';
 import { plan } from './plan';
 import { record } from './record';
+import { run } from './run';
 
 const [command, ...args] = Bun.argv.slice(2);
 
 if (command === '--version') {
   console.log(pkg.version);
-} else if (['check', 'plan', 'record', 'lint'].includes(command ?? '')) {
+} else if (['check', 'plan', 'record', 'lint', 'run'].includes(command ?? '')) {
   try {
-    if (command === 'lint') {
+    if (command === 'run') {
+      process.exitCode = await run(args);
+    } else if (command === 'lint') {
       if (args.length) throw new Error('usage: proof lint');
       const findings = lint();
       for (const finding of findings) console.log(finding);
