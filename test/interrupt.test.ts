@@ -148,3 +148,46 @@ renameSync(control + '/pending', control + '/ready');`,
     }
   }, 15000);
 }
+
+test('a second SIGINT kills a task whose background child ignores the first', async () => {
+  const repo = new Repo();
+  const control = mkdtempSync(join(tmpdir(), 'proof-interrupt-'));
+  const state = mkdtempSync(join(tmpdir(), 'proof-state-'));
+  const temporary = mkdtempSync(join(tmpdir(), 'proof-tmp-'));
+  const env = { PROOF_STATE_DIR: state, TMPDIR: temporary, CONTROL: control };
+  repo.commit({
+    'proof.yaml': JSON.stringify({
+      version: 1,
+      project: 'interrupt',
+      tasks: {
+        first: {
+          run: 'sleep 30 & echo $! > "$CONTROL/bg"; touch "$CONTROL/ready"; wait',
+          inputs: ['proof.yaml'],
+          env: ['CONTROL'],
+        },
+      },
+    }),
+  });
+  const cli = repo.spawnCli(['run'], env);
+  const output = new Response(cli.stdout).text();
+  let background: number | undefined;
+  try {
+    await until(() => existsSync(join(control, 'ready')));
+    background = Number(readFileSync(join(control, 'bg'), 'utf8'));
+    process.kill(cli.pid, 'SIGINT');
+    await Bun.sleep(200);
+    expect(cli.exitCode).toBe(null);
+    process.kill(cli.pid, 'SIGINT');
+    await until(() => cli.exitCode !== null);
+    expect(await cli.exited).toBe(130);
+    expect(await output).toContain('incomplete first');
+    await until(() => !alive(background as number));
+    expect(readdirSync(temporary)).toEqual([]);
+  } finally {
+    if (background && alive(background)) process.kill(background, 'SIGKILL');
+    if (cli.exitCode === null) cli.kill('SIGKILL');
+    await cli.exited;
+    repo.close();
+    for (const path of [control, state, temporary]) rmSync(path, { recursive: true, force: true });
+  }
+}, 15000);

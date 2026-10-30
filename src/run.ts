@@ -31,7 +31,11 @@ export async function run(args: string[]) {
   let interrupted: 'SIGINT' | 'SIGTERM' | undefined;
   let active: ReturnType<typeof Bun.spawn> | undefined;
   const interrupt = (signal: 'SIGINT' | 'SIGTERM') => {
-    if (interrupted) return;
+    // A shell's `&` jobs start with SIGINT ignored, so a second interrupt must be able to end them.
+    if (interrupted) {
+      if (active) signalGroup(active.pid, 'SIGKILL');
+      return;
+    }
     interrupted = signal;
     if (active) signalGroup(active.pid, signal);
   };
