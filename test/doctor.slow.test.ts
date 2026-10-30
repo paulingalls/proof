@@ -149,6 +149,14 @@ test('the operator guide startup block accepts doctor and cleans its named volum
     expect(result.code).toBe(0);
     expect(result.err).toBe('');
     report(result.out, `postgres://${new URL(scratch.url).host}`, state);
+    const rules = scratch.exec(
+      ['-u', 'postgres'],
+      ['psql', '-Atc', 'SELECT type, address, auth_method FROM pg_hba_file_rules'],
+    );
+    expect(rules.toString().trim().split('\n')).toEqual([
+      'local||trust',
+      'host|samenet|scram-sha-256',
+    ]);
   } finally {
     await scratch.close();
     scratch.assertAbsent();

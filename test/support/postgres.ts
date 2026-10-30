@@ -116,11 +116,10 @@ export class Postgres {
     }
   }
 
-  exec(options: string[], command: string[], input?: Uint8Array) {
+  exec(options: string[], command: string[]) {
     this.verify();
     const result = Bun.spawnSync(['docker', 'exec', ...options, this.id, ...command], {
       timeout: 30_000,
-      stdin: input,
     });
     if (result.exitCode !== 0) throw new Error(`docker exec: ${result.stderr.toString()}`);
     return result.stdout;
