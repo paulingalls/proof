@@ -1,6 +1,7 @@
 import type { Input, Task } from './declarations';
 import type { RefTree, Scope } from './git';
 import { closure, source } from './imports';
+import { maestro } from './maestro';
 
 type Key = { key: string; reason?: never } | { key?: never; reason: string };
 
@@ -65,6 +66,11 @@ function select(
     if (typeof pattern !== 'string') {
       if ('imports-of' in pattern) {
         const found = closure(pattern['imports-of'], view);
+        for (const path of found.paths) paths.add(path);
+        reason ??= found.reason;
+      }
+      if ('maestro' in pattern) {
+        const found = maestro(pattern.maestro, view);
         for (const path of found.paths) paths.add(path);
         reason ??= found.reason;
       }

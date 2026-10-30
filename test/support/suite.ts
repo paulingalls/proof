@@ -1,3 +1,5 @@
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Repo } from './repo';
 
 const worker = (docstring: string) => `"""${docstring}"""\n\ndef work():\n    return 1\n`;
@@ -59,7 +61,7 @@ export function suiteCases(r: Repo, baseline: string) {
 }
 
 export function suiteFixture(r: Repo) {
-  return r.commit({
+  r.commit({
     'proof.yaml': `version: 1
 project: selection-suite
 inputs:
@@ -95,7 +97,7 @@ tasks:
     run: sh apps/mobile/scripts/alpha.sh
     inputs:
       - apps/mobile/scripts/alpha.sh
-      - apps/mobile/flows/alpha.yaml
+      - {maestro: apps/mobile/flows/alpha.yaml}
       - apps/mobile/src/alpha/**
       - apps/mobile/scripts/lib/**
       - $stack
@@ -137,7 +139,12 @@ tasks:
     'apps/mobile/scripts/smoke.sh':
       '#!/bin/sh\n. apps/mobile/scripts/lib/harness.sh\nmaestro test apps/mobile/flows/smoke.yaml\n',
     'apps/mobile/scripts/lib/harness.sh': '#!/bin/sh\nexport JOURNEY_TIMEOUT=30\n',
-    'apps/mobile/flows/alpha.yaml': 'appId: org.example.mobile\n---\n- launchApp\n- tapOn: Alpha\n',
+    'apps/mobile/flows/alpha.yaml':
+      'appId: org.example.mobile\n---\n- launchApp\n- runFlow: nested/login.yaml\n',
+    'apps/mobile/flows/nested/login.yaml':
+      'appId: org.example.mobile\n---\n- runScript: ../../assets/login.js\n- addMedia: [../../assets/photo.bin]\n',
+    'apps/mobile/assets/login.js': 'output.ready = true;\n',
+    'apps/mobile/assets/photo.bin': '',
     'apps/mobile/flows/beta.yaml': 'appId: org.example.mobile\n---\n- launchApp\n- tapOn: Beta\n',
     'apps/mobile/flows/smoke.yaml':
       'appId: org.example.mobile\n---\n- launchApp\n- assertVisible: Home\n',
@@ -147,4 +154,6 @@ tasks:
       'import { expect, test } from "bun:test";\nimport { title } from "../src/landing";\ntest("landing", () => expect(title).toBe("Home"));\n',
     'lefthook.yml': '# Local checks.\npre-commit: {}\n',
   });
+  writeFileSync(join(r.path, 'apps/mobile/assets/photo.bin'), Buffer.from([0, 255, 1]));
+  return r.commit({});
 }
