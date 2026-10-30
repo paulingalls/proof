@@ -29,5 +29,11 @@ export function lint() {
     if (![...tasks.values()].some((task) => selects(task, path)) && !Object.hasOwn(exempt, path))
       findings.push(`unowned '${path}'`);
   }
+  for (const path of Object.keys(exempt)) {
+    if (!tree.files.has(path)) findings.push(`exempt '${path}': no tracked file`);
+    for (const [id, task] of tasks) {
+      if (selects(task, path)) findings.push(`exempt '${path}': selected by task '${id}'`);
+    }
+  }
   return findings;
 }

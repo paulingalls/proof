@@ -117,3 +117,21 @@ test('covered paths require ordered ownership or an exemption', () => {
   r.git('add', 'proof.yaml');
   expect(r.cli(['lint'])).toEqual({ code: 0, out: '', err: '' });
 });
+
+test('exemptions are exact tracked paths unselected by any task, even outside coverage', () => {
+  const r = new Repo();
+  repos.push(r);
+  r.commit({
+    'proof.yaml': `${declaration.replace('[src/**]', '[{path: config/app.json, json: [name]}]')}exempt:
+  scripts/verify-*.sh: manual
+  config/app.json: external
+`,
+    'scripts/verify-x.sh': '',
+    'config/app.json': '{"name":"fixture"}',
+  });
+  expect(r.cli(['lint'])).toEqual({
+    code: 1,
+    err: '',
+    out: "exempt 'scripts/verify-*.sh': no tracked file\nexempt 'config/app.json': selected by task 'verify'\n",
+  });
+});
