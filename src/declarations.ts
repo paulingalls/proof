@@ -1,6 +1,8 @@
 import type { RefTree } from './git';
+import { refuseDuplicateKeys } from './yaml-keys';
 
-export type Task = { run: string; inputs: string[] };
+export type Input = string | { path: string; json: string[] };
+export type Task = { run: string; inputs: Input[]; env?: string[] };
 
 export function mapping(value: unknown, context: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -22,31 +24,45 @@ export function text(value: unknown, context: string): string {
   return value;
 }
 
-function patterns(value: unknown, context: string): string[] {
+function patterns(value: unknown, context: string): Input[] {
   if (!Array.isArray(value) || !value.length) {
-    throw new Error(`${context}: inputs must be a nonempty string list`);
+    throw new Error(`${context}: inputs must be a nonempty list`);
   }
-  return value.map((entry, index) =>
-    text(entry, `${context} input ${index + 1} (quote '!' patterns)`),
-  );
+  return value.map((entry, index) => {
+    const label = `${context} input ${index + 1} (quote '!' patterns)`;
+    if (!entry || typeof entry !== 'object') return text(entry, label);
+    const projection = mapping(entry, label);
+    fields(projection, ['path', 'json'], label);
+    if (!Array.isArray(projection.json) || !projection.json.length) {
+      throw new Error(`${label}: json must be a nonempty member list`);
+    }
+    return {
+      path: text(projection.path, `${label} path`),
+      json: projection.json.map((member) => text(member, `${label} json member`)),
+    };
+  });
 }
 
 export function declarations(tree: RefTree) {
-  const sets = new Map<string, string[]>();
+  const sets = new Map<string, Input[]>();
   const tasks = new Map<string, Task>();
   const contexts = new Map<string, string>();
   function read(path: string, root: boolean) {
     const context = `ref '${tree.ref}' ${path}`;
     let parsed: unknown;
     try {
-      parsed = Bun.YAML.parse(tree.read(path));
+      const source = tree.read(path);
+      parsed = Bun.YAML.parse(source);
+      refuseDuplicateKeys(source);
     } catch (error) {
       throw new Error(`${context}: ${error}`);
     }
     const doc = mapping(parsed, context);
     fields(
       doc,
-      root ? ['version', 'project', 'inputs', 'tasks', 'include'] : ['inputs', 'tasks'],
+      root
+        ? ['version', 'project', 'inputs', 'tasks', 'include', 'coverage', 'exempt']
+        : ['inputs', 'tasks'],
       context,
     );
     if (root) {
@@ -68,10 +84,16 @@ export function declarations(tree: RefTree) {
       const label = `${context} task '${id}'`;
       if (tasks.has(id)) throw new Error(`${label}: duplicate task '${id}'`);
       const task = mapping(value, label);
-      fields(task, ['run', 'inputs'], label);
+      fields(task, ['run', 'inputs', 'env'], label);
+      let env: string[] | undefined;
+      if ('env' in task) {
+        if (!Array.isArray(task.env)) throw new Error(`${label}: env must be a list`);
+        env = [...new Set(task.env.map((name) => text(name, `${label} env name`)))].sort();
+      }
       tasks.set(id, {
         run: text(task.run, `${label} run`),
         inputs: patterns(task.inputs, label),
+        env,
       });
     }
     return doc;
@@ -84,9 +106,9 @@ export function declarations(tree: RefTree) {
     if (!paths.length) throw new Error(`ref '${tree.ref}': unmatched include '${pattern}'`);
     for (const path of paths) read(path, false);
   }
-  function expand(inputs: string[], context: string, stack: string[] = []): string[] {
+  function expand(inputs: Input[], context: string, stack: string[] = []): Input[] {
     return inputs.flatMap((pattern) => {
-      if (!pattern.startsWith('$')) return [pattern];
+      if (typeof pattern !== 'string' || !pattern.startsWith('$')) return [pattern];
       const name = pattern.slice(1);
       const set = sets.get(name);
       if (!set) throw new Error(`${context}: unknown input set '${name}'`);
@@ -98,9 +120,25 @@ export function declarations(tree: RefTree) {
   for (const [id, task] of tasks) {
     task.inputs = expand(task.inputs, `ref '${tree.ref}' task '${id}'`);
   }
+  const context = `ref '${tree.ref}' proof.yaml`;
+  const coverage: string[] = [];
+  if ('coverage' in root) {
+    if (!Array.isArray(root.coverage)) throw new Error(`${context} coverage: expected a list`);
+    coverage.push(...root.coverage.map((pattern) => text(pattern, `${context} coverage pattern`)));
+  }
+  const exempt = Object.fromEntries(
+    Object.entries(mapping('exempt' in root ? root.exempt : {}, `${context} exempt`)).map(
+      ([path, reason]) => [
+        text(path, `${context} exempt path`),
+        text(reason, `${context} exempt '${path}' reason`),
+      ],
+    ),
+  );
   return {
     project: text(root.project, 'proof.yaml project'),
     tasks,
+    coverage,
+    exempt,
     include: 'include' in root ? text(root.include, 'proof.yaml include') : undefined,
   };
 }

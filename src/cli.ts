@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import pkg from '../package.json';
 import { check } from './check';
+import { lint } from './lint';
 import { plan } from './plan';
 import { record } from './record';
 
@@ -8,9 +9,14 @@ const [command, ...args] = Bun.argv.slice(2);
 
 if (command === '--version') {
   console.log(pkg.version);
-} else if (command === 'check' || command === 'plan' || command === 'record') {
+} else if (['check', 'plan', 'record', 'lint'].includes(command ?? '')) {
   try {
-    if (command === 'record') {
+    if (command === 'lint') {
+      if (args.length) throw new Error('usage: proof lint');
+      const findings = lint();
+      for (const finding of findings) console.log(finding);
+      process.exitCode = findings.length ? 1 : 0;
+    } else if (command === 'record') {
       console.log(record(args));
     } else if (command === 'plan') {
       if (args.length && (args.length !== 1 || args[0] !== '--json'))

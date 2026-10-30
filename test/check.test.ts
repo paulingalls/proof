@@ -29,13 +29,17 @@ function baseline(r: Repo, yaml = declaration) {
     'scripts/tiers.md': 'tiers',
   });
 }
+function based(yaml = declaration) {
+  const r = Repo.from(`check:${yaml}`, (template) => baseline(template, yaml));
+  repos.push(r);
+  return { r, a: r.git('rev-parse', 'HEAD') };
+}
 function item(name: string, from: string, to: string, expected: string[] = []) {
   return { name, from, to, expect: expected };
 }
 
 test('checks exact RUN sets, new tasks, and reports mismatches while continuing', () => {
-  const r = repo();
-  const a = baseline(r);
+  const { r, a } = based();
   const b = r.commit({ 'CHANGELOG.md': 'log2' });
   const c = r.commit({ 'src/a.ts': 'b' });
   const d = r.commit({ 'docs/research/r.md': 'research' });
@@ -141,8 +145,7 @@ test('reads included declarations at each ref despite dirty checkout declaration
 });
 
 test('schema errors identify offending declarations and refs override prior mismatches', () => {
-  const r = repo();
-  const a = baseline(r);
+  const { r, a } = based();
   const b = r.commit({
     'proof.yaml': declaration.replace('run: exit 99', 'surprise: true\n    run: exit 99'),
   });
@@ -193,8 +196,7 @@ test('rejects silent declaration corruption at the CLI boundary', () => {
     ],
   ];
   for (const [name, files, words] of fixtures) {
-    const r = repo();
-    baseline(r, `${declaration}inputs:\n  source: [src/**]\ninclude: proof.d/*.yaml\n`);
+    const { r } = based(`${declaration}inputs:\n  source: [src/**]\ninclude: proof.d/*.yaml\n`);
     r.write('proof.d/web.yaml', 'tasks: {}');
     const b = r.commit(files);
     const result = r.check([item(name, b, b)]);
@@ -204,8 +206,7 @@ test('rejects silent declaration corruption at the CLI boundary', () => {
 });
 
 test('rejects malformed case documents rather than accepting an empty check', () => {
-  const r = repo();
-  const a = baseline(r);
+  const { r, a } = based();
   for (const cases of [[], {}, [item('valid', a, a), { ...item('bad', a, a), typo: true }]]) {
     const result = r.check(cases);
     expect(result.code).toBe(2);
@@ -228,4 +229,69 @@ test('a submodule pointer bump re-runs the task whose glob covers it', () => {
   const result = r.check([item('bump', a, b, ['v'])]);
   expect(result.out).toContain('PASS bump');
   expect(result.code).toBe(0);
+});
+
+test('glob boundaries preserve exact selections beside neighboring paths', () => {
+  const r = repo();
+  const patterns = {
+    literal: ['src/a.ts'],
+    directory: ['src/**'],
+    wildcard: ['**/b.ts'],
+    braces: ['src/{a,b}.ts'],
+    classes: ['src/[ab].ts'],
+    extglob: ['src/@(a|b).ts'],
+    doubleNegative: ['src/**', '!!src/private/**'],
+    escaped: ['src/\\[literal\\].ts'],
+  };
+  const a = r.commit({
+    'proof.yaml': JSON.stringify({
+      version: 1,
+      project: 'fixture',
+      tasks: Object.fromEntries(
+        Object.entries(patterns).map(([id, inputs]) => [id, { run: 'exit 99', inputs }]),
+      ),
+    }),
+    'src/a.ts': 'a',
+    'src/a.tsx': 'neighbor',
+    'src/b.ts': 'b',
+    'src-neighbor/a.ts': 'neighbor',
+    'src/private/a.ts': 'private',
+    'src/[literal].ts': 'escaped',
+  });
+  const edits: [string, string[]][] = [
+    ['src/a.ts', ['literal', 'directory', 'braces', 'classes', 'extglob']],
+    ['src/a.tsx', ['directory']],
+    ['src/b.ts', ['directory', 'wildcard', 'braces', 'classes', 'extglob']],
+    ['src-neighbor/a.ts', []],
+    ['src/private/a.ts', ['directory', 'doubleNegative']],
+    ['src/[literal].ts', ['directory', 'escaped']],
+  ];
+  const cases = edits.flatMap(([path, expected]) => {
+    r.git('reset', '--hard', a);
+    const b = r.commit({ [path]: 'changed' });
+    return [item(path, a, b, expected), item(`${path} reverse`, b, a, expected)];
+  });
+  const result = r.check(cases);
+  expect(result).toEqual({
+    code: 0,
+    err: '',
+    out: cases.map((c) => `PASS ${c.name}\n`).join(''),
+  });
+});
+
+test('a duplicate key in the cases file fails loudly', () => {
+  const { r, a } = based();
+  for (const newline of ['\n', '\r\n', '\r']) {
+    r.write(
+      '.git/cases.yaml',
+      `- name: dup\n  from: ${a}\n  to: ${a}\n  expect: [lint]\n  expect: []\n`.replaceAll(
+        '\n',
+        newline,
+      ),
+    );
+    const result = r.cli(['check', '.git/cases.yaml']);
+    expect(result.code).toBe(2);
+    expect(result.err).toContain('.git/cases.yaml');
+    expect(result.err).toContain("line 5: duplicate key 'expect'");
+  }
 });

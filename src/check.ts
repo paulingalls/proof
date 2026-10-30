@@ -1,13 +1,16 @@
 import { declarations, fields, mapping, text } from './declarations';
 import { RefTree } from './git';
 import { key } from './key';
+import { refuseDuplicateKeys } from './yaml-keys';
 
 type Case = { name: string; from: string; to: string; expect: string[] };
 
 export async function check(path: string) {
   let parsed: unknown;
   try {
-    parsed = Bun.YAML.parse(await Bun.file(path).text());
+    const source = await Bun.file(path).text();
+    parsed = Bun.YAML.parse(source);
+    refuseDuplicateKeys(source);
   } catch (error) {
     throw new Error(`cases '${path}': ${error}`);
   }
@@ -26,18 +29,28 @@ export async function check(path: string) {
       expect: c.expect.map((id) => text(id, `${context} expect`)),
     };
   });
+  const refs = new Map<string, Map<string, ReturnType<typeof key>>>();
+  function keys(ref: string) {
+    let computed = refs.get(ref);
+    if (!computed) {
+      const tree = new RefTree(ref);
+      computed = new Map(
+        [...declarations(tree).tasks].map(([id, task]) => [id, key(id, task, tree)]),
+      );
+      refs.set(ref, computed);
+    }
+    return computed;
+  }
   let failed = false;
   for (const c of cases) {
-    const from = new RefTree(c.from);
-    const to = new RefTree(c.to);
-    const oldTasks = declarations(from).tasks;
+    const from = keys(c.from);
+    const to = keys(c.to);
     const actual = new Set<string>();
     const reasons: string[] = [];
-    for (const [id, task] of declarations(to).tasks) {
-      const old = oldTasks.get(id);
-      const current = key(id, task, to);
+    for (const [id, current] of to) {
+      const old = from.get(id);
       if (current.reason) reasons.push(`  RUN ${id}: ${current.reason}`);
-      if (!old || current.reason || key(id, old, from).key !== current.key) actual.add(id);
+      if (!old || current.reason || old.key !== current.key) actual.add(id);
     }
     const missing = [...new Set(c.expect)].filter((id) => !actual.has(id));
     const extra = [...actual].filter((id) => !c.expect.includes(id));
