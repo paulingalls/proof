@@ -19,8 +19,8 @@ export function isolatedEnv() {
   return { ...env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
 }
 
-// Each distinct starting repo is built once per process; every test gets a copy-on-write clone,
-// so fixtures cost one directory copy instead of a dozen git spawns and fresh disk writes.
+// A copy-on-write clone costs one directory copy; building a repo costs a dozen git spawns and
+// fresh disk writes.
 const templates = new Map<string, Repo>();
 process.on('exit', () => {
   for (const template of templates.values()) template.close();

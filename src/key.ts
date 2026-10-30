@@ -32,7 +32,7 @@ function canonical(value: unknown): string {
 }
 
 function* candidates(available: string[], pattern: string, dirty: string[]) {
-  const start = prefix(pattern);
+  const start = literalDirectory(pattern);
   let low = 0;
   let high = available.length;
   if (start !== undefined) {
@@ -96,8 +96,7 @@ export function selects(task: Task, path: string) {
   return selected || task.inputs.some((input) => typeof input !== 'string' && input.path === path);
 }
 
-// The literal directory before a pattern's first glob character: a superset for git pathspecs.
-function prefix(pattern: string) {
+function literalDirectory(pattern: string) {
   const glob = pattern.search(/[(!*?[{\\]/);
   if (glob === -1) return pattern;
   return pattern.slice(0, pattern.lastIndexOf('/', glob) + 1) || undefined;
@@ -109,7 +108,7 @@ export function scope(tasks: Iterable<Task>, declarations: string[]): Scope {
     (p): p is string => typeof p === 'string' && !p.startsWith('!'),
   );
   const prefixes = [
-    ...patterns.map(prefix),
+    ...patterns.map(literalDirectory),
     ...list.flatMap((t) =>
       t.inputs.flatMap((input) => (typeof input === 'string' ? [] : [input.path])),
     ),
