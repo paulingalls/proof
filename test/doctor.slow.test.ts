@@ -157,6 +157,19 @@ test('the operator guide startup block accepts doctor and cleans its named volum
       'local||trust',
       'host|samenet|scram-sha-256',
     ]);
+    const rejection = scratch.exec(
+      [],
+      [
+        'sh',
+        '-c',
+        `if message=$(PGPASSWORD=wrong psql -h 127.0.0.1 -U postgres -d postgres -Atc 'SELECT 1' 2>&1); then
+          echo 'wrong password accepted' >&2
+          exit 1
+        fi
+        printf '%s' "$message"`,
+      ],
+    );
+    expect(rejection.toString()).toContain('password authentication failed for user "postgres"');
   } finally {
     await scratch.close();
     scratch.assertAbsent();
