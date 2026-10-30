@@ -1,15 +1,19 @@
 function git(...args: string[]) {
-  const result = Bun.spawnSync(['git', ...args]);
+  const result = Bun.spawnSync(['git', ...args], {
+    env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
+  });
   if (result.exitCode !== 0) throw new Error(result.stderr.toString().trim());
   return result.stdout.toString();
 }
 
 export class RefTree {
+  readonly commit: string;
   readonly files = new Map<string, string>();
 
   constructor(readonly ref: string) {
     try {
       const oid = git('rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`).trim();
+      this.commit = oid;
       for (const entry of git('ls-tree', '-r', '-z', '--full-tree', oid).split('\0')) {
         if (!entry) continue;
         const tab = entry.indexOf('\t');
@@ -28,4 +32,19 @@ export class RefTree {
     if (!blob) throw new Error(`ref '${this.ref}': missing ${path}`);
     return git('cat-file', 'blob', blob);
   }
+}
+
+// Explicit flags override status.renames, status.showUntrackedFiles and submodule ignore config.
+export function dirtyPaths() {
+  return git(
+    'status',
+    '--porcelain=v1',
+    '-z',
+    '--no-renames',
+    '--untracked-files=all',
+    '--ignore-submodules=none',
+  )
+    .split('\0')
+    .filter(Boolean)
+    .map((entry) => entry.slice(3));
 }
