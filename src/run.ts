@@ -109,7 +109,7 @@ export async function run(args: string[]) {
         ];
         if (escapes.length) unpublished = [unpublished, ...escapes].filter(Boolean).join('; ');
         if (current.key !== undefined) {
-          await store.record(
+          const sharing = await store.record(
             project,
             id,
             current.key,
@@ -121,7 +121,7 @@ export async function run(args: string[]) {
             key(id, task, tree, dirty).key === undefined,
           );
           summary.push(
-            `${outcome} ${id}${unpublished ? `; no proof published: ${unpublished}` : outcome === 'green' ? '; proof published' : ''}`,
+            `${outcome} ${id}${unpublished ? `; no proof published: ${unpublished}` : outcome === 'green' ? '; proof published' : ''}${sharing === 'local' ? '' : `; ${sharing}`}`,
           );
         } else
           summary.push(

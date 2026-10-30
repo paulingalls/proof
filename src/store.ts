@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { statePath, storeUrl } from './config';
 import { postgres, UnreachableStore } from './postgres';
 
+export type Sharing = 'local' | 'shared' | 'not shared' | 'sharing uncertain';
 export type Outcome = 'green' | 'red' | 'incomplete';
 type Value = string | number | null;
 export type Query = <T = Record<string, unknown>>(sql: string, ...values: Value[]) => Promise<T[]>;
@@ -157,7 +158,7 @@ export class Store {
     commit: string,
     dirty: boolean,
     dirtyInputs: boolean,
-  ) {
+  ): Promise<Sharing> {
     const finishedAt = new Date().toISOString();
     const write = async (backend: Backend) =>
       backend.transaction(JSON.stringify([project, task, key]), async (query) => {
@@ -216,7 +217,10 @@ export class Store {
         }
       });
     await write(this.local);
-    if (this.remote && !this.offline) await write(this.remote);
+    if (!this.remote) return 'local';
+    if (this.offline) return 'not shared';
+    await write(this.remote);
+    return 'shared';
   }
 
   async close() {
