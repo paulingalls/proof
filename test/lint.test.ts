@@ -5,11 +5,6 @@ const repos: Repo[] = [];
 afterEach(() => {
   for (const r of repos.splice(0)) r.close();
 });
-function repo() {
-  const r = new Repo();
-  repos.push(r);
-  return r;
-}
 const declaration = `version: 1
 project: fixture
 tasks:
@@ -19,7 +14,8 @@ tasks:
 `;
 
 test('coverage and exemptions do not contribute to task keys', () => {
-  const r = repo();
+  const r = new Repo();
+  repos.push(r);
   const a = r.commit({ 'proof.yaml': declaration, 'src/a.ts': 'a' });
   const coverage = `${declaration}coverage: [scripts/*.sh]\n`;
   const b = r.commit({ 'proof.yaml': coverage });
