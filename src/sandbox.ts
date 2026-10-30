@@ -73,7 +73,13 @@ export function inspectLinks(paths: string[]) {
       }
       const before = escapes.length;
       const check = (file: string) => {
-        const target = realpathSync(file);
+        let target: string;
+        try {
+          target = realpathSync(file);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+          throw error;
+        }
         if (within(repo, target) && !within(root, target))
           escapes.push(`link escape '${file}' -> '${target}'`);
       };

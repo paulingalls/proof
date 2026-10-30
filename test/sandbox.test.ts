@@ -68,6 +68,7 @@ test('links expose installed packages, report trust, preserve proofs across inst
   expect(run().code).toBe(1);
   mkdirSync(join(repo.path, 'node_modules/.bin'));
   symlinkSync('../example/index.js', join(repo.path, 'node_modules/.bin/example'));
+  symlinkSync('../removed/cli.js', join(repo.path, 'node_modules/.bin/removed'));
   repo.write('node_modules/.bun/installed/index.js', 'export default 1;');
   symlinkSync('.bun/installed', join(repo.path, 'node_modules/isolated'));
   declare(['node_modules']);
