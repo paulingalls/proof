@@ -117,3 +117,22 @@ test('an unmatched input runs with its reason, including exclusions', () => {
     expect(result.out).toContain(`RUN lint: unmatched input '${pattern}'`);
   }
 });
+
+test('reads included declarations at each ref despite dirty checkout declarations', () => {
+  const r = repo();
+  const root = `${declaration}include: proof.d/*.yaml\n`;
+  baseline(r, root);
+  const a = r.commit({
+    'proof.d/web.yaml': 'tasks:\n  web:\n    run: exit 99\n    inputs: [web/**]\n',
+    'web/a.ts': 'web',
+  });
+  const b = r.commit({ 'web/a.ts': 'changed' });
+  const cases = [item('web change', a, b, ['web'])];
+  expect(r.check(cases).code).toBe(0);
+  r.write('proof.yaml', ': invalid [');
+  r.write('proof.d/web.yaml', ': invalid [');
+  r.write('web/a.ts', 'dirty');
+  const result = r.check(cases);
+  expect(result.code).toBe(0);
+  expect(result.out).toContain('PASS web change');
+});
