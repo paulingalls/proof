@@ -163,9 +163,10 @@ test('named closures own index-reachable files and respect ordered exclusions', 
 
 test('sandbox reads working closure bytes and only clean runs publish', () => {
   const run = `test -s flows/a.yaml && test -s flows/sub.yaml &&
-    grep -Eq '^(old|edited)$' leaf.js &&
     test "$(od -An -tx1 media.bin | tr -d ' \\n')" = 00ff01 &&
-    if grep -q extra.js flows/a.yaml; then test "$(cat extra.js)" = extra; fi &&
+    printf 'leaf=' && cat leaf.js && printf '\\nflow:\\n' && cat flows/a.yaml &&
+    echo end-flow &&
+    if test -f extra.js; then printf 'extra='; cat extra.js; echo; fi &&
     echo closure-ok`;
   const original = flow('- runFlow: sub.yaml');
   const r = fixture(
@@ -181,9 +182,11 @@ test('sandbox reads working closure bytes and only clean runs publish', () => {
   writeFileSync(join(r.path, 'media.bin'), Buffer.from([0, 255, 1]));
   r.commit({});
   const env = state();
-  const execute = (publication: string) => {
+  const execute = (publication: string, leaf = 'old', expectedFlow = original, extra = false) => {
     const result = r.cli(['run', '--tasks', 'a'], env);
     expect(result.code, result.err + result.out).toBe(0);
+    expect(result.out).toContain(`leaf=${leaf}\nflow:\n${expectedFlow}end-flow\n`);
+    if (extra) expect(result.out).toContain('extra=extra\n');
     expect(result.out).toContain('closure-ok');
     expect(result.out).toContain(publication);
   };
@@ -193,16 +196,17 @@ test('sandbox reads working closure bytes and only clean runs publish', () => {
     r.write('leaf.js', 'edited');
     if (staged) r.git('add', 'leaf.js');
     expect(plan(r, env)[0]?.reason).toContain("dirty input 'leaf.js'");
-    execute('no proof published');
+    execute('no proof published', 'edited');
     r.git('restore', '--source=HEAD', '--staged', '--worktree', 'leaf.js');
     expect(plan(r, env)[0]?.state).toBe('PROVEN');
   }
-  r.write('flows/a.yaml', flow('- runFlow: sub.yaml\n- runScript: ../extra.js'));
+  const extended = flow('- runFlow: sub.yaml\n- runScript: ../extra.js');
+  r.write('flows/a.yaml', extended);
   expect(plan(r, env)[0]?.reason).toContain("dirty input 'flows/a.yaml'");
-  execute('no proof published');
+  execute('no proof published', 'old', extended, true);
   r.commit({});
   expect(plan(r, env)[0]?.state).toBe('RUN');
-  execute('proof published');
+  execute('proof published', 'old', extended, true);
   expect(plan(r, env)[0]?.state).toBe('PROVEN');
   expect(r.cli(['lint']).code).toBe(0);
 });
