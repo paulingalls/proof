@@ -1,5 +1,5 @@
 import { hostname } from 'node:os';
-import { declarations } from './declarations';
+import { declarations, dirtyDeclaration } from './declarations';
 import { dirtyPaths, RefTree } from './git';
 import { key } from './key';
 import { Store } from './store';
@@ -25,12 +25,20 @@ export function record(args: string[]) {
   if (outcome !== 'green' && outcome !== 'red' && outcome !== 'incomplete')
     throw new Error(`unknown outcome '${outcome}'`);
   const tree = new RefTree('HEAD');
-  const { project, tasks } = declarations(tree);
+  const { project, tasks, include } = declarations(tree);
   const task = tasks.get(id);
   if (!task) throw new Error(`undeclared task '${id}'`);
   const current = key(id, task, tree);
   if (current.key === undefined) throw new Error(`undecidable: ${current.reason}`);
   const dirty = dirtyPaths();
+  // A red about other bytes (a dirty input or declaration) says nothing about this key.
+  const declaration = dirtyDeclaration(dirty, include);
+  const otherBytes =
+    outcome === 'red'
+      ? declaration
+        ? `dirty declaration '${declaration}'`
+        : key(id, task, tree, dirty).reason
+      : undefined;
   const store = new Store();
   try {
     store.record(
@@ -42,8 +50,9 @@ export function record(args: string[]) {
       hostname(),
       tree.commit,
       dirty.length > 0,
-      outcome === 'red' && key(id, task, tree, dirty).key === undefined,
+      otherBytes !== undefined,
     );
+    if (otherBytes) return `recorded red ${id}; contests nothing: ${otherBytes}`;
     if (outcome !== 'green') return `recorded ${outcome} ${id}`;
     return dirty.length
       ? `recorded green ${id}; no proof published: dirty path '${dirty[0]}'`

@@ -142,7 +142,7 @@ test('second red deletes the proof despite intervening incomplete, then green re
 test('dirty input reds store history only; unrelated dirtiness still contests and deletes', () => {
   const { repo, record, plan, proof, contradictions, db } = setup();
   repo.write('src/a.ts', 'dirty input');
-  record('red');
+  expect(record('red').out).toContain("contests nothing: dirty input 'src/a.ts'");
   record('red');
   expect(proof()).toEqual([{ result_id: 1 }]);
   expect(contradictions()).toEqual([]);
@@ -162,6 +162,24 @@ test('dirty input reds store history only; unrelated dirtiness still contests an
     Array.from({ length: 4 }, () => ({ outcome: 'red', dirty: 1 })),
   );
   plan('RUN lint: no proof for key');
+});
+
+test('a red under a dirty declaration contests nothing', () => {
+  const { repo, record, plan, proof, contradictions } = setup();
+  repo.write(
+    'proof.yaml',
+    JSON.stringify({
+      version: 1,
+      project: 'example',
+      tasks: { lint: { run: 'exit 98', inputs: ['src/**'] } },
+    }),
+  );
+  expect(record('red').out).toContain("contests nothing: dirty declaration 'proof.yaml'");
+  record('red');
+  expect(proof()).toEqual([{ result_id: 1 }]);
+  expect(contradictions()).toEqual([]);
+  repo.git('restore', '.');
+  plan('PROVEN lint');
 });
 
 test('a failed contradiction insert rolls back its red result', () => {
