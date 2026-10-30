@@ -104,3 +104,9 @@ export function declarations(tree: RefTree) {
     include: 'include' in root ? text(root.include, 'proof.yaml include') : undefined,
   };
 }
+
+export function dirtyDeclaration(dirty: string[], include: string | undefined) {
+  return dirty.find(
+    (path) => path === 'proof.yaml' || (include !== undefined && new Bun.Glob(include).match(path)),
+  );
+}
