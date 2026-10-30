@@ -11,8 +11,8 @@ function matches(pattern: string, value: string) {
   if (parts.length > 2) throw new Error(`unsupported alias '${pattern}'`);
   return parts.length === 1
     ? value === pattern
-    : value.startsWith(parts[0]!) &&
-        value.endsWith(parts[1]!) &&
+    : value.startsWith(parts[0] ?? '') &&
+        value.endsWith(parts[1] ?? '') &&
         value.length >= pattern.length - 1;
 }
 function packageMatch(name: string, edge: string) {

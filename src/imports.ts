@@ -8,9 +8,12 @@ export type Source = {
   read(path: string): string | undefined;
   mode(path: string): string | undefined;
 };
+const sources = new WeakMap<RefTree, Source>();
 export function source(tree: RefTree, dirty?: string[]): Source {
-  return {
-    paths: tree.files.keys(),
+  const cached = dirty === undefined ? sources.get(tree) : undefined;
+  if (cached) return cached;
+  const view: Source = {
+    paths: [...tree.files.keys()],
     read: (path) =>
       tree.files.has(path) && !dirty?.includes(path)
         ? tree.read(path)
@@ -24,6 +27,8 @@ export function source(tree: RefTree, dirty?: string[]): Source {
           ? '100644'
           : undefined,
   };
+  if (dirty === undefined) sources.set(tree, view);
+  return view;
 }
 const extensions = ['.tsx', '.ts', '.jsx', '.cts', '.cjs', '.js', '.mjs', '.mts', '.json'];
 export function resolveImport(path: string, view: Source) {
@@ -81,7 +86,15 @@ function scan(text: string, loader: 'ts' | 'tsx' | 'jsx' | 'js') {
   }
   return result;
 }
+const closures = new WeakMap<Source, Map<string, { paths: Set<string>; reason?: string }>>();
 export function closure(entry: string, view: Source) {
+  let cached = closures.get(view);
+  if (!cached) {
+    cached = new Map();
+    closures.set(view, cached);
+  }
+  const prior = cached.get(entry);
+  if (prior) return prior;
   const paths = new Set<string>();
   const local = metadata(view, (path) => resolveImport(path, view));
   let reason: string | undefined;
@@ -129,5 +142,7 @@ export function closure(entry: string, view: Source) {
   if (entry.startsWith('/') || entry.split('/').some((part) => ['..', '.git'].includes(part)))
     return { paths, reason: `unsafe entry '${entry}'` };
   visit(entry);
-  return { paths, reason };
+  const result = { paths, reason };
+  cached.set(entry, result);
+  return result;
 }

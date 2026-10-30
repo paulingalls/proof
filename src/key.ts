@@ -69,7 +69,7 @@ function select(task: Task, tree: RefTree, dirty: string[] = [], working = false
     const positive = negative ? pattern.slice(1) : pattern;
     const glob = new Bun.Glob(positive);
     let matched = false;
-    for (const path of candidates(available, positive, dirty)) {
+    for (const path of candidates(available, positive, negative ? [...dirty, ...paths] : dirty)) {
       if (glob.match(path)) {
         matched = true;
         if (negative) paths.delete(path);

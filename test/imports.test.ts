@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite';
 import { afterEach, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Repo } from './support/repo';
@@ -134,37 +134,37 @@ test('type-only edges enter the key independently of computed-call guards', () =
 
 test('computed calls and unresolved imports are undecidable with file and expression', () => {
   for (const [code, word] of [
+    ['const x = <div/>; require(name)', 'name'],
     ['import(name)', 'name'],
     ["require('./lib/' + name)", "'./lib/' + name"],
-    ['import(`./${name}`)', '${name}'],
-    ['const x = <div/>; require(name)', 'name'],
+    [`import(\`./\${name}\`)`, `\${name}`],
     ['require /* comment */ (name)', 'name'],
     ["import './missing'", './missing'],
     ["import './bad'", 'bad.ts'],
-  ]) {
+  ] as const) {
     const r = fixture(
       { a: task('src/a.tsx') },
       { 'src/a.tsx': code, 'src/bad.ts': 'export const = ;' },
     );
     const row = plan(r)[0];
     expect(row?.reason).toContain('undecidable');
-    expect(row?.reason).toContain(word!);
+    expect(row?.reason).toContain(word);
     expect(row?.reason).toContain(word === 'bad.ts' ? 'src/bad.ts' : 'src/a.tsx');
   }
 });
 
 test('workspace, aliases, self references and baseUrl imports cannot publish an external proof', () => {
-  const cases = [
+  const cases: [string, string, string, string][] = [
     ['workspace', "import '@local/pkg/sub';", 'workspace import not followed', '@local/pkg/sub'],
     ['alias', "import 'alias/value';", 'workspace import not followed', 'alias/value'],
     ['self', "import 'root/sub';", 'local import not followed', 'root/sub'],
     ['subpath', "import '#local';", 'local import not followed', '#local'],
     ['base', "import 'lib/x';", 'local import not followed', 'lib/x'],
   ];
-  const tasks = Object.fromEntries(cases.map(([name]) => [name!, task(`src/${name}.ts`)]));
+  const tasks = Object.fromEntries(cases.map(([name]) => [name, task(`src/${name}.ts`)]));
   tasks.external = task('external.ts');
   const r = fixture(tasks, {
-    ...Object.fromEntries(cases.map(([name, code]) => [`src/${name}.ts`, code!])),
+    ...Object.fromEntries(cases.map(([name, code]) => [`src/${name}.ts`, code])),
     'external.ts': "import 'example'; import 'bun:sqlite';",
     'package.json': '{"name":"root","workspaces":["packages/*"]}',
     'packages/p/package.json': '{"name":"@local/pkg"}',
@@ -177,7 +177,7 @@ test('workspace, aliases, self references and baseUrl imports cannot publish an 
   const rows = plan(r, env);
   for (const [name, , reason, edge] of cases) {
     const row = rows.find((row) => row.task === name);
-    for (const word of ['undecidable', reason!, edge!, `src/${name}.ts`])
+    for (const word of ['undecidable', reason, edge, `src/${name}.ts`])
       expect(row?.reason).toContain(word);
   }
   expect(rows.at(-1)?.state).toBe('PROVEN');
@@ -245,6 +245,7 @@ test('dirty leaves and new working edges materialize with the committed key', ()
   }
   r.write('src/a.ts', "import {x} from './extra'; if(x !== 3) throw Error('missing closure');");
   r.write('src/extra.ts', "export {x} from './more';");
+  r.write('.git/info/exclude', '/node_modules/\nsrc/more/index.ts\n');
   r.write('src/more/index.ts', 'export const x = 3;');
   expect(plan(r, env)[0]?.reason).toContain('undecidable');
   const run = r.cli(['run'], env);
@@ -264,5 +265,61 @@ test('dirty leaves and new working edges materialize with the committed key', ()
   }
   r.git('reset', '--hard', 'HEAD');
   r.git('clean', '-fd');
+  rmSync(join(r.path, 'src/more'), { recursive: true, force: true });
   expect(plan(r, env)[0]?.state).toBe('PROVEN');
+});
+
+test('closure tuple identity preserves modes and equivalent explicit selection', () => {
+  const r = fixture({ a: task('src/a.ts') });
+  const a = r.git('rev-parse', 'HEAD');
+  chmodSync(join(r.path, 'src/lib/x.ts'), 0o755);
+  r.git('add', 'src/lib/x.ts');
+  r.git('commit', '-qm', 'mode');
+  const b = r.git('rev-parse', 'HEAD');
+  const doc = JSON.parse(r.git('show', 'HEAD:proof.yaml'));
+  doc.tasks.a.inputs = ['src/a.ts', 'src/lib/x.ts'];
+  const c = r.commit({ 'proof.yaml': JSON.stringify(doc) });
+  check(r, [
+    ['mode', a, b, ['a']],
+    ['equivalent', b, c, []],
+  ]);
+});
+
+test('metadata changes are judged at the supplied ref and invalid configs stay undecidable', () => {
+  const r = fixture({ a: task('src/a.ts') }, { 'src/a.ts': "import 'alias';" });
+  const a = r.git('rev-parse', 'HEAD');
+  const b = r.commit({
+    'tsconfig.json': '{"compilerOptions":{"paths":{"alias":["src/lib/x.ts"]}}}',
+  });
+  r.git('rm', 'tsconfig.json');
+  const c = r.commit({});
+  check(r, [
+    ['new alias', a, b, ['a']],
+    ['removed alias', a, c, []],
+  ]);
+  for (const config of ['{', '{"extends":"./missing"}', '{"compilerOptions":{"paths":[]}}']) {
+    r.commit({ 'tsconfig.json': config });
+    const reason = plan(r)[0]?.reason;
+    expect(reason).toContain('undecidable');
+    expect(reason).toContain('src/a.ts');
+    expect(reason).toContain('alias');
+  }
+});
+
+test('reached symlinks are undecidable before their target bytes can masquerade as a blob', () => {
+  const r = fixture({ a: task('src/a.ts') }, { 'src/a.ts': "import './link';" });
+  symlinkSync('lib/x.ts', join(r.path, 'src/link.ts'));
+  r.commit({});
+  expect(plan(r)[0]?.reason).toContain('src/link.ts: unsupported mode 120000');
+});
+
+test('ordered exclusions remove newly reached ignored working targets', () => {
+  const a = task('src/a.ts', 'test ! -e src/hidden.ts');
+  a.inputs.push('!src/hidden.ts');
+  const r = fixture({ a });
+  r.write('.git/info/exclude', '/node_modules/\nsrc/hidden.ts\n');
+  r.write('src/a.ts', "import './hidden';");
+  r.write('src/hidden.ts', 'export {};');
+  const run = r.cli(['run'], state());
+  expect(run.code, run.err + run.out).toBe(0);
 });
