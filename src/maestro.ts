@@ -79,8 +79,6 @@ export function maestro(entry: string, view: Source): Closure {
         fail(flow, command, 'expected command');
         continue;
       }
-      if (containers.has(command)) continue;
-      containers.add(command);
       for (const [kind, value] of Object.entries(command)) {
         if (kind === 'runScript') {
           include(object(value) ? value.file : value, flow, false);

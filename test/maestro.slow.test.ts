@@ -86,16 +86,17 @@ test('nested containers, hooks, cycles and aliases select only reached flow and 
 
 test('undecidable flows name references and still run without recording', () => {
   const cases = [
-    ['variable', `- runFlow: \${FLOW_DIR}/x.yaml`, `\${FLOW_DIR}/x.yaml`],
-    ['missing', '- runScript: absent.js', 'absent.js'],
-    ['entry', '', 'flows/entry.yaml'],
-    ['malformed', '- runFlow: bad.yaml', 'flows/bad.yaml'],
-    ['escape', '- runFlow: ../../outside.yaml', '../../outside.yaml'],
-    ['absolute', '- runFlow: /outside.yaml', '/outside.yaml'],
-    ['git', '- runFlow: ../.git/config', '../.git/config'],
-    ['link', '- runScript: link.js', 'link.js'],
-    ['shape', '- runFlow: {when: {true: false}}', 'runFlow'],
-    ['retry', '- retry: {maxRetries: 2}', 'retry'],
+    ['variable', `- runFlow: \${FLOW_DIR}/x.yaml`, `\${FLOW_DIR}/x.yaml`, 'variable path'],
+    ['missing', '- runScript: absent.js', 'absent.js', 'missing tracked file'],
+    ['entry', '', 'flows/entry.yaml', 'missing tracked file'],
+    ['malformed', '- runFlow: bad.yaml', 'flows/bad.yaml', 'parse failure'],
+    ['escape', '- runFlow: ../../outside.yaml', '../../outside.yaml', 'unsafe path'],
+    ['absolute', '- runFlow: /outside.yaml', '/outside.yaml', 'unsafe path'],
+    ['git', '- runFlow: ../.git/config', '../.git/config', 'unsafe path'],
+    ['link', '- runScript: link.js', 'link.js', 'unsupported mode'],
+    ['shape', '- runFlow: {when: {true: false}}', 'runFlow', 'expected file or commands'],
+    ['retry', '- retry: {maxRetries: 2}', 'retry', 'expected file or commands'],
+    ['documents', '- launchApp\n---\n- launchApp', 'flows/documents.yaml', 'parse failure'],
   ];
   const files = Object.fromEntries(
     cases
@@ -103,18 +104,21 @@ test('undecidable flows name references and still run without recording', () => 
       .map(([id, commands]) => [`flows/${id}.yaml`, flow(commands as string)]),
   );
   const tasks = Object.fromEntries(cases.map(([id]) => [id as string, task(`flows/${id}.yaml`)]));
+  tasks.unsafe = task('flows/../../outside.yaml');
   const r = fixture(tasks, { ...files, 'flows/bad.yaml': 'bad: [', 'leaf.js': 'bytes' });
   symlinkSync('../leaf.js', join(r.path, 'flows/link.js'));
   r.commit({});
   const env = state();
   const rows = plan(r, env);
-  for (const [id, , reference] of cases) {
+  for (const [id, , reference, detail] of cases) {
     const row = rows.find((row) => row.task === id);
     expect(row?.state).toBe('RUN');
     expect(row?.reason).toContain('undecidable');
     expect(row?.reason).toContain(reference as string);
+    expect(row?.reason).toContain(detail as string);
     expect(row?.reason).toContain(`flows/${id === 'malformed' ? 'bad' : id}.yaml`);
   }
+  expect(rows.find((row) => row.task === 'unsafe')?.reason).toContain('unsafe entry');
   const run = r.cli(['run'], env);
   expect(run.code, run.err + run.out).toBe(0);
   for (const [id] of cases) expect(run.out).toContain(`green ${id}; not recorded:`);
