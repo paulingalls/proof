@@ -1,5 +1,7 @@
 function git(...args: string[]) {
-  const result = Bun.spawnSync(['git', ...args]);
+  const result = Bun.spawnSync(['git', ...args], {
+    env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
+  });
   if (result.exitCode !== 0) throw new Error(result.stderr.toString().trim());
   return result.stdout.toString();
 }
@@ -30,4 +32,11 @@ export class RefTree {
     if (!blob) throw new Error(`ref '${this.ref}': missing ${path}`);
     return git('cat-file', 'blob', blob);
   }
+}
+
+export function dirtyPaths() {
+  return git('status', '--porcelain=v1', '-z', '--no-renames', '--untracked-files=all')
+    .split('\0')
+    .filter(Boolean)
+    .map((entry) => entry.slice(3));
 }

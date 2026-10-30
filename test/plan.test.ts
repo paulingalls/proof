@@ -80,3 +80,51 @@ test('store uses XDG state or HOME when no explicit directory is supplied', () =
     ).toBeGreaterThan(0);
   }
 });
+
+test('plan gates selected dirty inputs but ignores unrelated files and tags', () => {
+  const repo = fixture();
+  const doc = JSON.parse(repo.git('show', 'HEAD:proof.yaml'));
+  doc.tasks.lint.inputs = ['src/**', '!src/gen/**', 'src/gen/keep.ts'];
+  repo.commit({
+    'proof.yaml': JSON.stringify(doc),
+    'src/c d.ts': 'space',
+    'src/gen/x.ts': 'excluded',
+    'src/gen/keep.ts': 'included',
+  });
+  const env = state();
+  expect(record(repo, env).code).toBe(0);
+  repo.write('notes/todo.md', 'todo');
+  expect(repo.cli(['plan'], env).out).toContain('PROVEN lint');
+  repo.git('tag', 'release');
+  expect(repo.cli(['plan'], env).out).toContain('PROVEN lint');
+  repo.write('src/gen/x.ts', 'changed');
+  expect(repo.cli(['plan'], env).out).toContain('PROVEN lint');
+  repo.git('restore', '.');
+  for (const [path, stage, remove] of [
+    ['src/a.ts', false, false],
+    ['src/a.ts', true, false],
+    ['src/b.ts', false, false],
+    ['src/c d.ts', false, true],
+    ['src/gen/keep.ts', false, false],
+  ] as const) {
+    if (remove) rmSync(join(repo.path, path));
+    else repo.write(path, 'changed');
+    if (stage) repo.git('add', path);
+    const result = repo.cli(['plan'], env);
+    expect(result.code).toBe(0);
+    expect(result.out).toContain(`RUN lint: undecidable: dirty input '${path}'`);
+    expect(result.out).toContain('RUN docs-check: no proof for key');
+    repo.git('reset', '--hard', 'HEAD');
+    if (path === 'src/b.ts') rmSync(join(repo.path, path));
+  }
+});
+
+test('restored historical bytes are undecidable until committed', () => {
+  const repo = fixture();
+  const env = state();
+  expect(record(repo, env).code).toBe(0);
+  repo.commit({ 'src/a.ts': 'b' });
+  expect(repo.cli(['plan'], env).out).toContain('RUN lint: no proof for key');
+  repo.write('src/a.ts', 'a');
+  expect(repo.cli(['plan'], env).out).toContain("RUN lint: undecidable: dirty input 'src/a.ts'");
+});
