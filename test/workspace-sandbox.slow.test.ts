@@ -112,3 +112,39 @@ for (const dependency of ['dependencies', 'peerDependencies', 'optionalDependenc
     expect(plan().reason).toContain('@app/shared');
   });
 }
+
+test('workspace discovery errors run unpublished and remain visible in plan', () => {
+  const { repo, cli, plan } = fixture('@app/shared');
+  repo.commit({ 'packages/other/package.json': '{"name":"@app/shared"}' });
+  const decision = plan();
+  expect(decision.state).toBe('RUN');
+  expect(decision.reason).toContain('workspace discovery');
+  expect(decision.reason).toContain('duplicate workspace');
+  const result = cli('run');
+  expect(result.code, result.err).toBe(0);
+  expect(result.out).toContain('workspace-one 1');
+  expect(result.out).toContain('workspace discovery');
+  expect(result.out).not.toContain('; proof published');
+});
+
+test('ordinary dangling and file @ entries do not become scope directories', () => {
+  const { repo, cli, plan } = fixture('shared');
+  symlinkSync('missing', join(repo.path, 'node_modules/@dangling'));
+  repo.write('node_modules/@file', 'installed');
+  symlinkSync('@file', join(repo.path, 'node_modules/@file-link'));
+  const result = cli('run');
+  expect(result.code, result.err).toBe(0);
+  expect(result.out).toContain('green linked; proof published');
+  expect(plan().state).toBe('PROVEN');
+});
+
+test('a physical child inside a symlinked scope remains an unrecognized escape', () => {
+  const { repo, cli, plan } = fixture('@app/shared', true);
+  repo.write('scope/extra/index.js', 'export default 2;');
+  expect(plan().reason).toContain('node_modules/@app/extra');
+  const result = cli('run');
+  expect(result.code, result.err).toBe(0);
+  expect(result.out).toContain('green linked; no proof published:');
+  expect(result.out).toContain('node_modules/@app/extra');
+  expect(plan().state).toBe('RUN');
+});
