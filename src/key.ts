@@ -1,8 +1,9 @@
-import type { Task } from './declarations';
+import type { Input, Task } from './declarations';
 import type { RefTree, Scope } from './git';
 
 type Key = { key: string; reason?: never } | { key?: never; reason: string };
 
+const contents = new WeakMap<RefTree, Map<string, string>>();
 const inventories = new WeakMap<RefTree, string[]>();
 
 function inventory(tree: RefTree) {
@@ -36,6 +37,7 @@ function* candidates(available: string[], pattern: string, dirty: string[]) {
 function select(task: Task, available: string[], dirty: string[] = []) {
   const paths = new Set<string>();
   for (const pattern of task.inputs) {
+    if (typeof pattern !== 'string') continue;
     const negative = pattern.startsWith('!');
     const positive = negative ? pattern.slice(1) : pattern;
     const glob = new Bun.Glob(positive);
@@ -55,6 +57,7 @@ function select(task: Task, available: string[], dirty: string[] = []) {
 function selects(task: Task, path: string) {
   let selected = false;
   for (const pattern of task.inputs) {
+    if (typeof pattern !== 'string') continue;
     const negative = pattern.startsWith('!');
     if (new Bun.Glob(negative ? pattern.slice(1) : pattern).match(path)) selected = !negative;
   }
@@ -71,7 +74,7 @@ function prefix(pattern: string) {
 export function scope(tasks: Iterable<Task>, declarations: string[]): Scope {
   const list = [...tasks];
   const patterns = [...declarations, ...list.flatMap((t) => t.inputs)].filter(
-    (p) => !p.startsWith('!'),
+    (p): p is string => typeof p === 'string' && !p.startsWith('!'),
   );
   const prefixes = patterns.map(prefix);
   return {
@@ -90,8 +93,37 @@ export function key(id: string, task: Task, tree: RefTree, dirty: string[] = [])
   }
   const selection = select(task, available);
   if (!selection.paths) return { reason: selection.reason };
-  const selected = [...selection.paths].map((path) => [path, tree.files.get(path)] as const);
+  const selected: ([string, string | undefined] | [string, string, string])[] = [
+    ...selection.paths,
+  ].map((path) => [path, tree.files.get(path)]);
   selected.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  let cached = contents.get(tree);
+  if (!cached) {
+    cached = new Map();
+    contents.set(tree, cached);
+  }
+  const projections = task.inputs.filter(
+    (input): input is Exclude<Input, string> => typeof input !== 'string',
+  );
+  const members = new Map<string, [string, string, string]>();
+  for (const { path, json } of projections) {
+    let source = cached.get(path);
+    if (source === undefined) {
+      source = tree.read(path);
+      cached.set(path, source);
+    }
+    const value = JSON.parse(source);
+    for (const member of json) {
+      members.set(JSON.stringify([path, member]), [
+        path,
+        member,
+        new Bun.CryptoHasher('sha256').update(JSON.stringify(value[member])).digest('hex'),
+      ]);
+    }
+  }
+  selected.push(
+    ...[...members].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, entry]) => entry),
+  );
   const hash = new Bun.CryptoHasher('sha256')
     .update(JSON.stringify([1, id, { run: task.run }, selected]))
     .digest('hex');
