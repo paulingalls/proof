@@ -1,7 +1,8 @@
 import type { RefTree } from './git';
 import { refuseDuplicateKeys } from './yaml-keys';
 
-export type Task = { run: string; inputs: string[] };
+export type Input = string | { path: string; json: string[] };
+export type Task = { run: string; inputs: Input[] };
 
 export function mapping(value: unknown, context: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -23,17 +24,27 @@ export function text(value: unknown, context: string): string {
   return value;
 }
 
-function patterns(value: unknown, context: string): string[] {
+function patterns(value: unknown, context: string): Input[] {
   if (!Array.isArray(value) || !value.length) {
-    throw new Error(`${context}: inputs must be a nonempty string list`);
+    throw new Error(`${context}: inputs must be a nonempty list`);
   }
-  return value.map((entry, index) =>
-    text(entry, `${context} input ${index + 1} (quote '!' patterns)`),
-  );
+  return value.map((entry, index) => {
+    const label = `${context} input ${index + 1} (quote '!' patterns)`;
+    if (!entry || typeof entry !== 'object') return text(entry, label);
+    const projection = mapping(entry, label);
+    fields(projection, ['path', 'json'], label);
+    if (!Array.isArray(projection.json) || !projection.json.length) {
+      throw new Error(`${label}: json must be a nonempty member list`);
+    }
+    return {
+      path: text(projection.path, `${label} path`),
+      json: projection.json.map((member) => text(member, `${label} json member`)),
+    };
+  });
 }
 
 export function declarations(tree: RefTree) {
-  const sets = new Map<string, string[]>();
+  const sets = new Map<string, Input[]>();
   const tasks = new Map<string, Task>();
   const contexts = new Map<string, string>();
   function read(path: string, root: boolean) {
@@ -87,9 +98,9 @@ export function declarations(tree: RefTree) {
     if (!paths.length) throw new Error(`ref '${tree.ref}': unmatched include '${pattern}'`);
     for (const path of paths) read(path, false);
   }
-  function expand(inputs: string[], context: string, stack: string[] = []): string[] {
+  function expand(inputs: Input[], context: string, stack: string[] = []): Input[] {
     return inputs.flatMap((pattern) => {
-      if (!pattern.startsWith('$')) return [pattern];
+      if (typeof pattern !== 'string' || !pattern.startsWith('$')) return [pattern];
       const name = pattern.slice(1);
       const set = sets.get(name);
       if (!set) throw new Error(`${context}: unknown input set '${name}'`);
