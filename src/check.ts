@@ -30,10 +30,10 @@ export async function check(path: string) {
   for (const c of cases) {
     const from = new RefTree(c.from);
     const to = new RefTree(c.to);
-    const oldTasks = declarations(from);
+    const oldTasks = declarations(from).tasks;
     const actual = new Set<string>();
     const reasons: string[] = [];
-    for (const [id, task] of declarations(to)) {
+    for (const [id, task] of declarations(to).tasks) {
       const old = oldTasks.get(id);
       const current = key(id, task, to);
       if (current.reason) reasons.push(`  RUN ${id}: ${current.reason}`);

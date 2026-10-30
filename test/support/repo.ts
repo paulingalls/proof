@@ -14,8 +14,9 @@ export function isolatedEnv() {
 export class Repo {
   readonly path = mkdtempSync(join(tmpdir(), 'proof-'));
 
-  constructor() {
-    this.git('init', '-q');
+  constructor(source?: Repo) {
+    if (source) this.git('clone', '-q', source.path, '.');
+    else this.git('init', '-q');
     this.git('config', 'user.name', 'Proof Test');
     this.git('config', 'user.email', 'proof@example.invalid');
     this.git('config', 'commit.gpgsign', 'false');
@@ -45,9 +46,15 @@ export class Repo {
 
   check(cases: unknown) {
     this.write('.git/cases.yaml', JSON.stringify(cases));
-    const result = Bun.spawnSync([process.execPath, cli, 'check', '.git/cases.yaml'], {
+    return this.cli(['check', '.git/cases.yaml']);
+  }
+
+  cli(args: string[], overrides: Record<string, string> = {}) {
+    const env: Record<string, string | undefined> = isolatedEnv();
+    for (const name of ['PROOF_STATE_DIR', 'XDG_STATE_HOME', 'HOME']) delete env[name];
+    const result = Bun.spawnSync([process.execPath, cli, ...args], {
       cwd: this.path,
-      env: isolatedEnv(),
+      env: { ...env, ...overrides },
     });
     return {
       code: result.exitCode,

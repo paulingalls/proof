@@ -31,7 +31,7 @@ function patterns(value: unknown, context: string): string[] {
   );
 }
 
-export function declarations(tree: RefTree): Map<string, Task> {
+export function declarations(tree: RefTree) {
   const sets = new Map<string, string[]>();
   const tasks = new Map<string, Task>();
   const contexts = new Map<string, string>();
@@ -98,5 +98,9 @@ export function declarations(tree: RefTree): Map<string, Task> {
   for (const [id, task] of tasks) {
     task.inputs = expand(task.inputs, `ref '${tree.ref}' task '${id}'`);
   }
-  return tasks;
+  return {
+    project: text(root.project, 'proof.yaml project'),
+    tasks,
+    include: 'include' in root ? text(root.include, 'proof.yaml include') : undefined,
+  };
 }
