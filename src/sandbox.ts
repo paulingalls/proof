@@ -56,6 +56,7 @@ export function inspectLinks(paths: string[], tracked: Iterable<string>) {
   const trusted: string[] = [];
   const escapes: string[] = [];
   if (!paths.length) return { trusted, escapes };
+  const trackedPaths = [...tracked];
   const repo = realpathSync('.');
   for (const path of paths) {
     try {
@@ -72,7 +73,7 @@ export function inspectLinks(paths: string[], tracked: Iterable<string>) {
       const reached =
         base === undefined
           ? undefined
-          : [...tracked].find((file) => !base || file === base || file.startsWith(`${base}/`));
+          : trackedPaths.find((file) => !base || file === base || file.startsWith(`${base}/`));
       if (reached) {
         escapes.push(`link '${path}' reaches tracked '${reached}'`);
         continue;

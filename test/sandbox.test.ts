@@ -294,11 +294,16 @@ for (const via of ['tracked directory', 'ignored symlink to it']) {
     });
     if (via !== 'tracked directory') symlinkSync('src', join(repo.path, 'deps'));
     const link = via === 'tracked directory' ? 'src' : 'deps';
-    declare([link], `grep -q ok ${link}/a.txt`);
+    declare(['node_modules', link], `grep -q ok ${link}/a.txt`);
     const result = run();
     expect(result.out).toContain('green linked; no proof published:');
     expect(result.out).toContain("tracked 'src/a.txt'");
     expect(rows(env, 'proofs')).toEqual([]);
     expect(cli('plan').out).toContain('RUN linked');
+    repo.commit({ 'src/a.txt': 'bad' });
+    const changed = run();
+    expect(changed.code).toBe(1);
+    expect(changed.out).toContain('red linked');
+    expect(changed.out).not.toContain('PROVEN linked');
   });
 }
