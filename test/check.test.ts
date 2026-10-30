@@ -176,6 +176,11 @@ test('rejects silent declaration corruption at the CLI boundary', () => {
       },
       ['cyclic', 'a'],
     ],
+    [
+      'unmatched include',
+      { 'proof.yaml': `${declaration}include: absent/*.yaml\n` },
+      ['include', 'absent/*.yaml'],
+    ],
     ['empty inputs', { 'proof.yaml': declaration.replace('[src/**]', '[]') }, ['lint', 'inputs']],
     [
       'unquoted negation',
