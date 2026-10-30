@@ -126,7 +126,10 @@ test('reads included declarations at each ref despite dirty checkout declaration
     'web/a.ts': 'web',
   });
   const b = r.commit({ 'web/a.ts': 'changed' });
-  const cases = [item('web change', a, b, ['web'])];
+  const c = r.commit({
+    'proof.d/web.yaml': 'tasks:\n  web:\n    run: exit 98\n    inputs: [web/**]\n',
+  });
+  const cases = [item('web change', a, b, ['web']), item('included command', b, c, ['web'])];
   expect(r.check(cases).code).toBe(0);
   r.write('proof.yaml', ': invalid [');
   r.write('proof.d/web.yaml', ': invalid [');
@@ -134,6 +137,7 @@ test('reads included declarations at each ref despite dirty checkout declaration
   const result = r.check(cases);
   expect(result.code).toBe(0);
   expect(result.out).toContain('PASS web change');
+  expect(result.out).toContain('PASS included command');
 });
 
 test('schema errors identify offending declarations and refs override prior mismatches', () => {
