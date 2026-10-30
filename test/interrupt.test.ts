@@ -5,6 +5,57 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Repo } from './support/repo';
 
+for (const [command, outcome] of [
+  ['kill -TERM $$', 'incomplete'],
+  ['exit 143', 'red'],
+] as const) {
+  test(`${command}: records ${outcome} against a contested proof`, () => {
+    const repo = new Repo();
+    const state = mkdtempSync(join(tmpdir(), 'proof-state-'));
+    const temporary = mkdtempSync(join(tmpdir(), 'proof-tmp-'));
+    const env = { PROOF_STATE_DIR: state, TMPDIR: temporary };
+    let db: Database | undefined;
+    try {
+      repo.commit({
+        'proof.yaml': JSON.stringify({
+          version: 1,
+          project: 'killed',
+          tasks: { killed: { run: command, inputs: ['input'] } },
+        }),
+        input: 'selected',
+      });
+      for (const seed of ['green', 'red'])
+        expect(repo.cli(['record', 'killed', '--outcome', seed], env).code).toBe(0);
+      db = new Database(join(state, 'proof.db'));
+      const rows = (table: string) => db?.query(`SELECT * FROM ${table} ORDER BY rowid`).all();
+      const proofs = rows('proofs');
+      const contests = rows('contradictions');
+      const result = repo.cli(['run'], env);
+      expect(result.code).toBe(1);
+      expect(result.err).toBe('');
+      expect(result.out).toContain(`${outcome} killed`);
+      expect(rows('results')).toMatchObject([
+        { outcome: 'green' },
+        { outcome: 'red' },
+        { outcome },
+      ]);
+      if (outcome === 'incomplete') {
+        expect(rows('proofs')).toEqual(proofs);
+        expect(rows('contradictions')).toEqual(contests);
+        expect(repo.cli(['plan'], env).out).toContain('RUN killed: contested:');
+      } else {
+        expect(rows('proofs')).toEqual([]);
+        expect(rows('contradictions')).toHaveLength(2);
+      }
+      expect(readdirSync(temporary)).toEqual([]);
+    } finally {
+      db?.close();
+      repo.close();
+      for (const path of [state, temporary]) rmSync(path, { recursive: true, force: true });
+    }
+  });
+}
+
 function alive(pid: number) {
   try {
     process.kill(pid, 0);

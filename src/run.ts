@@ -27,7 +27,7 @@ export async function run(args: string[]) {
   const ids = [...roster.keys()].filter((id) => !args.length || args.slice(1).includes(id));
   const store = new Store();
   const summary: string[] = [];
-  let red = false;
+  let failed = false;
   let interrupted: 'SIGINT' | 'SIGTERM' | undefined;
   let active: ReturnType<typeof Bun.spawn> | undefined;
   const interrupt = (signal: 'SIGINT' | 'SIGTERM') => {
@@ -81,9 +81,10 @@ export async function run(args: string[]) {
         // A shell may exit before its foreground child has finished handling the signal.
         if (interrupted) while (signalGroup(child.pid, 0)) await Bun.sleep(10);
         active = undefined;
-        const outcome = interrupted ? 'incomplete' : code === 0 ? 'green' : 'red';
+        const outcome =
+          interrupted || child.signalCode ? 'incomplete' : code === 0 ? 'green' : 'red';
         const seconds = (performance.now() - started) / 1000;
-        red ||= outcome === 'red';
+        failed ||= outcome !== 'green';
         let unpublished = dirty.length ? `dirty path '${dirty[0]}'` : undefined;
         if (!unpublished) {
           if (new RefTree('HEAD').commit !== tree.commit) unpublished = 'HEAD changed';
@@ -127,7 +128,7 @@ export async function run(args: string[]) {
       }
     }
     console.log(summary.join('\n'));
-    return interrupted ? (interrupted === 'SIGINT' ? 130 : 143) : red ? 1 : 0;
+    return interrupted ? (interrupted === 'SIGINT' ? 130 : 143) : failed ? 1 : 0;
   } finally {
     process.off('SIGINT', onInt);
     process.off('SIGTERM', onTerm);
