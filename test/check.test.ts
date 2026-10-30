@@ -105,3 +105,15 @@ test('applies negation in order over the complete inventory', () => {
   expect(result.out).toContain('PASS excluded bytes');
   expect(result.out).toContain('PASS order grows');
 });
+
+test('an unmatched input runs with its reason, including exclusions', () => {
+  const r = repo();
+  for (const pattern of ['missing/**', '!absent/**']) {
+    const a = baseline(r, declaration.replace('[src/**]', `["src/**", "${pattern}"]`));
+    const b = r.commit({ 'CHANGELOG.md': pattern });
+    const result = r.check([item(pattern, a, b, ['lint'])]);
+    expect(result.code).toBe(0);
+    expect(result.out).toContain(`PASS ${pattern}`);
+    expect(result.out).toContain(`RUN lint: unmatched input '${pattern}'`);
+  }
+});

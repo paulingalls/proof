@@ -14,7 +14,9 @@ export async function check(path: string) {
     const actual = new Set<string>();
     for (const [id, task] of declarations(to)) {
       const old = oldTasks.get(id);
-      if (!old || key(id, old, from) !== key(id, task, to)) actual.add(id);
+      const current = key(id, task, to);
+      if (current.reason) console.log(`  RUN ${id}: ${current.reason}`);
+      if (!old || current.reason || key(id, old, from).key !== current.key) actual.add(id);
     }
     const missing = [...new Set(c.expect)].filter((id) => !actual.has(id));
     const extra = [...actual].filter((id) => !c.expect.includes(id));
