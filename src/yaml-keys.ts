@@ -170,9 +170,7 @@ export function refuseDuplicateKeys(source: string): void {
       if (sequence) {
         if (text[pos] !== '-' || !/\s/.test(text[pos + 1] ?? '')) return;
         pos++;
-        horizontal();
-        if (text[pos] === '\n' || text[pos] === '#') value(indent);
-        else block(column());
+        entry(indent);
         continue;
       }
       if (text[pos] === '[' || text[pos] === '{') {
@@ -203,8 +201,22 @@ export function refuseDuplicateKeys(source: string): void {
         return;
       }
       pos++;
-      value(indent);
+      if (explicit) entry(indent);
+      else value(indent);
     }
+  }
+  // After `- ` or an explicit `: `, a node on the same line is a compact mapping only when a
+  // key separator follows its first scalar; otherwise it is a value that may span lines.
+  function entry(indent: number) {
+    horizontal();
+    const start = pos;
+    if (text[pos] === '\n' || text[pos] === '#') return value(indent);
+    const explicit = text[pos] === '?' && /\s/.test(text[pos + 1] ?? '');
+    if (!explicit && text[pos] !== '[' && text[pos] !== '{') scalar(false);
+    const mapping = pos === start || text[pos] === ':';
+    pos = start;
+    if (mapping) block(column());
+    else value(indent);
   }
   while (pos < text.length) {
     space();

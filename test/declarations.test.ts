@@ -65,6 +65,11 @@ test('decodes keys and tracks mapping boundaries in accepted YAML and JSON', () 
       'lint',
       9,
     ],
+    [
+      `tasks:\n  lint:\n    inputs:\n      - >\n        src/**\n      - src/a\n        b\n    run: x\ntasks: {}`,
+      'tasks',
+      11,
+    ],
     [`tasks:\n  lint: ${task}\n  1: ${task}\n  0x1: ${task}`, '1', 6],
     [`inputs:\n  ~: [src/**]\n  : [src/**]\n${lint}`, 'null', 5],
   ];
