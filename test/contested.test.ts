@@ -211,3 +211,32 @@ test('ignored selected files block proof reuse and publication without contestin
     { outcome: 'red', dirty: 1 },
   ]);
 });
+
+for (const flag of ['assume-unchanged', 'skip-worktree']) {
+  for (const path of ['src/a.ts', 'proof.yaml', 'proof.d/tasks.yaml']) {
+    test(`${flag} on ${path} blocks proof reuse, publication and contests without changing the index`, () => {
+      const { repo, record, plan, proof, contradictions } = setup();
+      const root = JSON.parse(repo.git('show', 'HEAD:proof.yaml'));
+      repo.commit({
+        'proof.yaml': JSON.stringify({ ...root, include: 'proof.d/*.yaml' }),
+        'proof.d/tasks.yaml': 'tasks: {}',
+      });
+      record('green');
+      repo.git('update-index', `--${flag}`, path);
+      const index = repo.git('ls-files', '-v', '--', path);
+      const reason = `dirty ${path === 'src/a.ts' ? 'input' : 'declaration'} '${path}'`;
+      plan(`RUN lint: undecidable: ${reason}`);
+      repo.write(path, 'suppressed edit');
+      plan(`RUN lint: undecidable: ${reason}`);
+      expect(record('green').out).toContain('no proof published: dirty path');
+      expect(record('red').out).toContain(`contests nothing: ${reason}`);
+      record('red');
+      expect(proof()).toEqual([{ result_id: 2 }]);
+      expect(contradictions()).toEqual([]);
+      expect(repo.git('ls-files', '-v', '--', path)).toBe(index);
+      repo.git('update-index', `--no-${flag}`, path);
+      repo.git('restore', path);
+      plan('PROVEN lint');
+    });
+  }
+}

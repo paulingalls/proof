@@ -36,7 +36,7 @@ export class RefTree {
 
 // Explicit flags override status.renames, status.showUntrackedFiles and submodule ignore config.
 export function dirtyPaths() {
-  return git(
+  const paths = git(
     'status',
     '--porcelain=v1',
     '-z',
@@ -48,4 +48,9 @@ export function dirtyPaths() {
     .split('\0')
     .filter(Boolean)
     .map((entry) => entry.slice(3));
+  // Status trusts these index flags, so cleanliness cannot be established for their paths.
+  for (const entry of git('ls-files', '-v', '-z').split('\0')) {
+    if (/^[a-zS] /.test(entry)) paths.push(entry.slice(2));
+  }
+  return [...new Set(paths)];
 }
