@@ -82,10 +82,11 @@ function reader(view: Source) {
     ambiguous = false,
     stack: string[] = [],
   ): string | undefined {
+    return file(path, ambiguous) ?? directory(path, deps, stack);
+  }
+  function directory(path: string, deps: Set<string>, stack: string[] = []): string | undefined {
     safe(path);
     if (stack.includes(path)) throw new Error(`cyclic package entry '${path}'`);
-    const direct = file(path, ambiguous);
-    if (direct) return direct;
     const manifest = posix.join(path, 'package.json');
     let pkg: Record<string, unknown> = {};
     if (view.mode(manifest)) {
@@ -261,7 +262,7 @@ function reader(view: Source) {
           throw new Error(`${name}: unsupported exports resolution: ${error}`);
         }
       }
-      const target = resolve(sub === '.' ? dir : posix.join(dir, sub), deps, sub !== '.');
+      const target = sub === '.' ? directory(dir, deps) : resolve(posix.join(dir, sub), deps, true);
       if (!target) throw new Error(`${name}: unresolved package entry`);
       return target;
     }

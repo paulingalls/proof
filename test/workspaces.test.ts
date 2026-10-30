@@ -348,3 +348,14 @@ test('a dirty workspace name change cannot masquerade as the previous external p
   r.write('packages/new/package.json', '{"name":"@app/new","main":"../shared/src/index.ts"}');
   expect(plan(r, env)[0]?.reason).toContain("dirty input 'packages/new/package.json'");
 });
+
+test('a workspace package directory cannot be shadowed by a sibling source file', () => {
+  const r = fixture({
+    'packages/shared/package.json': '{"name":"@app/shared","main":"./src/index.ts"}',
+    'packages/shared.ts': 'export {};',
+  });
+  changes(r, [
+    ['packages/shared/src/index.ts', 'export const n = 2;', ['a']],
+    ['packages/shared.ts', 'export const n = 2;', []],
+  ]);
+});
