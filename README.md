@@ -119,6 +119,21 @@ proof doctor                 which store is in use, and whether it's reachable
 `run` exits 0 when every task is proven or green, 1 when one is red, 130/143 when interrupted;
 any command exits 2 on a usage, declaration or store error.
 
+`proof check` compares the exact RUN set between committed refs without executing the declared
+commands. After the Quickstart's `src/text.ts` edit and commit, save this as `cases.yaml`:
+
+```yaml
+- name: text source edit
+  from: HEAD~1
+  to: HEAD
+  expect: [text]
+```
+
+Run `bunx proof check cases.yaml`. It prints `PASS text source edit` and exits 0. A mismatched set prints `FAIL` with `missing:` and `extra:` task ids and exits 1.
+A case assumes every task is proven at `from`, so a task proof can't decide there fails the case
+(`from <ref>: <task> undecidable: <reason>`). One undecidable at `to` must run: it prints a `RUN`
+diagnostic and counts as selected.
+
 Planned, specified in [R16](docs/2026-10-30-proof-requirements.md) and design §4.6:
 
 ```
