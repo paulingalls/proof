@@ -153,6 +153,44 @@ test('offline results stay local across reopen and online reads never merge loca
   }
 }, 30_000);
 
+for (const reds of [1, 2]) {
+  test(`${reds} unshared reds veto the shared green after reconnect until a clean local green`, async () => {
+    const { repo, clone, a, b, sql, record } = await setup();
+    record('green');
+    postgres.stop();
+    try {
+      for (let i = 0; i < reds; i++) expect(record('red').out).toContain('not shared');
+      expect(repo.cli(['plan'], a).out).not.toContain('PROVEN lint');
+    } finally {
+      await postgres.restart();
+    }
+    const blocked = () => {
+      const result = repo.cli(['plan'], a);
+      expect(result.code).toBe(0);
+      expect(result.err).toBe('');
+      expect(result.out).toContain('RUN lint: contested:');
+      expect(result.out).not.toContain('PROVEN lint');
+    };
+    blocked();
+    record('incomplete');
+    repo.write('proof.yaml', `${repo.git('show', 'HEAD:proof.yaml')}\n`);
+    record('green');
+    repo.git('restore', '.');
+    blocked();
+    expect(clone.cli(['plan'], b).out).toContain('PROVEN lint');
+    expect(await sql`SELECT outcome FROM results ORDER BY id`).toEqual([
+      { outcome: 'green' },
+      { outcome: 'incomplete' },
+      { outcome: 'green' },
+    ]);
+    const run = repo.cli(['run', '--tasks', 'lint'], a);
+    expect(run.code).toBe(0);
+    expect(run.out).toContain('executed-lint');
+    expect(run.out).toContain('green lint; proof published; shared');
+    expect(repo.cli(['plan'], a).out).toContain('PROVEN lint');
+  }, 30_000);
+}
+
 test('a stalled handshake falls back once within five seconds for all tasks', async () => {
   const { repo, a } = await setup();
   const endpoint = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } });
@@ -284,11 +322,11 @@ test('losing Postgres after planning retains results and makes only the attempte
   }
 }, 30_000);
 
-for (const outcome of ['green', 'incomplete']) {
+for (const outcome of ['green', 'incomplete', 'red']) {
   test(`local ${outcome} and observed contest commit before the remote commit is lost`, async () => {
     const { repo, a, b, sql, record, rows } = await setup();
     record('green');
-    record('red', b);
+    if (outcome !== 'red') record('red', b);
     await sql.unsafe(`CREATE FUNCTION block_commit() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN PERFORM pg_advisory_xact_lock(123456); RETURN NEW; END $$;
       CREATE CONSTRAINT TRIGGER block_commit AFTER INSERT ON results
@@ -314,10 +352,12 @@ for (const outcome of ['green', 'incomplete']) {
       const result = await done;
       fallback(result);
       expect(result.out).toContain('sharing uncertain');
-      expect(await sql`SELECT outcome FROM results ORDER BY id`).toEqual([
-        { outcome: 'green' },
-        { outcome: 'red' },
-      ]);
+      expect(await sql`SELECT outcome FROM results ORDER BY id`).toEqual(
+        outcome === 'red' ? [{ outcome: 'green' }] : [{ outcome: 'green' }, { outcome: 'red' }],
+      );
+      if (outcome === 'red') {
+        expect(repo.cli(['plan'], a).out).toContain('RUN lint: contested:');
+      }
       const local = repo.cli(['plan'], { PROOF_STATE_DIR: a.PROOF_STATE_DIR });
       expect(local.out).toContain(outcome === 'green' ? 'PROVEN lint' : 'RUN lint: contested:');
     } finally {

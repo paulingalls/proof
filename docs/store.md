@@ -5,7 +5,11 @@ first to its local SQLite file, `proof.db` in its state directory, then to
 Postgres. Both records carry the same metadata and timestamp, with independent
 result IDs. SQLite stores only this machine's own results; reading a shared proof
 does not import another machine's results. Online planning uses the shared answer,
-even when an unshared green exists locally.
+even when an unshared green exists locally. An eligible local red whose share is
+absent or uncertain vetoes a shared green after reconnect. This per-key veto
+survives local proof deletion; incomplete results and dirty greens cannot clear
+it. A clean local green clears it, as does confirmation that the red was shared.
+Reconnection alone does not.
 
 For `plan`, `run` and `record`, a connection attempt has a two-second timeout. If
 the store is unreachable at startup, during a read, or while publishing, the

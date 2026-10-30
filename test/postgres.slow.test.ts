@@ -253,7 +253,10 @@ for (const table of ['proofs', 'contradictions']) {
     expect(await sql`SELECT outcome FROM results`).toEqual([{ outcome: 'green' }]);
     expect(await sql`SELECT * FROM proofs`).toEqual(before);
     expect(await sql`SELECT * FROM contradictions`).toHaveLength(0);
-    plan('PROVEN lint');
+    plan(table === 'proofs' ? 'PROVEN lint' : 'RUN lint: contested:');
+    const shared = repo.cli(['plan'], { ...env, PROOF_STATE_DIR: directory() });
+    expect(shared.code).toBe(0);
+    expect(shared.out).toContain('PROVEN lint');
   }, 30_000);
 }
 

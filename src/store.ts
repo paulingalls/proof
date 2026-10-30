@@ -92,6 +92,11 @@ async function initialize(backend: Backend) {
         result_id INTEGER PRIMARY KEY REFERENCES results(id),
         red_commit TEXT NOT NULL, red_host TEXT NOT NULL
       )`);
+    if (!backend.remote)
+      await query(`CREATE TABLE IF NOT EXISTS unshared_reds (
+        project TEXT NOT NULL, task TEXT NOT NULL, key TEXT NOT NULL,
+        result_id INTEGER NOT NULL REFERENCES results(id), PRIMARY KEY (project, task, key)
+      )`);
     if (!row) await query('INSERT INTO schema_version (singleton, version) VALUES (1, 1)');
     return row?.version ?? 1;
   });
@@ -166,7 +171,15 @@ export class Store {
       try {
         const proof = await this.lookup(project, task, key, this.remote.query, false);
         await this.observe(project, task, key, this.remote.query, proof);
-        return proof;
+        const [red] = await this.local.query<{ red_commit: string; red_host: string }>(
+          `SELECT r."commit" AS red_commit, r.host AS red_host
+          FROM unshared_reds u JOIN results r ON r.id = u.result_id
+          WHERE u.project = ? AND u.task = ? AND u.key = ?`,
+          project,
+          task,
+          key,
+        );
+        return proof && red ? { ...proof, ...red } : proof;
       } catch (error) {
         this.fallback(error);
       }
@@ -289,16 +302,36 @@ export class Store {
               );
           }
         }
+        if (!backend.remote) {
+          if (outcome === 'red' && !dirtyInputs)
+            await query(
+              `INSERT INTO unshared_reds (project, task, key, result_id) VALUES (?, ?, ?, ?)
+              ON CONFLICT (project, task, key) DO UPDATE SET result_id = excluded.result_id`,
+              project,
+              task,
+              key,
+              result.id,
+            );
+          if (outcome === 'green' && !dirty)
+            await query(
+              'DELETE FROM unshared_reds WHERE project = ? AND task = ? AND key = ?',
+              project,
+              task,
+              key,
+            );
+        }
         if (backend.remote) {
           const proof = await this.lookup(project, task, key, query, false);
           await this.observe(project, task, key, query, proof);
         }
+        return result.id;
       });
-    await write(this.local);
+    const localId = await write(this.local);
     if (!this.remote) return 'local';
     if (this.offline) return 'not shared';
     try {
       await write(this.remote);
+      await this.local.query('DELETE FROM unshared_reds WHERE result_id = ?', localId);
       return 'shared';
     } catch (error) {
       this.fallback(error);
