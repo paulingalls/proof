@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0
+
+- Providers: `providers: {<name>: {start, stop?}}` and a task's `needs:`. `proof run` starts each
+  provider once, only if a task that must run needs it, and runs `stop` once after the last
+  dependent, also on failure and interruption. `plan` names the providers a run would start.
+  Providers run in the checkout with the caller's environment; dependents keep their sandbox.
+  Neither `providers` nor `needs` enters a key (R4). A failed start records its dependents
+  `incomplete`, which contests no proof, and `run` exits 1 naming the provider.
+
 ## 0.6.0
 
 - `{maestro: <flow.yaml>}` inputs: a journey keys its flow and every file reached through `runFlow`,
