@@ -229,3 +229,51 @@ test('a submodule pointer bump re-runs the task whose glob covers it', () => {
   expect(result.out).toContain('PASS bump');
   expect(result.code).toBe(0);
 });
+
+test('glob boundaries preserve exact selections beside neighboring paths', () => {
+  const r = repo();
+  const patterns = {
+    literal: ['src/a.ts'],
+    directory: ['src/**'],
+    wildcard: ['**/b.ts'],
+    braces: ['src/{a,b}.ts'],
+    classes: ['src/[ab].ts'],
+    extglob: ['src/@(a|b).ts'],
+    doubleNegative: ['src/**', '!!src/private/**'],
+    escaped: ['src/\\[literal\\].ts'],
+  };
+  const a = r.commit({
+    'proof.yaml': JSON.stringify({
+      version: 1,
+      project: 'fixture',
+      tasks: Object.fromEntries(
+        Object.entries(patterns).map(([id, inputs]) => [id, { run: 'exit 99', inputs }]),
+      ),
+    }),
+    'src/a.ts': 'a',
+    'src/a.tsx': 'neighbor',
+    'src/b.ts': 'b',
+    'src-neighbor/a.ts': 'neighbor',
+    'src/private/a.ts': 'private',
+    'src/[literal].ts': 'escaped',
+  });
+  const edits: [string, string[]][] = [
+    ['src/a.ts', ['literal', 'directory', 'braces', 'classes', 'extglob']],
+    ['src/a.tsx', ['directory']],
+    ['src/b.ts', ['directory', 'wildcard', 'braces', 'classes', 'extglob']],
+    ['src-neighbor/a.ts', []],
+    ['src/private/a.ts', ['directory', 'doubleNegative']],
+    ['src/[literal].ts', ['directory', 'escaped']],
+  ];
+  const cases = edits.flatMap(([path, expected]) => {
+    r.git('reset', '--hard', a);
+    const b = r.commit({ [path]: 'changed' });
+    return [item(path, a, b, expected), item(`${path} reverse`, b, a, expected)];
+  });
+  const result = r.check(cases);
+  expect(result).toEqual({
+    code: 0,
+    err: '',
+    out: cases.map((c) => `PASS ${c.name}\n`).join(''),
+  });
+});
