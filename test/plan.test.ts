@@ -171,3 +171,34 @@ test('JSON emits the same decisions as plain plan with exactly the public fields
       .join(''),
   ).toBe(plain.out);
 });
+
+test('dirty root or included declarations make every task undecidable', () => {
+  const repo = fixture();
+  const root = JSON.parse(repo.git('show', 'HEAD:proof.yaml'));
+  root.include = 'proof.d/*.yaml';
+  repo.commit({
+    'proof.yaml': JSON.stringify(root),
+    'proof.d/extra.yaml': JSON.stringify({
+      tasks: {
+        missing: { run: 'exit 99', inputs: ['absent/**'] },
+      },
+    }),
+  });
+  const env = state();
+  expect(record(repo, env).code).toBe(0);
+  expect(repo.cli(['plan'], env).out).toContain(
+    "RUN missing: undecidable: unmatched input 'absent/**'",
+  );
+  for (const path of ['proof.yaml', 'proof.d/extra.yaml', 'proof.d/new.yaml']) {
+    repo.write(path, 'uncommitted declaration');
+    const result = repo.cli(['plan'], env);
+    expect(result.code).toBe(0);
+    expect(result.out.trim().split('\n')).toEqual(
+      ['lint', 'docs-check', 'missing'].map(
+        (id) => `RUN ${id}: undecidable: dirty declaration '${path}'`,
+      ),
+    );
+    repo.git('restore', '.');
+    if (path.endsWith('new.yaml')) rmSync(join(repo.path, path));
+  }
+});
