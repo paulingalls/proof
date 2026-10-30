@@ -19,12 +19,22 @@ export function plan() {
   }
 }
 
-export function inspectTaskLinks(task: Task, tree: RefTree, dirty: string[]) {
+export function inspectTaskLinks(
+  task: Task,
+  tree: RefTree,
+  dirty: string[],
+  materialized?: ReturnType<typeof inspectLinks>,
+) {
   let view: ReturnType<typeof source> | undefined;
-  return inspectLinks(task.links ?? [], tree.files.keys(), () => {
-    view ??= source(tree, dirty.length ? dirty : undefined);
-    return workspaces(view).names();
-  });
+  return inspectLinks(
+    task.links ?? [],
+    tree.files.keys(),
+    () => {
+      view ??= source(tree, dirty.length ? dirty : undefined);
+      return workspaces(view).names();
+    },
+    materialized?.modules,
+  );
 }
 
 export function decide(

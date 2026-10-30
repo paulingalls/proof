@@ -101,7 +101,10 @@ export async function run(args: string[]) {
           }
         }
         const escapes = [
-          ...new Set([...inspection.escapes, ...inspectTaskLinks(task, tree, dirty).escapes]),
+          ...new Set([
+            ...inspection.escapes,
+            ...inspectTaskLinks(task, tree, dirty, inspection).escapes,
+          ]),
         ];
         if (escapes.length) unpublished = [unpublished, ...escapes].filter(Boolean).join('; ');
         if (current.key !== undefined) {

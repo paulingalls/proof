@@ -113,6 +113,25 @@ for (const dependency of ['dependencies', 'peerDependencies', 'optionalDependenc
   });
 }
 
+test('a new post-run workspace redirect cannot bless an unredirected sandbox link', () => {
+  const { repo, cli, plan } = fixture('shared');
+  const installed = join(repo.path, 'node_modules/shared');
+  rmSync(installed);
+  repo.write('node_modules/shared/package.json', '{"name":"shared"}');
+  repo.write('node_modules/shared/index.js', 'export default 1;');
+  const doc = JSON.parse(repo.git('show', 'HEAD:proof.yaml'));
+  doc.tasks.linked.run =
+    `rm -rf '${installed}'; ln -s ../packages/shared '${installed}'; ` +
+    'cat node_modules/shared/hidden.txt';
+  repo.commit({ 'proof.yaml': JSON.stringify(doc) });
+  const result = cli('run');
+  expect(result.code, result.err).toBe(0);
+  expect(result.out).toContain('secret');
+  expect(result.out).toContain('green linked; no proof published:');
+  expect(result.out).toContain("workspace redirect changed 'node_modules/shared'");
+  expect(plan().state).toBe('RUN');
+});
+
 test('workspace discovery errors run unpublished and remain visible in plan', () => {
   const { repo, cli, plan } = fixture('@app/shared');
   repo.commit({ 'packages/other/package.json': '{"name":"@app/shared"}' });

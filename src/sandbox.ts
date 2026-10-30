@@ -64,6 +64,7 @@ export function inspectLinks(
   paths: string[],
   tracked: Iterable<string>,
   workspaceNames: () => Map<string, string>,
+  materialized?: Map<string, ModuleDirectory>,
 ) {
   const trusted: string[] = [];
   const escapes: string[] = [];
@@ -119,6 +120,12 @@ export function inspectLinks(
           if (mapped !== undefined && target === resolve(repo, mapped)) {
             const entry = layout.entries.find((entry) => entry.path === file);
             if (entry) entry.redirect = mapped;
+            if (
+              materialized &&
+              materialized.get(path)?.entries.find((entry) => entry.path === file)?.redirect !==
+                mapped
+            )
+              escapes.push(`workspace redirect changed '${file}'`);
             return;
           }
           escapes.push(`link escape '${file}' -> '${target}'`);
