@@ -628,9 +628,9 @@ A provider is started once per `proof run` if and only if at least one RUN task 
 plan is printed. This is the single largest structural saving after keys: today the shared stack is
 built whenever any shared gate is selected and the native leg provisions a device whenever
 `scripts/e2e-*.sh` changes, even when every journey is reused. Lanes bound concurrency per resource
-(`stack: 6` matches `XP_GATE_JOBS=6`; `ios: 2` matches `APP_A_E2E_LANES=2`). A provider's own
-inputs hash is part of every dependent task's key, so "stack changed" and "gate script changed" are
-the same kind of fact.
+(`stack: 6` matches `XP_GATE_JOBS=6`; `ios: 2` matches `APP_A_E2E_LANES=2`). Superseded by
+requirements R4: a provider governs lifecycle only and never enters a dependent's key; a stack gate
+keys the backend it exercises through the `$stack` set in its own inputs.
 
 Serial constraints that exist today (m1a2 and m1a6 alone, the isolated private group) become
 `lane: solo` on those tasks.
