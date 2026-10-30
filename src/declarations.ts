@@ -4,7 +4,11 @@ import { dirtyPaths, type RefTree } from './git';
 import { scope } from './key';
 import { refuseDuplicateKeys } from './yaml-keys';
 
-export type Input = string | { path: string; json: string[] } | { 'imports-of': string };
+export type Input =
+  | string
+  | { path: string; json: string[] }
+  | { 'imports-of': string }
+  | { maestro: string };
 export type Task = { run: string; inputs: Input[]; env?: string[]; links?: string[] };
 
 export function mapping(value: unknown, context: string): Record<string, unknown> {
@@ -35,6 +39,10 @@ function patterns(value: unknown, context: string): Input[] {
     const label = `${context} input ${index + 1} (quote '!' patterns)`;
     if (!entry || typeof entry !== 'object') return text(entry, label);
     const projection = mapping(entry, label);
+    if ('maestro' in projection) {
+      fields(projection, ['maestro'], label);
+      return { maestro: text(projection.maestro, label) };
+    }
     if ('imports-of' in projection) {
       fields(projection, ['imports-of'], label);
       return { 'imports-of': text(projection['imports-of'], label) };

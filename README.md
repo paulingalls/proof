@@ -99,6 +99,16 @@ exempt:
   closure from that entry, following workspace packages and tsconfig `paths`, `baseUrl` and
   `extends` the way Bun does. An import proof can't follow, such as a computed `import()`, makes
   the task undecidable, so it always runs and says why.
+- **Maestro inputs**, such as `{maestro: flows/journey.yaml}`, select the flow and its
+  recursive `runFlow` and `runScript` references (strings or `{file: path}`), plus
+  `addMedia` paths (a list or `{files: [...]}`). References resolve relative to the including
+  flow. Proof walks `repeat`, `retry` (including `file`), inline and conditional `runFlow`
+  commands, and configuration `onFlowStart` / `onFlowComplete` commands without evaluating
+  conditions. Only flows are parsed as YAML; scripts and media are blob leaves. Cycles terminate.
+  Missing, variable (`${...}`), unsafe or non-regular references and malformed flows make the
+  task undecidable, naming the flow and reference. Declare other runtime reads, such as
+  `assertScreenshot` reference images, with globs. For a declared task `a`, use
+  `proof plan --json`, `proof run --tasks a`, and `proof lint` to inspect, execute and check ownership.
 - **`run`** executes in a sandbox holding only the task's inputs, with the environment cleared to
   `PATH`, `HOME`, `TMPDIR` and the declared `env`. A missing input fails the task instead of
   passing by luck.
