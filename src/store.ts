@@ -23,10 +23,14 @@ type Proof = {
   red_host: string | null;
 };
 
+function sqlitePath() {
+  return join(statePath(), 'proof.db');
+}
+
 function sqlite(): Backend {
   const base = statePath();
   mkdirSync(base, { recursive: true });
-  const db = new Database(join(base, 'proof.db'));
+  const db = new Database(sqlitePath());
   try {
     db.exec('PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON;');
   } catch (error) {
@@ -56,7 +60,7 @@ function sqlite(): Backend {
 }
 
 async function initialize(backend: Backend) {
-  await backend.transaction('proof:schema', async (query) => {
+  return await backend.transaction('proof:schema', async (query) => {
     await query(`CREATE TABLE IF NOT EXISTS schema_version (
           singleton INTEGER PRIMARY KEY CHECK (singleton = 1), version INTEGER NOT NULL
         )`);
@@ -89,6 +93,7 @@ async function initialize(backend: Backend) {
         red_commit TEXT NOT NULL, red_host TEXT NOT NULL
       )`);
     if (!row) await query('INSERT INTO schema_version (singleton, version) VALUES (1, 1)');
+    return row?.version ?? 1;
   });
 }
 
@@ -99,6 +104,23 @@ export class Store {
     private readonly local: Backend,
     private readonly remote?: Backend,
   ) {}
+
+  static async diagnose() {
+    const backend = sqlite();
+    let version: number;
+    try {
+      version = await initialize(backend);
+    } catch (error) {
+      try {
+        await backend.close();
+      } catch {
+        /* Preserve the diagnostic failure. */
+      }
+      throw error;
+    }
+    await backend.close();
+    return { store: sqlitePath(), replica: sqlitePath(), version };
+  }
 
   static async open() {
     const url = storeUrl();

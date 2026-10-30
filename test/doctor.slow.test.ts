@@ -2,7 +2,6 @@ import { afterAll, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Postgres } from './support/postgres';
 import { Repo } from './support/repo';
 
 const repos: Repo[] = [];

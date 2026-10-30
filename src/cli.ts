@@ -2,6 +2,7 @@
 import { resolve } from 'node:path';
 import pkg from '../package.json';
 import { check } from './check';
+import { doctor } from './doctor';
 import { lint } from './lint';
 import { plan } from './plan';
 import { record } from './record';
@@ -11,14 +12,17 @@ const [command, ...args] = Bun.argv.slice(2);
 
 if (command === '--version') {
   console.log(pkg.version);
-} else if (['check', 'plan', 'record', 'lint', 'run'].includes(command ?? '')) {
+} else if (['check', 'plan', 'record', 'lint', 'run', 'doctor'].includes(command ?? '')) {
   try {
     // git reports root-relative paths, and the working-tree reads resolve against cwd.
     if (command === 'check' && args[0]) args[0] = resolve(args[0]);
     const top = Bun.spawnSync(['git', 'rev-parse', '--show-toplevel']);
     if (top.exitCode !== 0) throw new Error(top.stderr.toString().trim());
     process.chdir(top.stdout.toString().trim());
-    if (command === 'run') {
+    if (command === 'doctor') {
+      if (args.length) throw new Error('usage: proof doctor');
+      process.exitCode = await doctor();
+    } else if (command === 'run') {
       process.exitCode = await run(args);
     } else if (command === 'lint') {
       if (args.length) throw new Error('usage: proof lint');
