@@ -42,7 +42,7 @@ export async function run(args: string[]) {
       const current = key(id, task, tree);
       const sandbox = new Sandbox();
       try {
-        sandbox.materialize(selection(task, tree, dirty), tree);
+        sandbox.materialize(selection(task, tree, dirty), tree, dirty);
         const env: Record<string, string> = {};
         for (const name of ['PATH', 'HOME', 'TMPDIR', ...(task.env ?? [])]) {
           const value = process.env[name];
@@ -58,6 +58,18 @@ export async function run(args: string[]) {
         const outcome = (await child.exited) === 0 ? 'green' : 'red';
         const seconds = (performance.now() - started) / 1000;
         red ||= outcome === 'red';
+        let unpublished = dirty.length ? `dirty path '${dirty[0]}'` : undefined;
+        if (!unpublished) {
+          if (new RefTree('HEAD').commit !== tree.commit) unpublished = 'HEAD changed';
+          else {
+            const changed = sandbox.changed();
+            const added = dirtyPaths(scope(tasks.values(), declarationPaths(include))).find(
+              (path) => !dirty.includes(path),
+            );
+            if (changed) unpublished = `selected path changed '${changed}'`;
+            else if (added) unpublished = `new dirty path '${added}'`;
+          }
+        }
         if (current.key !== undefined) {
           store.record(
             project,
@@ -67,10 +79,12 @@ export async function run(args: string[]) {
             seconds,
             hostname(),
             tree.commit,
-            dirty.length > 0,
+            unpublished !== undefined,
             key(id, task, tree, dirty).key === undefined,
           );
-          summary.push(`${outcome} ${id}`);
+          summary.push(
+            `${outcome} ${id}${unpublished ? `; no proof published: ${unpublished}` : outcome === 'green' ? '; proof published' : ''}`,
+          );
         } else summary.push(`${outcome} ${id}; not recorded: ${current.reason}`);
       } finally {
         sandbox.close();
