@@ -198,9 +198,12 @@ any task is RUN, and 2 for an unknown ref, invalid declarations, usage or store 
 unreachable store uses the local replica and reports the fallback on stderr, keeping JSON
 stdout parseable.
 
-On a clean tree, `status --ref HEAD --json` equals `plan --json` except when plan holds a task
-back for a checkout link escape. Status judges keys without inspecting declared links; its
-`trusted links` suffix restates the declaration rather than reporting an inspection.
+Status reads only the ref's committed files and your declared env, so a ref gets the same answer
+on every checkout. `plan` also looks at this checkout, so `status --ref HEAD` can say PROVEN where
+`plan` says RUN when the checkout has something the commit doesn't: an uncommitted or ignored file
+a task selects (even when `git status` is empty), a file hidden by `assume-unchanged` or
+`skip-worktree`, or a linked `node_modules` escaping into tracked files. Status's `trusted links`
+suffix restates the declaration rather than reporting an inspection.
 
 `proof check` compares the exact RUN set between committed refs without executing the declared
 commands. After the Quickstart's `src/text.ts` edit and commit, save this as `cases.yaml`:
