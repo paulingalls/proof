@@ -127,18 +127,22 @@ test('AC5 conditional exports preserve object order and edge kind', () => {
   const r = fixture({
     'packages/shared/package.json':
       '{"name":"@app/shared","exports":{".":{"default":"./d.ts","bun":"./b.ts"},"./edge":{"node":{"import":"./i.ts","require":"./r.ts"}}}}',
-    'packages/db/src/q.ts':
-      "import '@app/shared'; import('@app/shared/edge'); require('@app/shared/edge'); import type {T} from '@app/shared/edge';",
+    'packages/db/src/q.ts': "import '@app/shared'; import('@app/shared/edge');",
+    'other.ts': "require('@app/shared/edge');",
+    'types.ts': "import type {T} from '@app/shared/edge';",
     'packages/shared/d.ts': 'export {};',
     'packages/shared/b.ts': 'export {};',
     'packages/shared/i.ts': 'export type T = number;',
     'packages/shared/r.ts': 'export {};',
   });
+  const doc = JSON.parse(r.git('show', 'HEAD:proof.yaml'));
+  doc.tasks.c = { run: 'true', inputs: [{ 'imports-of': 'types.ts' }] };
+  r.commit({ 'proof.yaml': JSON.stringify(doc) });
   changes(r, [
     ['packages/shared/d.ts', 'export const d = 1;', ['a']],
     ['packages/shared/b.ts', 'export const b = 1;', []],
-    ['packages/shared/i.ts', 'export type T = string;', ['a']],
-    ['packages/shared/r.ts', 'export const r = 1;', ['a']],
+    ['packages/shared/i.ts', 'export type T = string;', ['a', 'c']],
+    ['packages/shared/r.ts', 'export const r = 1;', ['b']],
   ]);
 });
 test('AC6 adding an alias to a previously external import invalidates proof', () => {
