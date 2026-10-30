@@ -40,8 +40,7 @@ export function statePath() {
 }
 
 export function redacted(value: string) {
+  // An unencoded '/' or '?' moves a password into the path or query, so print neither.
   const url = new URL(value);
-  if (url.password) url.password = 'REDACTED';
-  url.searchParams.delete('password');
-  return url.href;
+  return `${url.protocol}//${url.host}`;
 }

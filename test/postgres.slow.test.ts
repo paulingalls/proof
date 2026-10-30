@@ -292,8 +292,7 @@ for (const backend of ['postgres', 'sqlite']) {
       for (const args of commands) {
         const result = repo.cli(args, env);
         expect(result.code).toBe(2);
-        expect(result.err).toContain('2');
-        expect(result.err).toContain('1');
+        expect(result.err).toContain('store schema version 2; supported version 1');
         expect(result.out).not.toContain('postgres-task-marker');
       }
       const versions = remote
@@ -416,7 +415,7 @@ test('failed connections name the redacted store without leaking any password', 
   });
   const port = endpoint.port;
   endpoint.stop(true);
-  for (const kind of ['auth', 'query', 'refused']) {
+  for (const kind of ['auth', 'query', 'query case', 'unencoded', 'refused']) {
     const url = new URL(postgres.url);
     const secret = 'distinctive:p@ss/word';
     url.password = encodeURIComponent(secret);
@@ -424,11 +423,14 @@ test('failed connections name the redacted store without leaking any password', 
       url.password = '';
       url.searchParams.set('password', secret);
     }
+    if (kind === 'query case') url.searchParams.set('PASSWORD', secret);
     if (kind === 'refused') url.port = String(port);
+    const store = kind === 'unencoded' ? 'postgres://proof:1/distinctive@127.0.0.1/db' : url.href;
+    const expected = kind === 'unencoded' ? 'proof:1' : `${url.hostname}:${url.port}`;
     for (const args of commands) {
-      const result = repo.cli(args, { PROOF_STORE: url.href, PROOF_STATE_DIR: directory() });
+      const result = repo.cli(args, { PROOF_STORE: store, PROOF_STATE_DIR: directory() });
       expect(result.code).toBe(2);
-      expect(result.err).toContain(`${url.hostname}:${url.port}`);
+      expect(result.err).toContain(expected);
       expect(result.err).toContain('postgres://');
       for (const value of [secret, encodeURIComponent(secret), 'distinctive']) {
         expect(result.err + result.out).not.toContain(value);
