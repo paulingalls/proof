@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Repo } from './support/repo';
@@ -159,4 +159,192 @@ test('AC6 adding an alias to a previously external import invalidates proof', ()
     expect(r.cli(['record', 'a', '--outcome', 'green'], env).code).toBe(0);
     expect(plan(r, env)[0]?.state).toBe('PROVEN');
   }
+});
+test('new dirty aliases and extension shadows cannot reuse committed proof', () => {
+  const r = fixture({
+    'packages/db/src/q.ts': "import 'alias'; import './x';",
+    'packages/db/src/x.ts': 'export {};',
+  });
+  const env = state();
+  expect(r.cli(['record', 'a', '--outcome', 'green'], env).code).toBe(0);
+  expect(plan(r, env)[0]?.state).toBe('PROVEN');
+  r.write('packages/db/tsconfig.json', '{"compilerOptions":{"paths":{"alias":["./src/x.ts"]}}}');
+  expect(plan(r, env)[0]?.reason).toContain("dirty input 'packages/db/tsconfig.json'");
+  rmSync(join(r.path, 'packages/db/tsconfig.json'));
+  r.write('packages/db/src/x.tsx', 'export const x = 2;');
+  expect(plan(r, env)[0]?.reason).toContain("dirty input 'packages/db/src/x.tsx'");
+});
+
+test('directory entries ignore exports and packages prefer main, index, then module', () => {
+  const r = fixture({
+    'packages/db/src/q.ts':
+      "import './dir'; import '@app/shared'; import '@app/mod'; import '@app/index'; import '@app/shared/sub';",
+    'packages/db/src/dir/package.json': '{"exports":"./unused.ts","main":"./chosen"}',
+    'packages/db/src/dir/chosen.ts': 'export {};',
+    'packages/db/src/dir/index.ts': 'export {};',
+    'packages/db/src/dir/unused.ts': 'export {};',
+    'packages/shared/package.json':
+      '{"name":"@app/shared","main":"./main.ts","module":"./module.ts"}',
+    'packages/shared/main.ts': 'export {};',
+    'packages/shared/module.ts': 'export {};',
+    'packages/shared/sub.ts': 'export {};',
+    'packages/mod/package.json': '{"name":"@app/mod","module":"./module.ts"}',
+    'packages/mod/module.ts': 'export {};',
+    'packages/index/package.json': '{"name":"@app/index","module":"./unused.ts"}',
+    'packages/index/index.ts': 'export {};',
+    'packages/index/unused.ts': 'export {};',
+  });
+  changes(r, [
+    ...[
+      'packages/db/src/dir/chosen.ts',
+      'packages/shared/main.ts',
+      'packages/shared/sub.ts',
+      'packages/mod/module.ts',
+      'packages/index/index.ts',
+    ].map((p): [string, string, string[]] => [p, 'export const n = 2;', ['a']]),
+    ...[
+      'packages/db/src/dir/index.ts',
+      'packages/db/src/dir/unused.ts',
+      'packages/shared/module.ts',
+      'packages/shared/src/index.ts',
+      'packages/index/unused.ts',
+    ].map((p): [string, string, string[]] => [p, 'export const n = 2;', []]),
+  ]);
+});
+
+test('Bun agrees with main precedence and ordered default conditions', () => {
+  const r = fixture({
+    'packages/shared/package.json': '{"name":"@app/shared","main":"./m.ts","module":"./unused.ts"}',
+    'packages/shared/m.ts': "export default 'main';",
+    'packages/shared/unused.ts': "export default 'module';",
+    'packages/ordered/package.json':
+      '{"name":"@app/ordered","exports":{".":{"default":"./d.ts","bun":"./b.ts"}}}',
+    'packages/ordered/d.ts': "export default 'default';",
+    'packages/ordered/b.ts': "export default 'bun';",
+    'packages/db/src/q.ts': "import '@app/shared'; import '@app/ordered';",
+  });
+  r.write(
+    'packages/ordered/probe.ts',
+    "import m from '../shared'; import d from '@app/ordered'; console.log(m,d);",
+  );
+  const result = Bun.spawnSync([process.execPath, 'packages/ordered/probe.ts'], { cwd: r.path });
+  expect(result.exitCode, result.stderr.toString()).toBe(0);
+  expect(result.stdout.toString().trim()).toBe('main default');
+  changes(r, [
+    ['packages/shared/m.ts', "export default 'changed';", ['a']],
+    ['packages/ordered/d.ts', "export default 'changed';", ['a']],
+    ['packages/ordered/b.ts', "export default 'changed';", []],
+  ]);
+});
+
+test('config inheritance, jsconfig, exact aliases, builtins and workspace extends', () => {
+  const r = fixture({
+    'packages/db/src/q.ts':
+      "import 'alias/x'; import 'alias/exact'; import 'fs'; import 'bun:sqlite';",
+    'packages/db/jsconfig.json':
+      '{"extends":"@app/config/base.json","compilerOptions":{"baseUrl":"."}}',
+    'packages/config/package.json': '{"name":"@app/config"}',
+    'packages/config/base.json':
+      '{"compilerOptions":{"paths":{"alias/*":["./src/*"],"alias/exact":["./src/dir"],"fs":["./missing"],"bun:sqlite":["./missing"]}}}',
+    'packages/db/src/x.ts': 'export {};',
+    'packages/db/src/dir/package.json': '{"main":"./main.ts"}',
+    'packages/db/src/dir/main.ts': 'export {};',
+    'packages/db/src/dir/index.ts': 'export {};',
+    'packages/db/src/exact.ts': 'export {};',
+    'tsconfig.json': '{"compilerOptions":{"paths":{"alias/*":["./wrong/*"]}}}',
+  });
+  changes(r, [
+    ['packages/db/src/x.ts', 'export const n = 1;', ['a']],
+    ['packages/db/src/dir/main.ts', 'export const n = 1;', ['a']],
+    ['packages/db/src/exact.ts', 'export const n = 1;', []],
+    ['packages/db/src/dir/index.ts', 'export const n = 1;', []],
+    [
+      'packages/config/base.json',
+      '{"compilerOptions":{"strict":true,"paths":{"alias/*":["./src/*"],"alias/exact":["./src/dir"]}}}',
+      ['a'],
+    ],
+  ]);
+});
+
+test('external extends is ignored, child paths replace inherited paths, and discovery excludes unrelated packages', () => {
+  const r = fixture({
+    'packages/db/src/q.ts': "import '@app/shared'; import 'external';",
+    'packages/db/tsconfig.json': '{"extends":"./parent.json","compilerOptions":{"paths":{}}}',
+    'packages/db/parent.json':
+      '{"extends":"npm-config/tsconfig.json","compilerOptions":{"paths":{"external":["./missing"]}}}',
+    'packages/unused/package.json': '{"name":"@app/unused","version":"1"}',
+    'excluded/package.json': '{"name":"@app/shared"}',
+    'package.json': '{"workspaces":["./packages/*/","excluded","!excluded"]}',
+  });
+  changes(r, [
+    ['packages/unused/package.json', '{"name":"@app/unused","version":"2"}', []],
+    [
+      'packages/db/parent.json',
+      '{"extends":"npm-config/tsconfig.json","compilerOptions":{"strict":true}}',
+      ['a'],
+    ],
+  ]);
+});
+
+test('adding and renaming workspace packages matches a previously external import', () => {
+  const r = fixture({ 'packages/db/src/q.ts': "import '@app/new';" });
+  changes(r, [
+    ['packages/new/package.json', '{"name":"@app/not-yet","main":"../shared/src/index.ts"}', []],
+    ['packages/new/package.json', '{"name":"@app/new","main":"../shared/src/index.ts"}', ['a']],
+  ]);
+});
+
+test('dirty alias metadata and new source materialize without publishing a proof', () => {
+  const r = fixture({
+    'packages/db/src/q.ts': "import {x} from 'alias'; console.log('working target', x);",
+    'packages/shared/src/index.ts': 'export const x = 1;',
+    'packages/db/tsconfig.json':
+      '{"compilerOptions":{"paths":{"alias":["../shared/src/index.ts"]}}}',
+  });
+  const doc = JSON.parse(r.git('show', 'HEAD:proof.yaml'));
+  doc.tasks.a.run = `${process.execPath} packages/db/src/q.ts`;
+  r.commit({ 'proof.yaml': JSON.stringify(doc) });
+  const env = state();
+  expect(r.cli(['record', 'a', '--outcome', 'green'], env).code).toBe(0);
+  r.write('packages/db/tsconfig.json', '{"compilerOptions":{"paths":{"alias":["./src/new.ts"]}}}');
+  r.write('packages/db/src/new.ts', 'export const x = 42;');
+  expect(plan(r, env)[0]?.reason).toContain("dirty input 'packages/db/tsconfig.json'");
+  const result = r.cli(['run'], env);
+  expect(result.code, result.err + result.out).toBe(0);
+  expect(result.out).toContain('working target 42');
+  expect(result.out).toContain('green a; no proof published');
+});
+
+test('working symlinks fail per task while unrelated proofs remain reusable', () => {
+  const r = fixture({
+    'packages/db/src/q.ts': "import './x';",
+    'packages/db/src/x.ts': 'export {};',
+  });
+  const env = state();
+  for (const id of ['a', 'b'])
+    expect(r.cli(['record', id, '--outcome', 'green'], env).code).toBe(0);
+  symlinkSync('x.ts', join(r.path, 'packages/db/src/x.tsx'));
+  const rows = plan(r, env);
+  expect(rows[0]?.reason).toContain('symlink');
+  expect(rows[1]?.state).toBe('PROVEN');
+});
+
+test('ambiguous entry candidates never publish a guessed closure', () => {
+  const r = fixture({
+    'packages/shared/package.json': '{"name":"@app/shared"}',
+    'packages/shared/index.ts': 'export {};',
+    'packages/shared/index.js': 'export {};',
+  });
+  expect(plan(r)[0]?.reason).toContain('ambiguous directory index');
+});
+
+test('a dirty workspace name change cannot masquerade as the previous external proof', () => {
+  const r = fixture({
+    'packages/db/src/q.ts': "import '@app/new';",
+    'packages/new/package.json': '{"name":"@app/old","main":"../shared/src/index.ts"}',
+  });
+  const env = state();
+  expect(r.cli(['record', 'a', '--outcome', 'green'], env).code).toBe(0);
+  r.write('packages/new/package.json', '{"name":"@app/new","main":"../shared/src/index.ts"}');
+  expect(plan(r, env)[0]?.reason).toContain("dirty input 'packages/new/package.json'");
 });

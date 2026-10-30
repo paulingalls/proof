@@ -149,6 +149,22 @@ export function key(id: string, task: Task, tree: RefTree, dirty: string[] = [])
         ),
     );
     if (path && !selection.reason) return { reason: `dirty input '${path}'` };
+    if (
+      !selection.reason &&
+      dirty.some(
+        (path) =>
+          !tree.files.has(path) || path === 'package.json' || path.endsWith('/package.json'),
+      )
+    ) {
+      try {
+        const working = select(task, tree, dirty, true);
+        const added = dirty.find((path) => working.paths.has(path));
+        if (added) return { reason: `dirty input '${added}'` };
+        if (working.reason) return { reason: working.reason };
+      } catch (error) {
+        return { reason: `working inputs: ${error}` };
+      }
+    }
   }
   const selection = select(task, tree);
   if (selection.reason) return { reason: selection.reason };
