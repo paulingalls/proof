@@ -157,6 +157,7 @@ test('plans exactly RUN providers without starting them, before any run commands
   expect(f.log()).toEqual([]);
   const result = f.cli('run');
   expect(result.code).toBe(0);
+  expect(result.out.indexOf('RUN b:')).toBeGreaterThanOrEqual(0);
   expect(result.out.indexOf('RUN b:')).toBeLessThan(result.out.indexOf('START-MARK'));
   expect(result.out.indexOf('START-MARK')).toBeLessThan(result.out.indexOf('TASK-MARK'));
   expect(f.log()).toEqual(['start', 'second']);
