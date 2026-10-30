@@ -1,13 +1,16 @@
 import { posix } from 'node:path';
 import type { RefTree } from './git';
+import { metadata } from './import-metadata';
 import { workingFile } from './sandbox';
 
 export type Source = {
+  paths: Iterable<string>;
   read(path: string): string | undefined;
   mode(path: string): string | undefined;
 };
 export function source(tree: RefTree, dirty?: string[]): Source {
   return {
+    paths: tree.files.keys(),
     read: (path) =>
       tree.files.has(path) && !dirty?.includes(path)
         ? tree.read(path)
@@ -29,9 +32,31 @@ export function resolveImport(path: string, view: Source) {
     path,
     ...extensions.map((ext) => path + ext),
     ...extensions.map((ext) => `${path}/index${ext}`),
-    ...(path.endsWith('.js') ? [path.slice(0, -3) + '.ts', path.slice(0, -3) + '.tsx'] : []),
+    ...(path.endsWith('.js') ? [`${path.slice(0, -3)}.ts`, `${path.slice(0, -3)}.tsx`] : []),
   ];
   return candidates.find((candidate) => view.mode(candidate) !== undefined);
+}
+const gap = String.raw`(?:\s|/\*[\s\S]*?\*/|//[^\n]*(?:\n|$))*`;
+const literal = /('(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`)/.source;
+function supplement(text: string) {
+  const edges: string[] = [];
+  let reason: string | undefined;
+  function add(value: string) {
+    if (value.includes('\\') || value.includes('${')) reason ??= `ambiguous import ${value}`;
+    else edges.push(value.slice(1, -1));
+  }
+  for (const match of text.matchAll(
+    new RegExp(String.raw`\b(?:import|require)${gap}\(${gap}`, 'g'),
+  )) {
+    const tail = text.slice((match.index ?? 0) + match[0].length);
+    const arg = new RegExp(String.raw`^${literal}${gap}(?:\)|,)`).exec(tail);
+    if (arg?.[1]) add(arg[1]);
+    else reason ??= `computed import ${tail.split(')')[0]}`;
+  }
+  for (const match of text.matchAll(new RegExp(String.raw`\bfrom${gap}${literal}`, 'g'))) {
+    if (match[1]) add(match[1]);
+  }
+  return { edges, reason };
 }
 const scans = new Map<string, { edges: string[]; reason?: string }>();
 function scan(text: string, loader: 'ts' | 'tsx' | 'jsx' | 'js') {
@@ -39,7 +64,16 @@ function scan(text: string, loader: 'ts' | 'tsx' | 'jsx' | 'js') {
   let result = scans.get(id);
   if (!result) {
     try {
-      result = { edges: new Bun.Transpiler({ loader }).scanImports(text).map((edge) => edge.path) };
+      const extra = supplement(text);
+      result = {
+        edges: [
+          ...new Set([
+            ...new Bun.Transpiler({ loader }).scanImports(text).map((edge) => edge.path),
+            ...extra.edges,
+          ]),
+        ],
+        reason: extra.reason,
+      };
     } catch (error) {
       result = { edges: [], reason: `parse failure: ${error}` };
     }
@@ -49,6 +83,7 @@ function scan(text: string, loader: 'ts' | 'tsx' | 'jsx' | 'js') {
 }
 export function closure(entry: string, view: Source) {
   const paths = new Set<string>();
+  const local = metadata(view, (path) => resolveImport(path, view));
   let reason: string | undefined;
   function visit(path: string) {
     if (paths.has(path)) return;
@@ -77,12 +112,22 @@ export function closure(entry: string, view: Source) {
     const scanned = scan(text, loader);
     if (scanned.reason) reason ??= `${path}: ${scanned.reason}`;
     for (const edge of scanned.edges) {
-      if (!edge.startsWith('.')) continue;
+      if (!edge.startsWith('.')) {
+        try {
+          const why = edge.startsWith('/') ? 'local import not followed' : local(path, edge);
+          if (why) reason ??= `${path}: ${why}: '${edge}'`;
+        } catch (error) {
+          reason ??= `${path}: import '${edge}': ${error}`;
+        }
+        continue;
+      }
       const target = resolveImport(posix.join(posix.dirname(path), edge), view);
       if (target) visit(target);
       else reason ??= `${path}: unresolved import '${edge}'`;
     }
   }
+  if (entry.startsWith('/') || entry.split('/').some((part) => ['..', '.git'].includes(part)))
+    return { paths, reason: `unsafe entry '${entry}'` };
   visit(entry);
   return { paths, reason };
 }
