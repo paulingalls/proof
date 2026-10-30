@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.0
+
+- `{maestro: <flow.yaml>}` inputs: a journey keys its flow and every file reached through `runFlow`,
+  `runScript` and `addMedia`, recursively, from git blobs at any ref. A variable path, a missing
+  include, a repeated key or an unparseable flow makes the task undecidable, so it runs and says why.
+  `proof lint` resolves Maestro entries and counts their closures as owned.
+- `proof check` fails a case when a task is undecidable at its `from` ref, instead of counting the
+  task as selected; such a case could pass without testing selection.
+- The design's 14 selection cases all have green synthetic analogues. Journeys declare `$stack`, so a
+  backend change re-runs them (requirements R4).
+- The import, workspace and Maestro resolver tables run at push; the commit hook keeps the CLI suite.
+
 ## 0.5.0
 
 - A shared Postgres store: set `PROOF_STORE` (or `~/.config/proof/store`) to a `postgres://` URL and

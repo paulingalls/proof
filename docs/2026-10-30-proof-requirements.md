@@ -83,6 +83,9 @@ The package has its own tests for its own behaviour, on synthetic repos it build
   inputs, never a provider's whole input set. A stack gate's inputs include a coarse named set `$stack` (the
   backend source it exercises) and the stack's real identity: the env-file values the stack reads, and whether
   provider keys are absent, dummy or real.
+  - Journeys (native and web) exercise the running backend, so their inputs include `$stack` too: a backend
+    change re-runs them. Never a stale PROVEN; a repo narrows `$stack` per journey if that costs too much
+    (Paul, 2026-10-30, resolving design §4.2 against §1.2 cases 4, 7 and 10).
 - **R5. Derive, then declare.**
   - **Derived:** the import closure, from the language's own tooling rather than hand-written globs:
     Bun/TypeScript via `bun build --metafile` or the TypeScript program (honouring tsconfig paths and workspace

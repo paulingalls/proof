@@ -32,7 +32,7 @@ The goal: run only what a change can actually affect, and nothing extra.
 tagged release from GitHub:
 
 ```sh
-bun add -d "git+https://github.com/paulingalls/proof.git#v0.5.0"
+bun add -d "git+https://github.com/paulingalls/proof.git#v0.6.0"
 bunx proof --version
 ```
 
@@ -99,6 +99,16 @@ exempt:
   closure from that entry, following workspace packages and tsconfig `paths`, `baseUrl` and
   `extends` the way Bun does. An import proof can't follow, such as a computed `import()`, makes
   the task undecidable, so it always runs and says why.
+- **Maestro inputs**, such as `{maestro: flows/journey.yaml}`, select the flow and its
+  recursive `runFlow` and `runScript` references (strings or `{file: path}`), plus
+  `addMedia` paths (a list or `{files: [...]}`). References resolve relative to the including
+  flow. Proof walks `repeat`, `retry` (including `file`), inline and conditional `runFlow`
+  commands, and configuration `onFlowStart` / `onFlowComplete` commands without evaluating
+  conditions. Only flows are parsed as YAML; scripts and media are blob leaves. Cycles terminate.
+  Missing, variable (`${...}`), unsafe or non-regular references and malformed flows make the
+  task undecidable, naming the flow and reference. Declare other runtime reads, such as
+  `assertScreenshot` reference images, with globs. For a declared task `a`, use
+  `proof plan --json`, `proof run --tasks a`, and `proof lint` to inspect, execute and check ownership.
 - **`run`** executes in a sandbox holding only the task's inputs, with the environment cleared to
   `PATH`, `HOME`, `TMPDIR` and the declared `env`. A missing input fails the task instead of
   passing by luck.
@@ -118,6 +128,21 @@ proof doctor                 which store is in use, and whether it's reachable
 
 `run` exits 0 when every task is proven or green, 1 when one is red, 130/143 when interrupted;
 any command exits 2 on a usage, declaration or store error.
+
+`proof check` compares the exact RUN set between committed refs without executing the declared
+commands. After the Quickstart's `src/text.ts` edit and commit, save this as `cases.yaml`:
+
+```yaml
+- name: text source edit
+  from: HEAD~1
+  to: HEAD
+  expect: [text]
+```
+
+Run `bunx proof check cases.yaml`. It prints `PASS text source edit` and exits 0. A mismatched set prints `FAIL` with `missing:` and `extra:` task ids and exits 1.
+A case assumes every task is proven at `from`, so a task proof can't decide there fails the case
+(`from <ref>: <task> undecidable: <reason>`). One undecidable at `to` must run: it prints a `RUN`
+diagnostic and counts as selected.
 
 Planned, specified in [R16](docs/2026-10-30-proof-requirements.md) and design §4.6:
 
