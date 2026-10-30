@@ -96,7 +96,14 @@ export class Repo {
 
   private cliEnv(overrides: Record<string, string | undefined>) {
     const env: Record<string, string | undefined> = isolatedEnv();
-    for (const name of ['PROOF_STATE_DIR', 'XDG_STATE_HOME', 'HOME']) delete env[name];
+    for (const name of [
+      'PROOF_STORE',
+      'XDG_CONFIG_HOME',
+      'PROOF_STATE_DIR',
+      'XDG_STATE_HOME',
+      'HOME',
+    ])
+      delete env[name];
     return { ...env, ...overrides };
   }
 

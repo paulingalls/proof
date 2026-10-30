@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { statePath, storeUrl } from './config';
 
 export type Outcome = 'green' | 'red' | 'incomplete';
 
@@ -8,15 +9,8 @@ export class Store {
   private readonly db: Database;
 
   constructor() {
-    const { PROOF_STATE_DIR, XDG_STATE_HOME, HOME } = process.env;
-    const base =
-      PROOF_STATE_DIR ||
-      (XDG_STATE_HOME
-        ? join(XDG_STATE_HOME, 'proof')
-        : HOME
-          ? join(HOME, '.local/state/proof')
-          : undefined);
-    if (!base) throw new Error('set PROOF_STATE_DIR, XDG_STATE_HOME or HOME for the proof store');
+    storeUrl();
+    const base = statePath();
     mkdirSync(base, { recursive: true });
     this.db = new Database(join(base, 'proof.db'));
     this.db.exec(`
