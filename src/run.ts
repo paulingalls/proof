@@ -6,6 +6,16 @@ import { currentTree, decide } from './plan';
 import { Sandbox } from './sandbox';
 import { Store } from './store';
 
+function signalGroup(pid: number, signal: NodeJS.Signals | 0) {
+  try {
+    process.kill(-pid, signal);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+    return false;
+  }
+}
+
 export async function run(args: string[]) {
   if (
     args.length &&
@@ -23,13 +33,7 @@ export async function run(args: string[]) {
   const interrupt = (signal: 'SIGINT' | 'SIGTERM') => {
     if (interrupted) return;
     interrupted = signal;
-    if (active) {
-      try {
-        process.kill(-active.pid, signal);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
-      }
-    }
+    if (active) signalGroup(active.pid, signal);
   };
   const onInt = () => interrupt('SIGINT');
   const onTerm = () => interrupt('SIGTERM');
@@ -68,6 +72,8 @@ export async function run(args: string[]) {
         });
         active = child;
         const code = await child.exited;
+        // A shell may exit before its foreground child has finished handling the signal.
+        if (interrupted) while (signalGroup(child.pid, 0)) await Bun.sleep(10);
         active = undefined;
         const outcome = interrupted ? 'incomplete' : code === 0 ? 'green' : 'red';
         const seconds = (performance.now() - started) / 1000;

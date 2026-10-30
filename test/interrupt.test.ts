@@ -22,8 +22,12 @@ async function until(check: () => boolean) {
   }
 }
 
-for (const signal of ['SIGTERM', 'SIGINT'] as const) {
-  test(`${signal} records incomplete, preserves contests and removes the sandbox`, async () => {
+for (const [signal, child] of [
+  ['SIGTERM', false],
+  ['SIGINT', false],
+  ['SIGTERM', true],
+] as const) {
+  test(`${signal}, child=${child}: records incomplete and cleans up before exit`, async () => {
     const repo = new Repo();
     const control = mkdtempSync(join(tmpdir(), 'proof-interrupt-'));
     const state = mkdtempSync(join(tmpdir(), 'proof-state-'));
@@ -36,7 +40,7 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
         project: 'interrupt',
         tasks: {
           first: {
-            run: `echo $$ > "$CONTROL/leader"; exec '${process.execPath}' task.ts`,
+            run: `echo $$ > "$CONTROL/leader"; ${child ? '' : 'exec '}'${process.execPath}' task.ts "$$"${child ? '; :' : ''}`,
             inputs: ['task.ts'],
             env: ['CONTROL'],
           },
@@ -45,8 +49,16 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
       }),
       'task.ts': `import { writeFileSync, renameSync } from 'node:fs';
 const control = process.env.CONTROL;
-process.on('${signal}', () => {
+process.on('${signal}', async () => {
   writeFileSync(control + '/received', '${signal}');
+  if (${child}) {
+    while (true) {
+      try { process.kill(Number(process.argv[2]), 0); } catch { break; }
+      await Bun.sleep(10);
+    }
+    await Bun.sleep(300);
+    writeFileSync(control + '/exited', 'yes');
+  }
   process.exit(0);
 });
 setInterval(() => {}, 1000);
@@ -81,6 +93,10 @@ renameSync(control + '/pending', control + '/ready');`,
       process.kill(cli.pid, signal);
       await until(() => cli?.exitCode !== null);
       expect(await cli.exited).toBe(signal === 'SIGINT' ? 130 : 143);
+      if (child) {
+        expect(existsSync(join(control, 'exited'))).toBe(true);
+        expect(alive(running.pid)).toBe(false);
+      }
       const [out, err] = await output;
       expect(err).toBe('');
       expect(out).toContain('incomplete first');
@@ -117,7 +133,11 @@ renameSync(control + '/pending', control + '/ready');`,
         existsSync(leader) ? Number(readFileSync(leader, 'utf8')) : undefined,
         cli?.pid,
       ]) {
-        if (pid && alive(pid)) process.kill(pid, 'SIGKILL');
+        if (pid && alive(pid)) {
+          const group = Bun.spawnSync(['ps', '-o', 'pgid=', '-p', String(pid)]);
+          process.kill(Number(group.stdout.toString().trim()) === pid ? -pid : pid, 'SIGKILL');
+          await until(() => !alive(pid));
+        }
       }
       if (cli) await cli.exited;
       if (output) await output;
@@ -126,5 +146,5 @@ renameSync(control + '/pending', control + '/ready');`,
       for (const path of [control, state, temporary])
         rmSync(path, { recursive: true, force: true });
     }
-  });
+  }, 15000);
 }
