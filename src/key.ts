@@ -1,5 +1,6 @@
 import type { Input, Task } from './declarations';
 import type { RefTree, Scope } from './git';
+import { closure, source } from './imports';
 
 type Key = { key: string; reason?: never } | { key?: never; reason: string };
 
@@ -50,16 +51,30 @@ function* candidates(available: string[], pattern: string, dirty: string[]) {
   yield* dirty;
 }
 
-function select(task: Task, available: string[], dirty: string[] = []) {
+function select(
+  task: Task,
+  tree: RefTree,
+  dirty: string[] = [],
+  working = false,
+  available = inventory(tree),
+) {
+  const view = source(tree, working ? dirty : undefined);
   const paths = new Set<string>();
   let reason: string | undefined;
   for (const pattern of task.inputs) {
-    if (typeof pattern !== 'string') continue;
+    if (typeof pattern !== 'string') {
+      if ('imports-of' in pattern) {
+        const found = closure(pattern['imports-of'], view);
+        for (const path of found.paths) paths.add(path);
+        reason ??= found.reason;
+      }
+      continue;
+    }
     const negative = pattern.startsWith('!');
     const positive = negative ? pattern.slice(1) : pattern;
     const glob = new Bun.Glob(positive);
     let matched = false;
-    for (const path of candidates(available, positive, dirty)) {
+    for (const path of candidates(available, positive, negative ? [...dirty, ...paths] : dirty)) {
       if (glob.match(path)) {
         matched = true;
         if (negative) paths.delete(path);
@@ -72,10 +87,13 @@ function select(task: Task, available: string[], dirty: string[] = []) {
 }
 
 export function selection(task: Task, tree: RefTree, dirty: string[] = []) {
-  const selected = select(task, inventory(tree), dirty);
+  // A clean tree publishes under the committed key: an ignored file must not win resolution.
+  const selected = select(task, tree, dirty, dirty.length > 0);
   return new Set([
     ...selected.paths,
-    ...task.inputs.flatMap((input) => (typeof input === 'string' ? [] : [input.path])),
+    ...task.inputs.flatMap((input) =>
+      typeof input !== 'string' && 'path' in input ? [input.path] : [],
+    ),
   ]);
 }
 
@@ -86,14 +104,11 @@ export function* matching(tree: RefTree, pattern: string) {
   }
 }
 
-export function selects(task: Task, path: string) {
-  let selected = false;
-  for (const pattern of task.inputs) {
-    if (typeof pattern !== 'string') continue;
-    const negative = pattern.startsWith('!');
-    if (new Bun.Glob(negative ? pattern.slice(1) : pattern).match(path)) selected = !negative;
-  }
-  return selected || task.inputs.some((input) => typeof input !== 'string' && input.path === path);
+export function selects(task: Task, path: string, tree: RefTree) {
+  return (
+    select(task, tree, [path], false, []).paths.has(path) ||
+    task.inputs.some((input) => typeof input !== 'string' && 'path' in input && input.path === path)
+  );
 }
 
 function literalDirectory(pattern: string) {
@@ -102,7 +117,7 @@ function literalDirectory(pattern: string) {
   return pattern.slice(0, pattern.lastIndexOf('/', glob) + 1) || undefined;
 }
 
-export function scope(tasks: Iterable<Task>, declarations: string[]): Scope {
+export function scope(tasks: Iterable<Task>, declarations: string[], tree: RefTree): Scope {
   const list = [...tasks];
   const patterns = [...declarations, ...list.flatMap((t) => t.inputs)].filter(
     (p): p is string => typeof p === 'string' && !p.startsWith('!'),
@@ -110,28 +125,32 @@ export function scope(tasks: Iterable<Task>, declarations: string[]): Scope {
   const prefixes = [
     ...patterns.map(literalDirectory),
     ...list.flatMap((t) =>
-      t.inputs.flatMap((input) => (typeof input === 'string' ? [] : [input.path])),
+      t.inputs.flatMap((input) =>
+        typeof input !== 'string' && 'path' in input ? [input.path] : [],
+      ),
     ),
   ];
   return {
     selects: (path) =>
-      declarations.some((d) => new Bun.Glob(d).match(path)) || list.some((t) => selects(t, path)),
+      declarations.some((d) => new Bun.Glob(d).match(path)) ||
+      list.some((t) => selects(t, path, tree)),
     prefixes: prefixes.includes(undefined) ? undefined : [...new Set(prefixes as string[])],
   };
 }
 
 export function key(id: string, task: Task, tree: RefTree, dirty: string[] = []): Key {
-  const available = inventory(tree);
   if (dirty.length) {
-    const selection = select(task, available, dirty);
+    const selection = select(task, tree, dirty);
     const path = dirty.find(
       (path) =>
         selection.paths.has(path) ||
-        task.inputs.some((input) => typeof input !== 'string' && input.path === path),
+        task.inputs.some(
+          (input) => typeof input !== 'string' && 'path' in input && input.path === path,
+        ),
     );
     if (path && !selection.reason) return { reason: `dirty input '${path}'` };
   }
-  const selection = select(task, available);
+  const selection = select(task, tree);
   if (selection.reason) return { reason: selection.reason };
   const selected: (
     | [string, string | undefined, string | undefined]
@@ -144,7 +163,8 @@ export function key(id: string, task: Task, tree: RefTree, dirty: string[] = [])
     contents.set(tree, cached);
   }
   const projections = task.inputs.filter(
-    (input): input is Exclude<Input, string> => typeof input !== 'string',
+    (input): input is Extract<Input, { path: string }> =>
+      typeof input !== 'string' && 'path' in input,
   );
   const members = new Map<string, [string, string, string]>();
   for (const { path, json } of projections) {

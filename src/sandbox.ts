@@ -16,7 +16,7 @@ import type { RefTree } from './git';
 
 type File = { bytes: Buffer; executable: boolean };
 
-function workingFile(path: string): File | undefined {
+export function workingFile(path: string, candidate = false): File | undefined {
   // Refuse links in parent directories too: a working-tree read must never follow a link.
   const parts = path.split('/');
   for (let i = 1; i <= parts.length; i++) {
@@ -29,6 +29,11 @@ function workingFile(path: string): File | undefined {
       throw error;
     }
     if (stat.isSymbolicLink()) throw new Error(`selected path '${part}': symlink`);
+    if (
+      candidate &&
+      ((i < parts.length && !stat.isDirectory()) || (i === parts.length && !stat.isFile()))
+    )
+      return undefined;
     if (i < parts.length && !stat.isDirectory())
       throw new Error(`selected path '${part}': not a directory`);
     if (i === parts.length) {
@@ -142,10 +147,9 @@ export class Sandbox {
       if (relative(this.path, target).startsWith('..') || path.split('/').includes('.git'))
         throw new Error(`unsafe selected path '${path}'`);
       const mode = tree.modes.get(path);
-      const file = dirty.includes(path)
-        ? workingFile(path)
-        : mode === undefined
-          ? undefined
+      const file =
+        dirty.includes(path) || mode === undefined
+          ? workingFile(path)
           : this.committedFile(path, mode, tree);
       this.files.set(path, file);
       if (!file) continue;

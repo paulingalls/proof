@@ -93,7 +93,7 @@ export async function run(args: string[]) {
           if (new RefTree('HEAD').commit !== tree.commit) unpublished = 'HEAD changed';
           else {
             const changed = sandbox.changed();
-            const added = dirtyPaths(scope(tasks.values(), declarationPaths(include))).find(
+            const added = dirtyPaths(scope(tasks.values(), declarationPaths(include), tree)).find(
               (path) => !dirty.includes(path),
             );
             if (changed) unpublished = `selected path changed '${changed}'`;

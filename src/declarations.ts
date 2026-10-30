@@ -4,7 +4,7 @@ import { dirtyPaths, type RefTree } from './git';
 import { scope } from './key';
 import { refuseDuplicateKeys } from './yaml-keys';
 
-export type Input = string | { path: string; json: string[] };
+export type Input = string | { path: string; json: string[] } | { 'imports-of': string };
 export type Task = { run: string; inputs: Input[]; env?: string[]; links?: string[] };
 
 export function mapping(value: unknown, context: string): Record<string, unknown> {
@@ -35,6 +35,10 @@ function patterns(value: unknown, context: string): Input[] {
     const label = `${context} input ${index + 1} (quote '!' patterns)`;
     if (!entry || typeof entry !== 'object') return text(entry, label);
     const projection = mapping(entry, label);
+    if ('imports-of' in projection) {
+      fields(projection, ['imports-of'], label);
+      return { 'imports-of': text(projection['imports-of'], label) };
+    }
     fields(projection, ['path', 'json'], label);
     if (!Array.isArray(projection.json) || !projection.json.length) {
       throw new Error(`${label}: json must be a nonempty member list`);
@@ -125,7 +129,7 @@ export function declarations(tree: RefTree, working = false) {
     const glob = new Bun.Glob(pattern);
     const available = new Set([
       ...tree.files.keys(),
-      ...(working ? dirtyPaths(scope([], [pattern])) : []),
+      ...(working ? dirtyPaths(scope([], [pattern], tree)) : []),
     ]);
     const paths = [...available]
       .filter((path) => glob.match(path) && (!working || existsSync(path)))
