@@ -7,15 +7,23 @@ import { inspectLinks } from './sandbox';
 import { Store } from './store';
 import { workspaces } from './workspaces';
 
-export function plan() {
+export async function plan() {
   const { tree, project, tasks, dirty, declaration } = currentTree();
-  const store = new Store();
+  const store = await Store.open();
   try {
-    return [...tasks].map(([task, decl]) =>
-      decide(task, decl, tree, dirty, declaration, project, store),
-    );
+    const rows = [];
+    for (const [task, decl] of tasks)
+      rows.push(await decide(task, decl, tree, dirty, declaration, project, store));
+    return rows;
+  } catch (error) {
+    try {
+      await store.close();
+    } catch {
+      /* Preserve the command failure. */
+    }
+    throw error;
   } finally {
-    store.close();
+    await store.close();
   }
 }
 
@@ -37,7 +45,7 @@ export function inspectTaskLinks(
   );
 }
 
-export function decide(
+export async function decide(
   task: string,
   decl: Task,
   tree: RefTree,
@@ -53,16 +61,16 @@ export function decide(
   ]
     .map((reason) => `; ${reason}`)
     .join('');
-  const decision = decideProof();
+  const decision = await decideProof();
   return { ...decision, reason: decision.reason + links };
-  function decideProof() {
+  async function decideProof() {
     if (declaration)
       return { task, state: 'RUN', reason: `undecidable: dirty declaration '${declaration}'` };
     const current = key(task, decl, tree, dirty);
     if (current.key === undefined)
       return { task, state: 'RUN', reason: `undecidable: ${current.reason}` };
     if (inspection.escapes.length) return { task, state: 'RUN', reason: 'untrusted links' };
-    const proof = store.proof(project, task, current.key);
+    const proof = await store.proof(project, task, current.key);
     if (proof?.red_commit)
       return {
         task,

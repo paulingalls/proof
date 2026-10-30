@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.0
+
+- A shared Postgres store: set `PROOF_STORE` (or `~/.config/proof/store`) to a `postgres://` URL and
+  every clone and machine sees the same proofs. The publication and contested rules are unchanged and
+  run in one transaction per record; concurrent writers keep every result. A malformed store setting
+  exits 2. The password never prints.
+- A local replica: each machine keeps its own results in its SQLite file. When the store is
+  unreachable, `plan` and `run` use them and say so; a contest seen online keeps a key unproven
+  offline. Results recorded offline are not uploaded later.
+- `proof doctor` reports the store, its reachability and schema version, and the replica path.
+  `docs/store.md` is the operator guide: Postgres in Docker on loopback, exposed with
+  `tailscale serve`, guarded by the Tailscale ACL and a password.
+- The `proof` bin uses `env -S` so Bun never loads a repo's `.env`; BusyBox `env` (Alpine) lacks `-S`.
+
 ## 0.4.0
 
 - `{imports-of: <entry>}` inputs: a TypeScript import closure computed from git blobs at any ref,

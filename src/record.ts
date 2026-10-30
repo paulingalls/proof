@@ -4,7 +4,7 @@ import { dirtyPaths, RefTree } from './git';
 import { key, scope } from './key';
 import { Store } from './store';
 
-export function record(args: string[]) {
+export async function record(args: string[]) {
   const [id, ...flags] = args;
   const usage = 'usage: proof record <task> --outcome green|red|incomplete [--seconds N]';
   if (!id || id.startsWith('--')) throw new Error(usage);
@@ -39,9 +39,9 @@ export function record(args: string[]) {
         ? `dirty declaration '${declaration}'`
         : key(id, task, tree, dirty).reason
       : undefined;
-  const store = new Store();
+  const store = await Store.open();
   try {
-    store.record(
+    const sharing = await store.record(
       project,
       id,
       current.key,
@@ -52,12 +52,20 @@ export function record(args: string[]) {
       dirty.length > 0,
       otherBytes !== undefined,
     );
-    if (otherBytes) return `recorded red ${id}; contests nothing: ${otherBytes}`;
-    if (outcome !== 'green') return `recorded ${outcome} ${id}`;
+    const suffix = sharing === 'local' ? '' : `; ${sharing}`;
+    if (otherBytes) return `recorded red ${id}; contests nothing: ${otherBytes}${suffix}`;
+    if (outcome !== 'green') return `recorded ${outcome} ${id}${suffix}`;
     return dirty.length
-      ? `recorded green ${id}; no proof published: dirty path '${dirty[0]}'`
-      : `recorded green ${id}; proof published`;
+      ? `recorded green ${id}; no proof published: dirty path '${dirty[0]}'${suffix}`
+      : `recorded green ${id}; proof published${suffix}`;
+  } catch (error) {
+    try {
+      await store.close();
+    } catch {
+      /* Preserve the command failure. */
+    }
+    throw error;
   } finally {
-    store.close();
+    await store.close();
   }
 }

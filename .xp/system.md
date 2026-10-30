@@ -14,8 +14,8 @@ image (`Bun.sql`), with a local `bun:sqlite` replica.
 **Surfaces & acceptance**: CLI only (`proof plan|run|why|status|record|invalidate|
 flakes|stats|check|lint|doctor`, `plan --json`). Acceptance spawns the CLI as a
 subprocess against a synthetic git repo built in a temp directory and asserts on
-exit code, stdout and stderr. Store-backed acceptance needs a Postgres harness:
-not built yet, the first debt worth filing.
+exit code, stdout and stderr. Store-backed acceptance uses `test/support/postgres.ts`,
+which starts and removes its own labelled container; those tests are `*.slow.test.ts`.
 
 **Distribution**: consumers depend on
 `git+https://github.com/paulingalls/proof.git#vX.Y.Z` and call the `proof` bin
