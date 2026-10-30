@@ -15,6 +15,20 @@ function inventory(tree: RefTree) {
   return paths;
 }
 
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    return `{${Object.entries(value)
+      .map(([name, member]) => [JSON.stringify(name), canonical(member)])
+      .sort(([a], [b]) =>
+        (a as string) < (b as string) ? -1 : (a as string) > (b as string) ? 1 : 0,
+      )
+      .map(([name, member]) => `${name}:${member}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
 function* candidates(available: string[], pattern: string, dirty: string[]) {
   const start = prefix(pattern);
   let low = 0;
@@ -117,7 +131,9 @@ export function key(id: string, task: Task, tree: RefTree, dirty: string[] = [])
       members.set(JSON.stringify([path, member]), [
         path,
         member,
-        new Bun.CryptoHasher('sha256').update(JSON.stringify(value[member])).digest('hex'),
+        Object.hasOwn(value, member)
+          ? new Bun.CryptoHasher('sha256').update(canonical(value[member])).digest('hex')
+          : 'absent',
       ]);
     }
   }
