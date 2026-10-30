@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.0
+
+- `proof run [--tasks ...]`: executes each RUN task in a sandbox holding only its selected inputs
+  (exact bytes and modes), with the environment cleared to `PATH`, `HOME`, `TMPDIR` and its `env:`
+  names, and records the result against the key captured before it ran. A proof is published only
+  when the tree was clean and is unchanged after. It exits 1 on any red; an undecidable task alone
+  does not fail the run.
+- Interrupting `proof run` records the task `incomplete`, starts nothing more, and exits 130/143; a
+  second interrupt kills the task's process group.
+- `links:` symlinks untracked dependencies (`node_modules`, `.venv`) into the sandbox. A link that
+  reaches tracked files, directly or through workspace symlinks or `.pth` entries, never publishes.
+- A file's git mode is part of its key (scheme 2): every existing proof re-proves once.
+- With a dirty `proof.yaml`, `plan` and `run` use the working-tree declarations and record nothing.
+- proof works from any subdirectory of the repo.
+
 ## 0.2.0
 
 - `proof check` and `proof plan` at app-a's size: 14 cases in 0.61 s (was 11.5 s) and a plan in
