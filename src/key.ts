@@ -52,6 +52,7 @@ function* candidates(available: string[], pattern: string, dirty: string[]) {
 
 function select(task: Task, available: string[], dirty: string[] = []) {
   const paths = new Set<string>();
+  let reason: string | undefined;
   for (const pattern of task.inputs) {
     if (typeof pattern !== 'string') continue;
     const negative = pattern.startsWith('!');
@@ -65,9 +66,17 @@ function select(task: Task, available: string[], dirty: string[] = []) {
         else paths.add(path);
       }
     }
-    if (!matched) return { reason: `unmatched input '${pattern}'` };
+    if (!matched) reason ??= `unmatched input '${pattern}'`;
   }
-  return { paths };
+  return { paths, reason };
+}
+
+export function selection(task: Task, tree: RefTree, dirty: string[] = []) {
+  const selected = select(task, inventory(tree), dirty);
+  return new Set([
+    ...selected.paths,
+    ...task.inputs.flatMap((input) => (typeof input === 'string' ? [] : [input.path])),
+  ]);
 }
 
 export function* matching(tree: RefTree, pattern: string) {
@@ -118,16 +127,17 @@ export function key(id: string, task: Task, tree: RefTree, dirty: string[] = [])
     const selection = select(task, available, dirty);
     const path = dirty.find(
       (path) =>
-        selection.paths?.has(path) ||
+        selection.paths.has(path) ||
         task.inputs.some((input) => typeof input !== 'string' && input.path === path),
     );
-    if (path) return { reason: `dirty input '${path}'` };
+    if (path && !selection.reason) return { reason: `dirty input '${path}'` };
   }
   const selection = select(task, available);
-  if (!selection.paths) return { reason: selection.reason };
-  const selected: ([string, string | undefined] | [string, string, string])[] = [
-    ...selection.paths,
-  ].map((path) => [path, tree.files.get(path)]);
+  if (selection.reason) return { reason: selection.reason };
+  const selected: (
+    | [string, string | undefined, string | undefined]
+    | [string, string | undefined, string, string]
+  )[] = [...selection.paths].map((path) => [path, tree.modes.get(path), tree.files.get(path)]);
   selected.sort(([a], [b]) => compare(a, b));
   let cached = contents.get(tree);
   if (!cached) {
@@ -166,9 +176,16 @@ export function key(id: string, task: Task, tree: RefTree, dirty: string[] = [])
     }
   }
   selected.push(
-    ...[...members.values()].sort(([ap, am], [bp, bm]) => compare(ap, bp) || compare(am, bm)),
+    ...[...members.values()]
+      .sort(([ap, am], [bp, bm]) => compare(ap, bp) || compare(am, bm))
+      .map(([path, member, hash]): [string, string | undefined, string, string] => [
+        path,
+        tree.modes.get(path),
+        member,
+        hash,
+      ]),
   );
-  const tuple: unknown[] = [1, id, { run: task.run }, selected];
+  const tuple: unknown[] = [2, id, { run: task.run }, selected];
   if (task.env?.length) {
     tuple.push(
       task.env.map((name) => {

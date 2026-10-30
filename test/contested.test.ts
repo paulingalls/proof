@@ -241,7 +241,10 @@ for (const flag of ['assume-unchanged', 'skip-worktree']) {
       const index = repo.git('ls-files', '-v', '--', path);
       const reason = `dirty ${path === 'src/a.ts' ? 'input' : 'declaration'} '${path}'`;
       plan(`RUN lint: undecidable: ${reason}`);
-      repo.write(path, 'suppressed edit');
+      repo.write(
+        path,
+        path === 'src/a.ts' ? 'suppressed edit' : `${repo.git('show', `HEAD:${path}`)}\n`,
+      );
       plan(`RUN lint: undecidable: ${reason}`);
       expect(record('green').out).toContain('no proof published: dirty path');
       expect(record('red').out).toContain(`contests nothing: ${reason}`);

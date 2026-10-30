@@ -218,7 +218,10 @@ test('dirty root or included declarations make every task undecidable', () => {
     "RUN missing: undecidable: unmatched input 'absent/**'",
   );
   for (const path of ['proof.yaml', 'proof.d/extra.yaml', 'proof.d/new.yaml']) {
-    repo.write(path, 'uncommitted declaration');
+    repo.write(
+      path,
+      path.endsWith('new.yaml') ? '{"tasks":{}}' : `${repo.git('show', `HEAD:${path}`)}\n`,
+    );
     const result = repo.cli(['plan'], env);
     expect(result.code).toBe(0);
     expect(result.out.trim().split('\n')).toEqual(

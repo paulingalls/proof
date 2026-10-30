@@ -1,14 +1,19 @@
-function git(...args: string[]) {
+function gitBytes(...args: string[]) {
   const result = Bun.spawnSync(['git', ...args], {
     env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
   });
   if (result.exitCode !== 0) throw new Error(result.stderr.toString().trim());
-  return result.stdout.toString();
+  return result.stdout;
+}
+
+function git(...args: string[]) {
+  return gitBytes(...args).toString();
 }
 
 export class RefTree {
   readonly commit: string;
   readonly files = new Map<string, string>();
+  readonly modes = new Map<string, string>();
 
   static index() {
     return new RefTree(git('write-tree').trim(), 'tree');
@@ -24,10 +29,12 @@ export class RefTree {
       for (const entry of git('ls-tree', '-r', '-z', '--full-tree', oid).split('\0')) {
         if (!entry) continue;
         const tab = entry.indexOf('\t');
-        const [, type, blob] = entry.slice(0, tab).split(' ');
+        const [mode, type, blob] = entry.slice(0, tab).split(' ');
         // A gitlink's commit oid is its content: a submodule bump must change the key.
-        if ((type === 'blob' || type === 'commit') && blob)
+        if ((type === 'blob' || type === 'commit') && blob && mode) {
           this.files.set(entry.slice(tab + 1), blob);
+          this.modes.set(entry.slice(tab + 1), mode);
+        }
       }
     } catch (error) {
       throw new Error(`ref '${ref}': ${error}`);
@@ -35,9 +42,13 @@ export class RefTree {
   }
 
   read(path: string) {
+    return this.raw(path).toString();
+  }
+
+  raw(path: string) {
     const blob = this.files.get(path);
     if (!blob) throw new Error(`ref '${this.ref}': missing ${path}`);
-    return git('cat-file', 'blob', blob);
+    return gitBytes('cat-file', 'blob', blob);
   }
 }
 
