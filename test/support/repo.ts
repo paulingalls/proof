@@ -94,11 +94,11 @@ export class Repo {
     return this.cli(['check', '.git/cases.yaml']);
   }
 
-  cli(args: string[], overrides: Record<string, string | undefined> = {}) {
+  cli(args: string[], overrides: Record<string, string | undefined> = {}, cwd = this.path) {
     const env: Record<string, string | undefined> = isolatedEnv();
     for (const name of ['PROOF_STATE_DIR', 'XDG_STATE_HOME', 'HOME']) delete env[name];
     const result = Bun.spawnSync([process.execPath, cli, ...args], {
-      cwd: this.path,
+      cwd,
       env: { ...env, ...overrides },
     });
     return {

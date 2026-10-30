@@ -325,3 +325,32 @@ test('staged root and dirty includes execute working declarations without record
   expect(rows(env, 'contradictions')).toEqual([]);
   expect(readdirSync(env.TMPDIR)).toEqual([]);
 });
+
+test('runs from a subdirectory as from the repo root', () => {
+  const { repo, env } = fixture({ ok: task('test "$(cat src/a.ts)" = working', ['src/a.ts']) });
+  repo.write('sub/keep', 'x');
+  repo.write('src/a.ts', 'working');
+  const result = repo.cli(['run'], env, join(repo.path, 'sub'));
+  expect(result.out).toContain('green ok');
+  expect(result.out).toContain("no proof published: dirty path 'src/a.ts'");
+  expect(result.code).toBe(0);
+});
+
+test('a removed included declaration runs the working declarations', () => {
+  const { repo, env, run } = fixture({ root: task('exit 0') });
+  repo.commit({
+    'proof.yaml': JSON.stringify({
+      version: 1,
+      project: 'run',
+      include: 'proof.d/*.yaml',
+      tasks: {},
+    }),
+    'proof.d/old.yaml': JSON.stringify({ tasks: { old: task('exit 0') } }),
+    'proof.d/keep.yaml': JSON.stringify({ tasks: { keep: task('exit 0') } }),
+  });
+  repo.git('rm', '-q', 'proof.d/old.yaml');
+  const planned = repo.cli(['plan', '--json'], env);
+  expect(planned.code).toBe(0);
+  expect(JSON.parse(planned.out).map((r: { task: string }) => r.task)).toEqual(['keep']);
+  expect(run().out).toContain('keep; not recorded: dirty declaration');
+});

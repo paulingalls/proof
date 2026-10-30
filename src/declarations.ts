@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirtyPaths, type RefTree } from './git';
 import { scope } from './key';
 import { refuseDuplicateKeys } from './yaml-keys';
@@ -108,7 +108,9 @@ export function declarations(tree: RefTree, working = false) {
       ...tree.files.keys(),
       ...(working ? dirtyPaths(scope([], [pattern])) : []),
     ]);
-    const paths = [...available].filter((path) => glob.match(path)).sort();
+    const paths = [...available]
+      .filter((path) => glob.match(path) && (!working || existsSync(path)))
+      .sort();
     if (!paths.length) throw new Error(`ref '${tree.ref}': unmatched include '${pattern}'`);
     for (const path of paths) read(path, false);
   }
