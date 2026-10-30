@@ -1,13 +1,16 @@
 import { declarations, fields, mapping, text } from './declarations';
 import { RefTree } from './git';
 import { key } from './key';
+import { refuseDuplicateKeys } from './yaml-keys';
 
 type Case = { name: string; from: string; to: string; expect: string[] };
 
 export async function check(path: string) {
   let parsed: unknown;
   try {
-    parsed = Bun.YAML.parse(await Bun.file(path).text());
+    const source = await Bun.file(path).text();
+    parsed = Bun.YAML.parse(source);
+    refuseDuplicateKeys(source);
   } catch (error) {
     throw new Error(`cases '${path}': ${error}`);
   }
