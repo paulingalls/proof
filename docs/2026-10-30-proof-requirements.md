@@ -126,8 +126,11 @@ The package has its own tests for its own behaviour, on synthetic repos it build
 - **R12. Postgres in Docker** (a pinned image, never a Homebrew service).
   - **Where:** on Paul's M3 MacBook first, which stays awake on power; later the Mac mini, never asleep.
   - **Address:** a Tailscale MagicDNS name.
-  - **Network:** Postgres listens on all interfaces, and `pg_hba.conf` plus a Tailscale access rule admit only
-    tailnet addresses.
+  - **Network:** Postgres listens on all interfaces inside Docker, published only on `127.0.0.1:5432`.
+    The host exposes it with `tailscale serve --bg --tcp 5432 tcp://127.0.0.1:5432`; a Tailscale ACL
+    limits port 5432 to the user's own devices. `pg_hba.conf` uses
+    `host all all samenet scram-sha-256`. Tailscale and the loopback publish enforce tailnet membership
+    (Docker Desktop hides client addresses); Postgres always enforces the password.
   - **Connection string:** from the environment or user config, never in the repo.
   - **Moving hosts** is `pg_dump`/restore, or starting empty: it's a cache, so loss costs time, never
     correctness.
