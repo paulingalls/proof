@@ -23,6 +23,12 @@ export function plan() {
       if (current.key === undefined)
         return { task, state: 'RUN', reason: `undecidable: ${current.reason}` };
       const proof = store.proof(project, task, current.key);
+      if (proof?.red_commit)
+        return {
+          task,
+          state: 'RUN',
+          reason: `contested: red at ${proof.red_commit} on ${proof.red_host} after green`,
+        };
       return proof
         ? {
             task,
