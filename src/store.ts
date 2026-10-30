@@ -43,6 +43,32 @@ export class Store {
       .get(project, task, key);
   }
 
+  record(
+    project: string,
+    task: string,
+    key: string,
+    seconds: number | null,
+    host: string,
+    commit: string,
+    dirty: boolean,
+  ) {
+    this.db.transaction(() => {
+      const result = this.db
+        .query(`
+        INSERT INTO results (project, task, key, outcome, seconds, host, "commit", dirty, finished_at)
+        VALUES (?, ?, ?, 'green', ?, ?, ?, ?, ?)
+      `)
+        .run(project, task, key, seconds, host, commit, Number(dirty), new Date().toISOString());
+      if (!dirty)
+        this.db
+          .query(`
+        INSERT INTO proofs (project, task, key, result_id) VALUES (?, ?, ?, ?)
+        ON CONFLICT (project, task, key) DO UPDATE SET result_id = excluded.result_id
+      `)
+          .run(project, task, key, result.lastInsertRowid);
+    })();
+  }
+
   close() {
     this.db.close();
   }

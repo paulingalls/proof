@@ -5,11 +5,13 @@ function git(...args: string[]) {
 }
 
 export class RefTree {
+  readonly commit: string;
   readonly files = new Map<string, string>();
 
   constructor(readonly ref: string) {
     try {
       const oid = git('rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`).trim();
+      this.commit = oid;
       for (const entry of git('ls-tree', '-r', '-z', '--full-tree', oid).split('\0')) {
         if (!entry) continue;
         const tab = entry.indexOf('\t');
