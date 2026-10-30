@@ -202,3 +202,18 @@ test('dirty root or included declarations make every task undecidable', () => {
     if (path.endsWith('new.yaml')) rmSync(join(repo.path, path));
   }
 });
+
+test('a submodule moved off its gitlink is dirty even when .gitmodules ignores it', () => {
+  const repo = fixture();
+  const sub = ['-C', 'src/sub', '-c', 'user.name=t', '-c', 'user.email=t@example.invalid'];
+  repo.git('init', '-q', 'src/sub');
+  repo.git(...sub, 'commit', '-q', '--allow-empty', '-m', 'one');
+  repo.commit({
+    '.gitmodules': '[submodule "sub"]\n\tpath = src/sub\n\turl = ./sub\n\tignore = all\n',
+  });
+  const env = state();
+  expect(record(repo, env).out).toContain('proof published');
+  repo.git(...sub, 'commit', '-q', '--allow-empty', '-m', 'two');
+  expect(repo.cli(['plan'], env).out).toContain("RUN lint: undecidable: dirty input 'src/sub'");
+  expect(record(repo, env).out).toContain("no proof published: dirty path 'src/sub'");
+});

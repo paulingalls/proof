@@ -34,8 +34,16 @@ export class RefTree {
   }
 }
 
+// Explicit flags override status.renames, status.showUntrackedFiles and submodule ignore config.
 export function dirtyPaths() {
-  return git('status', '--porcelain=v1', '-z', '--no-renames', '--untracked-files=all')
+  return git(
+    'status',
+    '--porcelain=v1',
+    '-z',
+    '--no-renames',
+    '--untracked-files=all',
+    '--ignore-submodules=none',
+  )
     .split('\0')
     .filter(Boolean)
     .map((entry) => entry.slice(3));
