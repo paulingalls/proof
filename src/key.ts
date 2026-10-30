@@ -3,14 +3,44 @@ import type { RefTree, Scope } from './git';
 
 type Key = { key: string; reason?: never } | { key?: never; reason: string };
 
-function select(task: Task, inventory: Iterable<string>) {
-  const available = [...inventory];
+const inventories = new WeakMap<RefTree, string[]>();
+
+function inventory(tree: RefTree) {
+  let paths = inventories.get(tree);
+  if (!paths) {
+    paths = [...tree.files.keys()].sort();
+    inventories.set(tree, paths);
+  }
+  return paths;
+}
+
+function* candidates(available: string[], pattern: string, dirty: string[]) {
+  const start = prefix(pattern);
+  let low = 0;
+  let high = available.length;
+  if (start !== undefined) {
+    while (low < high) {
+      const mid = Math.floor((low + high) / 2);
+      if ((available[mid] as string) < start) low = mid + 1;
+      else high = mid;
+    }
+  }
+  for (let i = low; i < available.length; i++) {
+    const path = available[i] as string;
+    if (start !== undefined && !path.startsWith(start)) break;
+    yield path;
+  }
+  yield* dirty;
+}
+
+function select(task: Task, available: string[], dirty: string[] = []) {
   const paths = new Set<string>();
   for (const pattern of task.inputs) {
     const negative = pattern.startsWith('!');
-    const glob = new Bun.Glob(negative ? pattern.slice(1) : pattern);
+    const positive = negative ? pattern.slice(1) : pattern;
+    const glob = new Bun.Glob(positive);
     let matched = false;
-    for (const path of available) {
+    for (const path of candidates(available, positive, dirty)) {
       if (glob.match(path)) {
         matched = true;
         if (negative) paths.delete(path);
@@ -52,12 +82,13 @@ export function scope(tasks: Iterable<Task>, declarations: string[]): Scope {
 }
 
 export function key(id: string, task: Task, tree: RefTree, dirty: string[] = []): Key {
+  const available = inventory(tree);
   if (dirty.length) {
-    const selection = select(task, new Set([...tree.files.keys(), ...dirty]));
+    const selection = select(task, available, dirty);
     const path = dirty.find((path) => selection.paths?.has(path));
     if (path) return { reason: `dirty input '${path}'` };
   }
-  const selection = select(task, tree.files.keys());
+  const selection = select(task, available);
   if (!selection.paths) return { reason: selection.reason };
   const selected = [...selection.paths].map((path) => [path, tree.files.get(path)] as const);
   selected.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
