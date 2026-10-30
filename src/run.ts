@@ -3,7 +3,7 @@ import { declarationPaths } from './declarations';
 import { dirtyPaths, RefTree } from './git';
 import { key, scope, selection } from './key';
 import { currentTree, decide } from './plan';
-import { Sandbox } from './sandbox';
+import { inspectLinks, Sandbox } from './sandbox';
 import { Store } from './store';
 
 function signalGroup(pid: number, signal: NodeJS.Signals | 0) {
@@ -49,7 +49,8 @@ export async function run(args: string[]) {
       const { tree, project, tasks, include, dirty, declaration } = currentTree();
       const task = tasks.get(id);
       if (!task) throw new Error(`undeclared task '${id}'`);
-      const decision = decide(id, task, tree, dirty, declaration, project, store);
+      const inspection = inspectLinks(task.links ?? [], tree.files.keys());
+      const decision = decide(id, task, tree, dirty, declaration, project, store, inspection);
       console.log(`${decision.state} ${id}: ${decision.reason}`);
       if (decision.state === 'PROVEN') {
         summary.push(`PROVEN ${id}: ${decision.reason}`);
@@ -61,6 +62,7 @@ export async function run(args: string[]) {
       const sandbox = new Sandbox();
       try {
         sandbox.materialize(selection(task, tree, dirty), tree, dirty);
+        sandbox.link(task.links ?? []);
         const env: Record<string, string> = {};
         for (const name of ['PATH', 'HOME', 'TMPDIR', ...(task.env ?? [])]) {
           const value = process.env[name];
@@ -94,6 +96,13 @@ export async function run(args: string[]) {
             else if (added) unpublished = `new dirty path '${added}'`;
           }
         }
+        const escapes = [
+          ...new Set([
+            ...inspection.escapes,
+            ...inspectLinks(task.links ?? [], tree.files.keys()).escapes,
+          ]),
+        ];
+        if (escapes.length) unpublished = [unpublished, ...escapes].filter(Boolean).join('; ');
         if (current.key !== undefined) {
           store.record(
             project,
@@ -109,7 +118,10 @@ export async function run(args: string[]) {
           summary.push(
             `${outcome} ${id}${unpublished ? `; no proof published: ${unpublished}` : outcome === 'green' ? '; proof published' : ''}`,
           );
-        } else summary.push(`${outcome} ${id}; not recorded: ${current.reason}`);
+        } else
+          summary.push(
+            `${outcome} ${id}; not recorded: ${current.reason}${escapes.length ? `; ${escapes.join('; ')}` : ''}`,
+          );
       } finally {
         sandbox.close();
       }

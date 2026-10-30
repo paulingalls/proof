@@ -185,7 +185,12 @@ export function key(id: string, task: Task, tree: RefTree, dirty: string[] = [])
         hash,
       ]),
   );
-  const tuple: unknown[] = [2, id, { run: task.run }, selected];
+  const tuple: unknown[] = [
+    2,
+    id,
+    { run: task.run, ...(task.links?.length ? { links: task.links } : {}) },
+    selected,
+  ];
   if (task.env?.length) {
     tuple.push(
       task.env.map((name) => {
