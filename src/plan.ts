@@ -2,6 +2,7 @@ import type { Task } from './declarations';
 import { declarationPaths, declarations, dirtyDeclaration } from './declarations';
 import { dirtyPaths, RefTree } from './git';
 import { key, scope } from './key';
+import { inspectLinks } from './sandbox';
 import { Store } from './store';
 
 export function plan() {
@@ -24,8 +25,14 @@ export function decide(
   declaration: string | undefined,
   project: string,
   store: Store,
+  inspection = inspectLinks(decl.links ?? []),
 ) {
-  const links = decl.links?.length ? `; trusted links: ${decl.links.join(', ')}` : '';
+  const links = [
+    ...(inspection.trusted.length ? [`trusted links: ${inspection.trusted.join(', ')}`] : []),
+    ...inspection.escapes,
+  ]
+    .map((reason) => `; ${reason}`)
+    .join('');
   const decision = decideProof();
   return { ...decision, reason: decision.reason + links };
   function decideProof() {
@@ -34,6 +41,7 @@ export function decide(
     const current = key(task, decl, tree, dirty);
     if (current.key === undefined)
       return { task, state: 'RUN', reason: `undecidable: ${current.reason}` };
+    if (inspection.escapes.length) return { task, state: 'RUN', reason: 'untrusted links' };
     const proof = store.proof(project, task, current.key);
     if (proof?.red_commit)
       return {

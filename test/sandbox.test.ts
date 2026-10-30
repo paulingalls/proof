@@ -68,6 +68,8 @@ test('links expose installed packages, report trust, preserve proofs across inst
   expect(run().code).toBe(1);
   mkdirSync(join(repo.path, 'node_modules/.bin'));
   symlinkSync('../example/index.js', join(repo.path, 'node_modules/.bin/example'));
+  repo.write('node_modules/.bun/installed/index.js', 'export default 1;');
+  symlinkSync('.bun/installed', join(repo.path, 'node_modules/isolated'));
   declare(['node_modules']);
   for (const args of [['plan'], ['plan', '--json']]) {
     const plan = cli(...args);
@@ -160,4 +162,124 @@ test('check keys use normalized declarations without accessing link targets', ()
     { name: 'normalize', from: e, to: f, expect: [] },
   ]);
   expect(result.code).toBe(0);
+});
+
+for (const name of ['example', '@app/shared']) {
+  test(`workspace escape ${name} runs green without publishing or reusing an old proof`, () => {
+    const { repo, env, cli, declare, run } = fixture();
+    repo.commit({ 'packages/shared/index.js': 'export default 1;' });
+    repo.write('main.ts', `import value from '${name}'; if (value !== 1) process.exit(1);`);
+    declare(['node_modules']);
+    const target = join(repo.path, 'node_modules', name);
+    if (name.startsWith('@')) {
+      repo.write(`node_modules/${name}/index.js`, 'export default 1;');
+    }
+    expect(run().code).toBe(0);
+    const proof = rows(env, 'proofs');
+    expect(proof).toHaveLength(1);
+    rmSync(target, { recursive: true });
+    symlinkSync(name.startsWith('@') ? '../../packages/shared' : '../packages/shared', target);
+    const plan = cli('plan', '--json');
+    expect(plan.code).toBe(0);
+    const decision = JSON.parse(plan.out).find((row: { task: string }) => row.task === 'linked');
+    expect(decision.state).toBe('RUN');
+    expect(decision.reason).toContain(`node_modules/${name}`);
+    expect(decision.reason).toContain(join(repo.path, 'packages/shared'));
+    expect(decision.reason).toContain('escape');
+    const result = run();
+    expect(result.code).toBe(0);
+    expect(result.out).toContain('green linked; no proof published:');
+    expect(result.out).toContain(`node_modules/${name}`);
+    expect(rows(env, 'results')).toHaveLength(2);
+    expect(rows(env, 'proofs')).toEqual(proof);
+    repo.write('main.ts', `import value from '${name}'; process.exit(value);`);
+    const dirty = cli('plan');
+    expect(dirty.out).toContain('dirty input');
+    expect(dirty.out).toContain('escape');
+    repo.git('restore', 'main.ts');
+    repo.write('proof.yaml', `${repo.git('show', 'HEAD:proof.yaml')}\n`);
+    expect(cli('plan').out).toContain('escape');
+  });
+}
+
+test('both pre-run and post-run escape observations prevent publication', () => {
+  const { repo, env, declare, run } = fixture();
+  repo.commit({ 'packages/shared/index.js': 'export default 1;' });
+  const target = join(repo.path, 'node_modules/workspace');
+  declare(['node_modules'], `ln -s ../packages/shared '${target}'`);
+  let result = run();
+  expect(result.code).toBe(0);
+  expect(result.out).toContain('no proof published:');
+  expect(result.out).toContain('node_modules/workspace');
+  expect(rows(env, 'proofs')).toEqual([]);
+  declare(['node_modules'], `rm '${target}'`);
+  result = run();
+  expect(result.code).toBe(0);
+  expect(result.out).toContain('no proof published:');
+  expect(rows(env, 'proofs')).toEqual([]);
+  expect(rows(env, 'results')).toHaveLength(2);
+});
+
+for (const relativeEntry of [false, true]) {
+  test(`Python ${relativeEntry ? 'relative' : 'absolute'} pth paths cannot publish workspace proof`, () => {
+    const { repo, env, cli, declare, run } = fixture();
+    repo.commit({ 'packages/shared/index.js': 'export default 1;' });
+    const pth = '.venv/lib/python3.13/site-packages/local.pth';
+    repo.write(
+      pth,
+      relativeEntry ? '../../../../packages/shared\n' : `${repo.path}/packages/shared\n`,
+    );
+    declare(['.venv'], `cat ${pth}`);
+    const plan = cli('plan', '--json');
+    expect(plan.code).toBe(0);
+    expect(plan.out).toContain('escape');
+    expect(plan.out).toContain(pth);
+    expect(plan.out).toContain(join(repo.path, 'packages/shared'));
+    const result = run();
+    expect(result.code).toBe(0);
+    expect(result.out).toContain('green linked; no proof published:');
+    expect(result.out).toContain(pth);
+    expect(rows(env, 'results')).toHaveLength(1);
+    expect(rows(env, 'proofs')).toEqual([]);
+  });
+}
+
+test('Python site rules ignore code, stale entries and paths outside the repo or inside the link', () => {
+  const { repo, env, cli, declare, run } = fixture();
+  const sibling = `${repo.path}-sibling`;
+  mkdirSync(sibling);
+  dirs.push(sibling);
+  const site = '.venv/lib/python3.13/site-packages';
+  repo.write(`${site}/installed/keep`, 'installed');
+  repo.write(
+    `${site}/local.pth`,
+    [
+      '',
+      '# comment',
+      'import _virtualenv',
+      'import\tignored',
+      'installed',
+      `${repo.path}/missing`,
+      sibling,
+      '',
+    ].join('\n'),
+  );
+  symlinkSync('lib', join(repo.path, '.venv/lib64'));
+  declare(['.venv'], `cat ${site}/local.pth`);
+  const result = run();
+  expect(result.code).toBe(0);
+  expect(result.out).toContain('green linked; proof published');
+  expect(result.out).toContain('trusted links: .venv');
+  expect(rows(env, 'proofs')).toHaveLength(1);
+  expect(cli('plan').out).toContain('PROVEN linked');
+});
+
+test('a regular file can be linked as an untracked dependency', () => {
+  const { repo, env, declare, run } = fixture();
+  repo.write('.git/info/exclude', '/node_modules/\n/.venv\n');
+  repo.write('.venv', 'dependency');
+  declare(['.venv'], 'test "$(cat .venv)" = dependency');
+  const result = run();
+  expect(result.code).toBe(0);
+  expect(rows(env, 'proofs')).toHaveLength(1);
 });
