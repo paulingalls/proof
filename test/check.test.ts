@@ -113,8 +113,10 @@ test('applies negation in order over the complete inventory', () => {
 test('an unmatched input runs with its reason, including exclusions', () => {
   const r = repo();
   for (const pattern of ['missing/**', '!absent/**']) {
-    const a = baseline(r, declaration.replace('[src/**]', `["src/**", "${pattern}"]`));
-    const b = r.commit({ 'CHANGELOG.md': pattern });
+    const a = baseline(r);
+    const b = r.commit({
+      'proof.yaml': declaration.replace('[src/**]', `["src/**", "${pattern}"]`),
+    });
     const result = r.check([item(pattern, a, b, ['lint'])]);
     expect(result.code).toBe(0);
     expect(result.out).toContain(`PASS ${pattern}\n  RUN lint: unmatched input '${pattern}'`);
@@ -294,4 +296,17 @@ test('a duplicate key in the cases file fails loudly', () => {
     expect(result.err).toContain('.git/cases.yaml');
     expect(result.err).toContain("line 5: duplicate key 'expect'");
   }
+});
+
+test('an undecidable task at a case baseline fails the case instead of matching by accident', () => {
+  const r = repo();
+  const a = r.commit({
+    'proof.yaml': `version: 1\nproject: fixture\ntasks:\n  t:\n    run: exit 99\n    inputs: [{imports-of: main.ts}]\n`,
+    'main.ts': "const name = './x'; await import(name);",
+  });
+  const b = r.commit({ 'main.ts': "import './x';", 'x.ts': 'export {};' });
+  const result = r.check([item('edit', a, b, ['t'])]);
+  expect(result.code).toBe(1);
+  expect(result.out).toContain('FAIL edit');
+  expect(result.out).toContain(`from ${a}: t undecidable`);
 });

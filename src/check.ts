@@ -47,6 +47,12 @@ export async function check(path: string) {
     const to = keys(c.to);
     const actual = new Set<string>();
     const reasons: string[] = [];
+    // A case assumes every task proven at `from`; an undecidable one there would be selected
+    // whatever the pair changed, so the case could pass without testing it.
+    const unproven: string[] = [];
+    for (const [id, old] of from) {
+      if (old.reason) unproven.push(`  from ${c.from}: ${id} undecidable: ${old.reason}`);
+    }
     for (const [id, current] of to) {
       const old = from.get(id);
       if (current.reason) reasons.push(`  RUN ${id}: ${current.reason}`);
@@ -54,9 +60,9 @@ export async function check(path: string) {
     }
     const missing = [...new Set(c.expect)].filter((id) => !actual.has(id));
     const extra = [...actual].filter((id) => !c.expect.includes(id));
-    const pass = !missing.length && !extra.length;
+    const pass = !missing.length && !extra.length && !unproven.length;
     console.log(`${pass ? 'PASS' : 'FAIL'} ${c.name}`);
-    for (const reason of reasons) console.log(reason);
+    for (const reason of [...unproven, ...reasons]) console.log(reason);
     if (!pass) {
       failed = true;
       console.log(`  missing: ${missing.join(', ')}\n  extra: ${extra.join(', ')}`);
