@@ -145,6 +145,8 @@ The package has its own tests for its own behaviour, on synthetic repos it build
   - `plan`, `run`, `why`, `status --ref`, `record`, `invalidate`, `flakes`, `stats`, `check`, `lint`, `doctor`
   - `plan --json` is for wrappers and hooks
   - `why <task>` shows the key's parts and which inputs changed since the newest proof
+  - `run` exits nonzero on red or interruption, not on undecidable alone: it runs in commit hooks, where the
+    tree is dirty by default, so an undecidable task that ran green is reported, never failed (Paul, 2026-10-30).
 - **R17. Concurrency across clones and hosts:** two runs of the same key may both execute, and the store keeps
   both results. A proof is written atomically, and readers never see a half-written one.
 
