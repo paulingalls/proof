@@ -41,7 +41,7 @@ export async function record(args: string[]) {
       : undefined;
   const store = await Store.open();
   try {
-    await store.record(
+    const sharing = await store.record(
       project,
       id,
       current.key,
@@ -52,11 +52,12 @@ export async function record(args: string[]) {
       dirty.length > 0,
       otherBytes !== undefined,
     );
-    if (otherBytes) return `recorded red ${id}; contests nothing: ${otherBytes}`;
-    if (outcome !== 'green') return `recorded ${outcome} ${id}`;
+    const suffix = sharing === 'local' ? '' : `; ${sharing}`;
+    if (otherBytes) return `recorded red ${id}; contests nothing: ${otherBytes}${suffix}`;
+    if (outcome !== 'green') return `recorded ${outcome} ${id}${suffix}`;
     return dirty.length
-      ? `recorded green ${id}; no proof published: dirty path '${dirty[0]}'`
-      : `recorded green ${id}; proof published`;
+      ? `recorded green ${id}; no proof published: dirty path '${dirty[0]}'${suffix}`
+      : `recorded green ${id}; proof published${suffix}`;
   } catch (error) {
     try {
       await store.close();

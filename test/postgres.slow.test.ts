@@ -162,11 +162,16 @@ test('remote green is reused across clones with provenance, precise duration and
     join(base, 'proof/store'),
     `${env.PROOF_STORE.replace('postgres:', 'postgresql:')}\r\nignored`,
   );
-  expect(clone.cli(['plan'], { XDG_CONFIG_HOME: base }).out).toContain('PROVEN lint');
+  expect(
+    clone.cli(['plan'], { XDG_CONFIG_HOME: base, PROOF_STATE_DIR: directory() }).out,
+  ).toContain('PROVEN lint');
   writeFileSync(join(base, 'proof/store'), 'invalid');
   expect(clone.cli(['plan'], { ...env, XDG_CONFIG_HOME: base }).out).toContain('PROVEN lint');
   expect(
-    clone.cli(['plan'], { PROOF_STORE: env.PROOF_STORE.replace('postgres:', 'postgresql:') }).out,
+    clone.cli(['plan'], {
+      PROOF_STORE: env.PROOF_STORE.replace('postgres:', 'postgresql:'),
+      PROOF_STATE_DIR: directory(),
+    }).out,
   ).toContain('PROVEN lint');
 }, 30_000);
 
@@ -283,7 +288,10 @@ for (const backend of ['postgres', 'sqlite']) {
     const repo = fixture();
     const remote = backend === 'postgres' ? await postgres.database() : undefined;
     const localPath = directory();
-    const env = remote ? { PROOF_STORE: remote.PROOF_STORE } : { PROOF_STATE_DIR: localPath };
+    const env = {
+      PROOF_STATE_DIR: localPath,
+      ...(remote ? { PROOF_STORE: remote.PROOF_STORE } : {}),
+    };
     expect(repo.cli(['record', 'lint', '--outcome', 'green'], env).code).toBe(0);
     const local = remote ? undefined : new Database(join(localPath, 'proof.db'));
     try {
@@ -429,7 +437,7 @@ test('failed connections name the redacted store without leaking any password', 
     const expected = kind === 'unencoded' ? 'proof:1' : `${url.hostname}:${url.port}`;
     for (const args of commands) {
       const result = repo.cli(args, { PROOF_STORE: store, PROOF_STATE_DIR: directory() });
-      expect(result.code).toBe(2);
+      expect(result.code).toBe(['refused', 'unencoded'].includes(kind) ? 0 : 2);
       expect(result.err).toContain(expected);
       expect(result.err).toContain('postgres://');
       for (const value of [secret, encodeURIComponent(secret), 'distinctive']) {

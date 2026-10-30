@@ -2,8 +2,9 @@ import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { statePath, storeUrl } from './config';
-import { postgres } from './postgres';
+import { postgres, UnreachableStore } from './postgres';
 
+export type Sharing = 'local' | 'shared' | 'not shared' | 'sharing uncertain';
 export type Outcome = 'green' | 'red' | 'incomplete';
 type Value = string | number | null;
 export type Query = <T = Record<string, unknown>>(sql: string, ...values: Value[]) => Promise<T[]>;
@@ -54,47 +55,68 @@ function sqlite(): Backend {
   };
 }
 
-export class Store {
-  private closed = false;
-  private constructor(private readonly backend: Backend) {}
-
-  static async open() {
-    const url = storeUrl();
-    const backend = url === undefined ? sqlite() : postgres(url);
-    try {
-      await backend.transaction('proof:schema', async (query) => {
-        await query(`CREATE TABLE IF NOT EXISTS schema_version (
+async function initialize(backend: Backend) {
+  await backend.transaction('proof:schema', async (query) => {
+    await query(`CREATE TABLE IF NOT EXISTS schema_version (
           singleton INTEGER PRIMARY KEY CHECK (singleton = 1), version INTEGER NOT NULL
         )`);
-        const [row] = await query<{ version: number }>('SELECT version FROM schema_version');
-        if (row && row.version !== 1)
-          throw new Error(`store schema version ${row.version}; supported version 1`);
-        const id = backend.remote
-          ? 'BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY'
-          : 'INTEGER PRIMARY KEY';
-        const reference = backend.remote ? 'BIGINT' : 'INTEGER';
-        await query(`CREATE TABLE IF NOT EXISTS results (
+    const [row] = await query<{ version: number }>('SELECT version FROM schema_version');
+    if (row && row.version !== 1)
+      throw new Error(`store schema version ${row.version}; supported version 1`);
+    const id = backend.remote
+      ? 'BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY'
+      : 'INTEGER PRIMARY KEY';
+    const reference = backend.remote ? 'BIGINT' : 'INTEGER';
+    await query(`CREATE TABLE IF NOT EXISTS results (
           id ${id}, project TEXT NOT NULL, task TEXT NOT NULL, key TEXT NOT NULL,
           outcome TEXT NOT NULL, seconds DOUBLE PRECISION, host TEXT NOT NULL, "commit" TEXT NOT NULL,
           dirty INTEGER NOT NULL, finished_at TEXT NOT NULL
         )`);
-        await query(`CREATE TABLE IF NOT EXISTS proofs (
+    await query(`CREATE TABLE IF NOT EXISTS proofs (
           project TEXT NOT NULL, task TEXT NOT NULL, key TEXT NOT NULL,
           result_id ${reference} NOT NULL REFERENCES results(id),
           PRIMARY KEY (project, task, key)
         )`);
-        await query(`CREATE TABLE IF NOT EXISTS contradictions (
+    await query(`CREATE TABLE IF NOT EXISTS contradictions (
           id ${id}, project TEXT NOT NULL, task TEXT NOT NULL, key TEXT NOT NULL,
           green_result ${reference} NOT NULL REFERENCES results(id),
           red_result ${reference} NOT NULL REFERENCES results(id), kind TEXT NOT NULL,
           deleted_proof INTEGER NOT NULL, recorded_at TEXT NOT NULL
         )`);
-        if (!row) await query('INSERT INTO schema_version (singleton, version) VALUES (1, 1)');
-      });
-      return new Store(backend);
+    if (!backend.remote)
+      await query(`CREATE TABLE IF NOT EXISTS observed_contests (
+        result_id INTEGER PRIMARY KEY REFERENCES results(id),
+        red_commit TEXT NOT NULL, red_host TEXT NOT NULL
+      )`);
+    if (!row) await query('INSERT INTO schema_version (singleton, version) VALUES (1, 1)');
+  });
+}
+
+export class Store {
+  private closed = false;
+  private offline = false;
+  private constructor(
+    private readonly local: Backend,
+    private readonly remote?: Backend,
+  ) {}
+
+  static async open() {
+    const url = storeUrl();
+    const local = sqlite();
+    const store = new Store(local, url === undefined ? undefined : postgres(url));
+    try {
+      await initialize(local);
+      if (store.remote) {
+        try {
+          await initialize(store.remote);
+        } catch (error) {
+          store.fallback(error);
+        }
+      }
+      return store;
     } catch (error) {
       try {
-        await backend.close();
+        await store.close();
       } catch {
         /* Preserve the initialization failure. */
       }
@@ -102,16 +124,63 @@ export class Store {
     }
   }
 
-  async proof(project: string, task: string, key: string, query = this.backend.query) {
+  private fallback(error: unknown) {
+    if (!(error instanceof UnreachableStore)) throw error;
+    this.offline = true;
+    console.error(`store unreachable (${error.message}); using this machine's own proofs`);
+  }
+
+  async proof(project: string, task: string, key: string) {
+    if (this.remote && !this.offline) {
+      try {
+        const proof = await this.lookup(project, task, key, this.remote.query, false);
+        await this.observe(project, task, key, this.remote.query, proof);
+        return proof;
+      } catch (error) {
+        this.fallback(error);
+      }
+    }
+    return this.lookup(project, task, key, this.local.query, true);
+  }
+
+  private async observe(project: string, task: string, key: string, query: Query, proof?: Proof) {
+    let red = proof;
+    if (!proof) {
+      [red] = await query<Proof>(
+        `SELECT r."commit" AS red_commit, r.host AS red_host
+        FROM contradictions c JOIN results r ON r.id = c.red_result
+        WHERE c.project = ? AND c.task = ? AND c.key = ? AND c.deleted_proof = 1 LIMIT 1`,
+        project,
+        task,
+        key,
+      );
+    }
+    if (red?.red_commit) {
+      await this.local.query(
+        `INSERT OR IGNORE INTO observed_contests
+        (result_id, red_commit, red_host)
+        SELECT result_id, ?, ? FROM proofs WHERE project = ? AND task = ? AND key = ?`,
+        red.red_commit,
+        red.red_host,
+        project,
+        task,
+        key,
+      );
+    }
+  }
+
+  private async lookup(project: string, task: string, key: string, query: Query, local: boolean) {
     const [proof] = await query<Proof>(
       `
       SELECT p.result_id, r."commit", r.host, r.finished_at,
-        red."commit" AS red_commit, red.host AS red_host
+        ${local ? 'COALESCE(red."commit", o.red_commit)' : 'red."commit"'} AS red_commit,
+        ${local ? 'COALESCE(red.host, o.red_host)' : 'red.host'} AS red_host
       FROM proofs p JOIN results r
       ON r.id = p.result_id AND r.project = p.project AND r.task = p.task AND r.key = p.key
       LEFT JOIN contradictions c ON c.project = p.project AND c.task = p.task AND c.key = p.key
         AND c.green_result = p.result_id AND c.deleted_proof = 0
       LEFT JOIN results red ON red.id = c.red_result
+      ${local ? 'LEFT JOIN observed_contests o ON o.result_id = p.result_id' : ''}
       WHERE p.project = ? AND p.task = ? AND p.key = ?
     `,
       project,
@@ -131,67 +200,89 @@ export class Store {
     commit: string,
     dirty: boolean,
     dirtyInputs: boolean,
-  ) {
-    await this.backend.transaction(JSON.stringify([project, task, key]), async (query) => {
-      const [result] = await query<{ id: number | string }>(
-        `
+  ): Promise<Sharing> {
+    const finishedAt = new Date().toISOString();
+    const write = async (backend: Backend) =>
+      backend.transaction(JSON.stringify([project, task, key]), async (query) => {
+        const [result] = await query<{ id: number | string }>(
+          `
         INSERT INTO results (project, task, key, outcome, seconds, host, "commit", dirty, finished_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id
       `,
-        project,
-        task,
-        key,
-        outcome,
-        seconds,
-        host,
-        commit,
-        Number(dirty),
-        new Date().toISOString(),
-      );
-      if (!result) throw new Error('store did not return the inserted result');
-      if (outcome === 'green' && !dirty)
-        await query(
-          `
-          INSERT INTO proofs (project, task, key, result_id) VALUES (?, ?, ?, ?)
-          ON CONFLICT (project, task, key) DO UPDATE SET result_id = excluded.result_id
-        `,
           project,
           task,
           key,
-          result.id,
+          outcome,
+          seconds,
+          host,
+          commit,
+          Number(dirty),
+          finishedAt,
         );
-      if (outcome === 'red' && !dirtyInputs) {
-        const proof = await this.proof(project, task, key, query);
-        if (!proof) return;
-        await query(
-          `
+        if (!result) throw new Error('store did not return the inserted result');
+        if (outcome === 'green' && !dirty)
+          await query(
+            `
+          INSERT INTO proofs (project, task, key, result_id) VALUES (?, ?, ?, ?)
+          ON CONFLICT (project, task, key) DO UPDATE SET result_id = excluded.result_id
+        `,
+            project,
+            task,
+            key,
+            result.id,
+          );
+        if (outcome === 'red' && !dirtyInputs) {
+          const proof = await this.lookup(project, task, key, query, !backend.remote);
+          if (proof) {
+            await query(
+              `
           INSERT INTO contradictions
             (project, task, key, green_result, red_result, kind, deleted_proof, recorded_at)
           VALUES (?, ?, ?, ?, ?, 'ordinary', ?, ?)
         `,
-          project,
-          task,
-          key,
-          proof.result_id,
-          result.id,
-          Number(proof.red_commit !== null),
-          new Date().toISOString(),
-        );
-        if (proof.red_commit !== null)
-          await query(
-            `DELETE FROM proofs WHERE project = ? AND task = ? AND key = ? AND result_id = ?`,
-            project,
-            task,
-            key,
-            proof.result_id,
-          );
-      }
-    });
+              project,
+              task,
+              key,
+              proof.result_id,
+              result.id,
+              Number(proof.red_commit !== null),
+              finishedAt,
+            );
+            if (proof.red_commit !== null)
+              await query(
+                `DELETE FROM proofs WHERE project = ? AND task = ? AND key = ? AND result_id = ?`,
+                project,
+                task,
+                key,
+                proof.result_id,
+              );
+          }
+        }
+        if (backend.remote) {
+          const proof = await this.lookup(project, task, key, query, false);
+          await this.observe(project, task, key, query, proof);
+        }
+      });
+    await write(this.local);
+    if (!this.remote) return 'local';
+    if (this.offline) return 'not shared';
+    try {
+      await write(this.remote);
+      return 'shared';
+    } catch (error) {
+      this.fallback(error);
+      return 'sharing uncertain';
+    }
   }
 
   async close() {
     if (this.closed) return;
     this.closed = true;
-    await this.backend.close();
+    const results = await Promise.allSettled([this.local.close(), this.remote?.close()]);
+    for (const [index, result] of results.entries()) {
+      if (result.status === 'fulfilled') continue;
+      if (index === 1 && this.offline && result.reason instanceof UnreachableStore) continue;
+      throw result.reason;
+    }
   }
 }

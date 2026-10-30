@@ -2,8 +2,10 @@ import { SQL } from 'bun';
 import { redacted } from './config';
 import type { Backend, Query } from './store';
 
+export class UnreachableStore extends Error {}
+
 export function postgres(url: string): Backend {
-  const sql = new SQL(url, { max: 1, connectionTimeout: 5 });
+  const sql = new SQL(url, { max: 1, connectionTimeout: 2 });
   const queryFor =
     (connection: Pick<SQL, 'unsafe'>): Query =>
     async <T>(statement: string, ...values: (string | number | null)[]) => {
@@ -15,7 +17,16 @@ export function postgres(url: string): Backend {
     try {
       return await work();
     } catch (error) {
-      throw new Error(
+      const failure = error as { code?: string; errno?: string };
+      const transport =
+        [
+          'ERR_POSTGRES_CONNECTION_TIMEOUT',
+          'ERR_POSTGRES_CONNECTION_FAILED',
+          'ERR_POSTGRES_CONNECTION_REFUSED',
+          'ERR_POSTGRES_CONNECTION_CLOSED',
+        ].includes(failure.code ?? '') || ['57P01', '57P02', '57P03'].includes(failure.errno ?? '');
+      const Failure = transport ? UnreachableStore : Error;
+      throw new Failure(
         `Postgres store ${redacted(url)}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
@@ -32,7 +43,7 @@ export function postgres(url: string): Backend {
       );
     },
     async close() {
-      await sql.close();
+      await named(() => sql.close());
     },
   };
 }

@@ -30,19 +30,26 @@ export class Postgres {
     process.exit(code);
   }
 
+  constructor(private readonly restartable = false) {}
+
   async start() {
     docker(['pull', image], 120_000);
+    const endpoint = this.restartable
+      ? Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } })
+      : undefined;
+    const binding = `127.0.0.1:${endpoint?.port ?? ''}:5432`;
+    endpoint?.stop(true);
     this.id = docker([
       'create',
       '--name',
       `proof-test-${this.owner}`,
       '--label',
       `proof.test=${this.owner}`,
-      '--rm',
+      ...(this.restartable ? [] : ['--rm']),
       '-e',
       'POSTGRES_PASSWORD=proof-test',
       '-p',
-      '127.0.0.1::5432',
+      binding,
       '--entrypoint',
       'timeout',
       image,
@@ -61,23 +68,40 @@ export class Postgres {
       const info = this.inspect();
       const port = info.NetworkSettings.Ports['5432/tcp'][0].HostPort;
       this.url = `postgres://postgres:proof-test@127.0.0.1:${port}/postgres`;
-      const deadline = Date.now() + 30_000;
-      while (true) {
-        const sql = new SQL(this.url, { max: 1, connectionTimeout: 1 });
-        try {
-          await sql`SELECT 1`;
-          await sql.close();
-          break;
-        } catch (error) {
-          await sql.close();
-          if (Date.now() >= deadline) throw error;
-          await Bun.sleep(100);
-        }
-      }
+      await this.ready();
       return this;
     } catch (error) {
       await this.close();
       throw error;
+    }
+  }
+
+  stop() {
+    if (!this.restartable) throw new Error('container is not restartable');
+    this.verify();
+    docker(['stop', this.id]);
+  }
+
+  async restart() {
+    if (!this.restartable) throw new Error('container is not restartable');
+    this.verify();
+    docker(['start', this.id]);
+    await this.ready();
+  }
+
+  private async ready() {
+    const deadline = Date.now() + 30_000;
+    while (true) {
+      const sql = new SQL(this.url, { max: 1, connectionTimeout: 1 });
+      try {
+        await sql`SELECT 1`;
+        await sql.close();
+        break;
+      } catch (error) {
+        await sql.close();
+        if (Date.now() >= deadline) throw error;
+        await Bun.sleep(100);
+      }
     }
   }
 
