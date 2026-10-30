@@ -113,8 +113,7 @@ test('an unmatched input runs with its reason, including exclusions', () => {
     const b = r.commit({ 'CHANGELOG.md': pattern });
     const result = r.check([item(pattern, a, b, ['lint'])]);
     expect(result.code).toBe(0);
-    expect(result.out).toContain(`PASS ${pattern}`);
-    expect(result.out).toContain(`RUN lint: unmatched input '${pattern}'`);
+    expect(result.out).toContain(`PASS ${pattern}\n  RUN lint: unmatched input '${pattern}'`);
   }
 });
 

@@ -32,16 +32,18 @@ export async function check(path: string) {
     const to = new RefTree(c.to);
     const oldTasks = declarations(from);
     const actual = new Set<string>();
+    const reasons: string[] = [];
     for (const [id, task] of declarations(to)) {
       const old = oldTasks.get(id);
       const current = key(id, task, to);
-      if (current.reason) console.log(`  RUN ${id}: ${current.reason}`);
+      if (current.reason) reasons.push(`  RUN ${id}: ${current.reason}`);
       if (!old || current.reason || key(id, old, from).key !== current.key) actual.add(id);
     }
     const missing = [...new Set(c.expect)].filter((id) => !actual.has(id));
     const extra = [...actual].filter((id) => !c.expect.includes(id));
     const pass = !missing.length && !extra.length;
     console.log(`${pass ? 'PASS' : 'FAIL'} ${c.name}`);
+    for (const reason of reasons) console.log(reason);
     if (!pass) {
       failed = true;
       console.log(`  missing: ${missing.join(', ')}\n  extra: ${extra.join(', ')}`);
