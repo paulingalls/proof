@@ -18,8 +18,26 @@ export async function run(args: string[]) {
   const store = new Store();
   const summary: string[] = [];
   let red = false;
+  let interrupted: 'SIGINT' | 'SIGTERM' | undefined;
+  let active: ReturnType<typeof Bun.spawn> | undefined;
+  const interrupt = (signal: 'SIGINT' | 'SIGTERM') => {
+    if (interrupted) return;
+    interrupted = signal;
+    if (active) {
+      try {
+        process.kill(-active.pid, signal);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+      }
+    }
+  };
+  const onInt = () => interrupt('SIGINT');
+  const onTerm = () => interrupt('SIGTERM');
+  process.on('SIGINT', onInt);
+  process.on('SIGTERM', onTerm);
   try {
     for (const id of ids) {
+      if (interrupted) break;
       const { tree, project, tasks, include, dirty, declaration } = currentTree();
       const task = tasks.get(id);
       if (!task) throw new Error(`undeclared task '${id}'`);
@@ -42,12 +60,16 @@ export async function run(args: string[]) {
         }
         const started = performance.now();
         const child = Bun.spawn(['sh', '-c', task.run], {
+          detached: true,
           cwd: sandbox.path,
           env,
           stdout: 'inherit',
           stderr: 'inherit',
         });
-        const outcome = (await child.exited) === 0 ? 'green' : 'red';
+        active = child;
+        const code = await child.exited;
+        active = undefined;
+        const outcome = interrupted ? 'incomplete' : code === 0 ? 'green' : 'red';
         const seconds = (performance.now() - started) / 1000;
         red ||= outcome === 'red';
         let unpublished = dirty.length ? `dirty path '${dirty[0]}'` : undefined;
@@ -83,8 +105,10 @@ export async function run(args: string[]) {
       }
     }
     console.log(summary.join('\n'));
-    return red ? 1 : 0;
+    return interrupted ? (interrupted === 'SIGINT' ? 130 : 143) : red ? 1 : 0;
   } finally {
+    process.off('SIGINT', onInt);
+    process.off('SIGTERM', onTerm);
     store.close();
   }
 }
