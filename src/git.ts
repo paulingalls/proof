@@ -10,9 +10,16 @@ export class RefTree {
   readonly commit: string;
   readonly files = new Map<string, string>();
 
-  constructor(readonly ref: string) {
+  static index() {
+    return new RefTree(git('write-tree').trim(), 'tree');
+  }
+
+  constructor(
+    readonly ref: string,
+    type: 'commit' | 'tree' = 'commit',
+  ) {
     try {
-      const oid = git('rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`).trim();
+      const oid = git('rev-parse', '--verify', '--end-of-options', `${ref}^{${type}}`).trim();
       this.commit = oid;
       for (const entry of git('ls-tree', '-r', '-z', '--full-tree', oid).split('\0')) {
         if (!entry) continue;
