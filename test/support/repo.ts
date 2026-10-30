@@ -94,12 +94,25 @@ export class Repo {
     return this.cli(['check', '.git/cases.yaml']);
   }
 
-  cli(args: string[], overrides: Record<string, string | undefined> = {}, cwd = this.path) {
+  private cliEnv(overrides: Record<string, string | undefined>) {
     const env: Record<string, string | undefined> = isolatedEnv();
     for (const name of ['PROOF_STATE_DIR', 'XDG_STATE_HOME', 'HOME']) delete env[name];
+    return { ...env, ...overrides };
+  }
+
+  spawnCli(args: string[], overrides: Record<string, string | undefined> = {}, cwd = this.path) {
+    return Bun.spawn([process.execPath, cli, ...args], {
+      cwd,
+      env: this.cliEnv(overrides),
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+  }
+
+  cli(args: string[], overrides: Record<string, string | undefined> = {}, cwd = this.path) {
     const result = Bun.spawnSync([process.execPath, cli, ...args], {
       cwd,
-      env: { ...env, ...overrides },
+      env: this.cliEnv(overrides),
     });
     return {
       code: result.exitCode,
