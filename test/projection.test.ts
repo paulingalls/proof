@@ -1,9 +1,14 @@
 import { afterEach, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Repo } from './support/repo';
 
 const repos: Repo[] = [];
+const states: string[] = [];
 afterEach(() => {
   for (const r of repos.splice(0)) r.close();
+  for (const path of states.splice(0)) rmSync(path, { recursive: true, force: true });
 });
 const projection = { path: 'package.json', json: ['dependencies'] };
 const task = (inputs: unknown[]) => ({ run: 'true', inputs });
@@ -89,4 +94,66 @@ test('expands projections from direct and nested named sets', () => {
   const a = r.git('rev-parse', 'HEAD');
   const b = r.commit({ 'package.json': manifest(1, { a: 2, b: 2 }) });
   check(r, [['named sets', a, b, ['direct', 'nested']]]);
+});
+
+function state(r: Repo, ids: string[]) {
+  const path = mkdtempSync(join(tmpdir(), 'proof-projection-'));
+  states.push(path);
+  const env = { PROOF_STATE_DIR: path };
+  for (const id of ids) expect(r.cli(['record', id, '--outcome', 'green'], env).code).toBe(0);
+  return env;
+}
+function plan(r: Repo, env: Record<string, string>) {
+  const result = r.cli(['plan', '--json'], env);
+  expect(result.code, result.err).toBe(0);
+  return JSON.parse(result.out) as { task: string; state: string; reason: string }[];
+}
+
+test('unreadable projections run with reasons while other tasks are judged normally', () => {
+  for (const content of [undefined, '{', '[]']) {
+    const r = fixture({
+      deps: task([{ ...projection, path: 'projected.json' }]),
+      other: task(['other']),
+      changed: task(['src/**']),
+    });
+    const a = r.commit({ 'projected.json': manifest() });
+    const env = state(r, ['other']);
+    if (content === undefined) r.git('rm', 'projected.json');
+    const b = r.commit({
+      'src/a.ts': 'changed',
+      ...(content === undefined ? {} : { 'projected.json': content }),
+    });
+    expect(check(r, [['bad projection', a, b, ['deps', 'changed']]])).toMatch(
+      /RUN deps:.*projected\.json/,
+    );
+    const rows = plan(r, env);
+    expect(rows[0]).toEqual({
+      task: 'deps',
+      state: 'RUN',
+      reason: expect.stringMatching(/undecidable:.*projected\.json/),
+    });
+    expect(rows[1]?.state).toBe('PROVEN');
+    expect(rows[2]?.state).toBe('RUN');
+  }
+});
+
+test('dirty projected paths are undecidable even when only an unselected member changes', () => {
+  const r = fixture({ deps: task([projection]), other: task(['other']) });
+  const env = state(r, ['deps', 'other']);
+  expect(plan(r, env).map((row) => row.state)).toEqual(['PROVEN', 'PROVEN']);
+  r.write('package.json', manifest(2));
+  const rows = plan(r, env);
+  expect(rows[0]).toEqual({
+    task: 'deps',
+    state: 'RUN',
+    reason: "undecidable: dirty input 'package.json'",
+  });
+  expect(rows[1]?.state).toBe('PROVEN');
+});
+
+test('unknown projection fields fail with the task and field name', () => {
+  const r = fixture({ deps: task([{ ...projection, surprise: true }]) });
+  const result = r.cli(['plan', '--json']);
+  expect(result.code).toBe(2);
+  for (const word of ['deps', 'surprise']) expect(result.err).toContain(word);
 });

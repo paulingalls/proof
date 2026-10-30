@@ -75,7 +75,7 @@ function selects(task: Task, path: string) {
     const negative = pattern.startsWith('!');
     if (new Bun.Glob(negative ? pattern.slice(1) : pattern).match(path)) selected = !negative;
   }
-  return selected;
+  return selected || task.inputs.some((input) => typeof input !== 'string' && input.path === path);
 }
 
 // The literal directory before a pattern's first glob character: a superset for git pathspecs.
@@ -90,7 +90,12 @@ export function scope(tasks: Iterable<Task>, declarations: string[]): Scope {
   const patterns = [...declarations, ...list.flatMap((t) => t.inputs)].filter(
     (p): p is string => typeof p === 'string' && !p.startsWith('!'),
   );
-  const prefixes = patterns.map(prefix);
+  const prefixes = [
+    ...patterns.map(prefix),
+    ...list.flatMap((t) =>
+      t.inputs.flatMap((input) => (typeof input === 'string' ? [] : [input.path])),
+    ),
+  ];
   return {
     selects: (path) =>
       declarations.some((d) => new Bun.Glob(d).match(path)) || list.some((t) => selects(t, path)),
@@ -102,7 +107,11 @@ export function key(id: string, task: Task, tree: RefTree, dirty: string[] = [])
   const available = inventory(tree);
   if (dirty.length) {
     const selection = select(task, available, dirty);
-    const path = dirty.find((path) => selection.paths?.has(path));
+    const path = dirty.find(
+      (path) =>
+        selection.paths?.has(path) ||
+        task.inputs.some((input) => typeof input !== 'string' && input.path === path),
+    );
     if (path) return { reason: `dirty input '${path}'` };
   }
   const selection = select(task, available);
@@ -121,18 +130,28 @@ export function key(id: string, task: Task, tree: RefTree, dirty: string[] = [])
   );
   const members = new Map<string, [string, string, string]>();
   for (const { path, json } of projections) {
+    if (!tree.files.has(path)) return { reason: `missing input '${path}'` };
     let source = cached.get(path);
     if (source === undefined) {
       source = tree.read(path);
       cached.set(path, source);
     }
-    const value = JSON.parse(source);
+    let value: unknown;
+    try {
+      value = JSON.parse(source);
+    } catch {
+      return { reason: `input '${path}': invalid JSON` };
+    }
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      return { reason: `input '${path}': not a JSON object` };
+    }
+    const object = value as Record<string, unknown>;
     for (const member of json) {
       members.set(JSON.stringify([path, member]), [
         path,
         member,
-        Object.hasOwn(value, member)
-          ? new Bun.CryptoHasher('sha256').update(canonical(value[member])).digest('hex')
+        Object.hasOwn(object, member)
+          ? new Bun.CryptoHasher('sha256').update(canonical(object[member])).digest('hex')
           : 'absent',
       ]);
     }
