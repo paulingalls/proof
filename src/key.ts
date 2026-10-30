@@ -15,14 +15,16 @@ function inventory(tree: RefTree) {
   return paths;
 }
 
+function compare(a: string, b: string) {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
   if (value !== null && typeof value === 'object') {
     return `{${Object.entries(value)
-      .map(([name, member]) => [JSON.stringify(name), canonical(member)])
-      .sort(([a], [b]) =>
-        (a as string) < (b as string) ? -1 : (a as string) > (b as string) ? 1 : 0,
-      )
+      .map(([name, member]) => [JSON.stringify(name), canonical(member)] as const)
+      .sort(([a], [b]) => compare(a, b))
       .map(([name, member]) => `${name}:${member}`)
       .join(',')}}`;
   }
@@ -119,7 +121,7 @@ export function key(id: string, task: Task, tree: RefTree, dirty: string[] = [])
   const selected: ([string, string | undefined] | [string, string, string])[] = [
     ...selection.paths,
   ].map((path) => [path, tree.files.get(path)]);
-  selected.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  selected.sort(([a], [b]) => compare(a, b));
   let cached = contents.get(tree);
   if (!cached) {
     cached = new Map();
@@ -157,7 +159,7 @@ export function key(id: string, task: Task, tree: RefTree, dirty: string[] = [])
     }
   }
   selected.push(
-    ...[...members].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, entry]) => entry),
+    ...[...members.values()].sort(([ap, am], [bp, bm]) => compare(ap, bp) || compare(am, bm)),
   );
   const hash = new Bun.CryptoHasher('sha256')
     .update(JSON.stringify([1, id, { run: task.run }, selected]))
