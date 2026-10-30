@@ -49,7 +49,7 @@ export async function run(args: string[]) {
       const { tree, project, tasks, include, dirty, declaration } = currentTree();
       const task = tasks.get(id);
       if (!task) throw new Error(`undeclared task '${id}'`);
-      const inspection = inspectLinks(task.links ?? []);
+      const inspection = inspectLinks(task.links ?? [], tree.files.keys());
       const decision = decide(id, task, tree, dirty, declaration, project, store, inspection);
       console.log(`${decision.state} ${id}: ${decision.reason}`);
       if (decision.state === 'PROVEN') {
@@ -97,7 +97,10 @@ export async function run(args: string[]) {
           }
         }
         const escapes = [
-          ...new Set([...inspection.escapes, ...inspectLinks(task.links ?? []).escapes]),
+          ...new Set([
+            ...inspection.escapes,
+            ...inspectLinks(task.links ?? [], tree.files.keys()).escapes,
+          ]),
         ];
         if (escapes.length) unpublished = [unpublished, ...escapes].filter(Boolean).join('; ');
         if (current.key !== undefined) {

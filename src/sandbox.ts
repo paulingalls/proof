@@ -52,7 +52,7 @@ function entries(path: string) {
   }
 }
 
-export function inspectLinks(paths: string[]) {
+export function inspectLinks(paths: string[], tracked: Iterable<string>) {
   const trusted: string[] = [];
   const escapes: string[] = [];
   if (!paths.length) return { trusted, escapes };
@@ -65,6 +65,16 @@ export function inspectLinks(paths: string[]) {
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
         trusted.push(path);
+        continue;
+      }
+      // Bytes reached through a link are not in the key, so a link may not reach tracked files.
+      const base = within(repo, root) ? relative(repo, root) : undefined;
+      const reached =
+        base === undefined
+          ? undefined
+          : [...tracked].find((file) => !base || file === base || file.startsWith(`${base}/`));
+      if (reached) {
+        escapes.push(`link '${path}' reaches tracked '${reached}'`);
         continue;
       }
       if (!lstatSync(root).isDirectory()) {

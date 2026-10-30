@@ -284,3 +284,21 @@ test('a regular file can be linked as an untracked dependency', () => {
   expect(result.code).toBe(0);
   expect(rows(env, 'proofs')).toHaveLength(1);
 });
+
+for (const via of ['tracked directory', 'ignored symlink to it']) {
+  test(`a link reaching tracked source through a ${via} never publishes`, () => {
+    const { repo, env, cli, declare, run } = fixture();
+    repo.commit({
+      'src/a.txt': 'ok',
+      ...(via === 'tracked directory' ? {} : { '.gitignore': 'deps\n' }),
+    });
+    if (via !== 'tracked directory') symlinkSync('src', join(repo.path, 'deps'));
+    const link = via === 'tracked directory' ? 'src' : 'deps';
+    declare([link], `grep -q ok ${link}/a.txt`);
+    const result = run();
+    expect(result.out).toContain('green linked; no proof published:');
+    expect(result.out).toContain("tracked 'src/a.txt'");
+    expect(rows(env, 'proofs')).toEqual([]);
+    expect(cli('plan').out).toContain('RUN linked');
+  });
+}

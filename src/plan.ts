@@ -25,7 +25,7 @@ export function decide(
   declaration: string | undefined,
   project: string,
   store: Store,
-  inspection = inspectLinks(decl.links ?? []),
+  inspection = inspectLinks(decl.links ?? [], tree.files.keys()),
 ) {
   const links = [
     ...(inspection.trusted.length ? [`trusted links: ${inspection.trusted.join(', ')}`] : []),
