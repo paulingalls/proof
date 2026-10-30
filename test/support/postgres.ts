@@ -12,6 +12,7 @@ function docker(args: string[], timeout = 30_000) {
 export class Postgres {
   private readonly owner = crypto.randomUUID();
   private id = '';
+  private volume = '';
   private clients: SQL[] = [];
   url = '';
   private static readonly active = new Set<Postgres>();
@@ -57,11 +58,7 @@ export class Postgres {
       'docker-entrypoint.sh',
       'postgres',
     ]);
-    if (!Postgres.active.size) {
-      process.on('SIGINT', Postgres.onInt);
-      process.on('SIGTERM', Postgres.onTerm);
-    }
-    Postgres.active.add(this);
+    this.register();
     try {
       this.verify();
       docker(['start', this.id]);
@@ -74,6 +71,59 @@ export class Postgres {
       await this.close();
       throw error;
     }
+  }
+
+  private register() {
+    if (!Postgres.active.size) {
+      process.on('SIGINT', Postgres.onInt);
+      process.on('SIGTERM', Postgres.onTerm);
+    }
+    Postgres.active.add(this);
+  }
+
+  async startGuide(block: string) {
+    docker(['pull', image], 120_000);
+    const endpoint = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } });
+    const port = endpoint.port;
+    endpoint.stop(true);
+    this.id = `proof-test-${this.owner}`;
+    this.volume = `${this.id}-data`;
+    this.url = `postgres://postgres:proof-test@127.0.0.1:${port}/postgres`;
+    this.register();
+    try {
+      const result = Bun.spawnSync(['sh', '-eu', '-c', block], {
+        env: {
+          ...process.env,
+          PROOF_CONTAINER: this.id,
+          PROOF_LABEL: `proof.test=${this.owner}`,
+          PROOF_VOLUME: this.volume,
+          POSTGRES_USER: 'postgres',
+          POSTGRES_DB: 'postgres',
+          POSTGRES_PASSWORD: 'proof-test',
+          PROOF_PORT: String(port),
+        },
+        timeout: 60_000,
+      });
+      if (result.exitCode !== 0) throw new Error(`guide startup: ${result.stderr.toString()}`);
+      this.verify();
+      docker(['update', '--restart', 'no', this.id]);
+      this.exec(['-d', '-u', 'postgres'], ['sh', '-c', 'sleep 900; pg_ctl stop -m fast']);
+      await this.ready();
+      return this;
+    } catch (error) {
+      await this.close();
+      throw error;
+    }
+  }
+
+  exec(options: string[], command: string[], input?: Uint8Array) {
+    this.verify();
+    const result = Bun.spawnSync(['docker', 'exec', ...options, this.id, ...command], {
+      timeout: 30_000,
+      stdin: input,
+    });
+    if (result.exitCode !== 0) throw new Error(`docker exec: ${result.stderr.toString()}`);
+    return result.stdout;
   }
 
   stop() {
@@ -132,11 +182,30 @@ export class Postgres {
       if (result.exitCode !== 0 && this.inspect())
         throw new Error(`docker rm: ${result.stderr.toString()}`);
     }
+    if (this.volume) {
+      const info = this.inspectVolume();
+      if (info) {
+        if (
+          info.Labels?.['proof.test'] !== this.owner ||
+          info.Labels?.['com.docker.compose.project'] !== undefined
+        )
+          throw new Error(`refusing to remove unowned or Compose volume ${this.volume}`);
+        docker(['volume', 'rm', this.volume]);
+      }
+    }
     this.assertAbsent();
   }
 
+  private inspectVolume() {
+    const result = Bun.spawnSync(['docker', 'volume', 'inspect', this.volume]);
+    if (result.exitCode === 0) return JSON.parse(result.stdout.toString())[0];
+    if (result.stderr.toString().toLowerCase().includes('no such volume')) return undefined;
+    throw new Error(`docker volume inspect: ${result.stderr.toString()}`);
+  }
+
   assertAbsent() {
-    if (this.inspect()) throw new Error(`container remains: ${this.id}`);
+    if (this.id && this.inspect()) throw new Error(`container remains: ${this.id}`);
+    if (this.volume && this.inspectVolume()) throw new Error(`volume remains: ${this.volume}`);
   }
 
   async database() {

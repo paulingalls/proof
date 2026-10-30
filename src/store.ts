@@ -108,19 +108,27 @@ export class Store {
   static async diagnose() {
     const url = storeUrl();
     const backend = url ? postgres(url) : sqlite();
-    let version: number;
+    let version: number | undefined;
+    let reason: string | undefined;
     try {
       version = await initialize(backend);
     } catch (error) {
-      try {
-        await backend.close();
-      } catch {
-        /* Preserve the diagnostic failure. */
+      if (error instanceof UnreachableStore) reason = error.message;
+      else {
+        try {
+          await backend.close();
+        } catch {
+          /* Preserve the diagnostic failure. */
+        }
+        throw error;
       }
-      throw error;
     }
-    await backend.close();
-    return { store: url ? redacted(url) : sqlitePath(), replica: sqlitePath(), version };
+    try {
+      await backend.close();
+    } catch (error) {
+      if (!(reason && error instanceof UnreachableStore)) throw error;
+    }
+    return { store: url ? redacted(url) : sqlitePath(), replica: sqlitePath(), version, reason };
   }
 
   static async open() {
