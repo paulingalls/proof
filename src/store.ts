@@ -190,7 +190,18 @@ export class Store {
   }
 
   async newestProof(project: string, task: string) {
-    const [proof] = await this.local.query<{
+    if (this.remote && !this.offline) {
+      try {
+        return await this.lookupNewest(project, task, this.remote.query);
+      } catch (error) {
+        this.fallback(error);
+      }
+    }
+    return this.lookupNewest(project, task, this.local.query);
+  }
+
+  private async lookupNewest(project: string, task: string, query: Query) {
+    const [proof] = await query<{
       key: string;
       env_hashes: string | null;
       commit: string;
@@ -264,7 +275,7 @@ export class Store {
     commit: string,
     dirty: boolean,
     dirtyInputs: boolean,
-    envHashes: [string, string][] = [],
+    envHashes: [string, string][],
   ): Promise<Sharing> {
     const finishedAt = new Date().toISOString();
     const write = async (backend: Backend) =>

@@ -2,6 +2,8 @@ import type { Task } from './declarations';
 import type { RefTree } from './git';
 import { select } from './key';
 
+const contents = new WeakMap<RefTree, Map<string, string>>();
+
 function compare(a: string, b: string) {
   return a < b ? -1 : a > b ? 1 : 0;
 }
@@ -24,19 +26,30 @@ export function hash(value: string) {
 
 export function keyParts(task: Task, tree: RefTree, historical = false) {
   const selection = select(task, tree);
-  const reasons = selection.reason ? [selection.reason] : [];
+  const unavailable = [...tree.unavailable].sort().map((path) => `unavailable input '${path}'`);
+  selection.reason ??= unavailable[0];
+  const reasons = [
+    ...(selection.reason ? [selection.reason] : []),
+    ...unavailable.filter((reason) => reason !== selection.reason),
+  ];
   const files: [string, string, string][] = [];
+  let cached = contents.get(tree);
+  if (!cached) {
+    cached = new Map();
+    contents.set(tree, cached);
+  }
+  const projections = new Set<string>();
   const members = new Map<string, [string, string, string, string]>();
   for (const path of [...selection.paths].sort()) {
-    const mode = tree.modes.get(path);
-    const blob = tree.files.get(path);
+    const { mode, blob } = tree.entry(path);
     if (mode && blob) files.push([path, mode, blob]);
     else reasons.push(`unavailable input '${path}'`);
   }
   for (const input of task.inputs) {
     if (typeof input === 'string' || !('path' in input)) continue;
     const { path, json } = input;
-    const mode = tree.modes.get(path);
+    for (const member of json) projections.add(JSON.stringify([path, member]));
+    const { mode } = tree.entry(path);
     if (!tree.files.has(path)) {
       reasons.push(`missing input '${path}'`);
       continue;
@@ -47,7 +60,12 @@ export function keyParts(task: Task, tree: RefTree, historical = false) {
     }
     let value: unknown;
     try {
-      value = JSON.parse(tree.read(path));
+      let text = cached.get(path);
+      if (text === undefined) {
+        text = tree.read(path);
+        cached.set(path, text);
+      }
+      value = JSON.parse(text);
     } catch (error) {
       if (!(error instanceof SyntaxError)) throw error;
       reasons.push(`input '${path}': invalid JSON`);
@@ -75,6 +93,8 @@ export function keyParts(task: Task, tree: RefTree, historical = false) {
       ]);
   return {
     tree,
+    selection,
+    projections,
     declaration,
     declarationHash: hash(JSON.stringify(declaration)),
     files,
@@ -82,6 +102,6 @@ export function keyParts(task: Task, tree: RefTree, historical = false) {
       ([ap, , am], [bp, , bm]) => compare(ap, bp) || compare(am, bm),
     ),
     env,
-    reasons,
+    reasons: [...new Set(reasons)],
   };
 }

@@ -137,8 +137,10 @@ The package has its own tests for its own behaviour, on synthetic repos it build
   - **Connection string:** from the environment or user config, never in the repo.
   - **Moving hosts** is `pg_dump`/restore, or starting empty: it's a cache, so loss costs time, never
     correctness.
-- **R13. Metadata only:** task, key, outcome, host, env class, commit, seconds, timestamps, contradiction
-  records. Never logs or output: app-a's logs can contain private personal data.
+- **R13. Metadata only:** task, key, outcome, host, env class, commit, seconds, timestamps,
+  per-declared-env-name absent-or-value hashes, contradiction records. Paul, 2026-10-30: store these
+  env identities per proof for `why`; never env values. Never logs or output: app-a's logs can contain
+  private personal data.
 - **R14. A local fallback.** Each machine keeps a local SQLite replica of its own results. When the store is
   unreachable, `plan` falls back to that machine's own proofs, otherwise runs everything, and says so loudly.
 - **R15. The store absorbs the history** that app-a scatters today: per-task timings, flake history,

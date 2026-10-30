@@ -25,17 +25,21 @@ export function source(tree: RefTree, dirty?: string[]): Source {
   const view: Source = {
     paths: [...new Set([...tree.files.keys(), ...(dirty ?? [])])],
     read: (path) =>
-      tree.files.has(path) && !dirty?.includes(path)
-        ? committed(tree, path)
-        : dirty
-          ? workingFile(path, true)?.bytes.toString()
-          : undefined,
+      dirty === undefined
+        ? tree.entry(path).mode
+          ? committed(tree, path)
+          : undefined
+        : tree.files.has(path) && !dirty.includes(path)
+          ? committed(tree, path)
+          : workingFile(path, true)?.bytes.toString(),
     mode: (path) =>
-      tree.files.has(path) && !dirty?.includes(path)
-        ? tree.modes.get(path)
-        : dirty && workingFile(path, true)
-          ? '100644'
-          : undefined,
+      dirty === undefined
+        ? tree.entry(path).mode
+        : tree.files.has(path) && !dirty.includes(path)
+          ? tree.modes.get(path)
+          : workingFile(path, true)
+            ? '100644'
+            : undefined,
   };
   if (dirty === undefined) sources.set(tree, view);
   return view;
