@@ -115,6 +115,11 @@ exempt:
 - **`coverage` and `exempt`**: `proof lint` reports every covered file that no task selects and
   no exemption names.
 
+Root `providers` maps names to `{start: <shell command>, stop: <optional shell command>}`.
+Tasks may declare `needs: [stack]`; included tasks use the root providers. Unknown names are
+errors. Provider declarations and `needs` do not enter task keys. A selected file such as
+`proof.yaml` or a provider script still enters the key by its bytes.
+
 ## Commands
 
 ```

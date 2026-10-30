@@ -9,7 +9,14 @@ export type Input =
   | { path: string; json: string[] }
   | { 'imports-of': string }
   | { maestro: string };
-export type Task = { run: string; inputs: Input[]; env?: string[]; links?: string[] };
+export type Provider = { start: string; stop?: string };
+export type Task = {
+  run: string;
+  inputs: Input[];
+  env?: string[];
+  links?: string[];
+  needs?: string[];
+};
 
 export function mapping(value: unknown, context: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -76,7 +83,7 @@ export function declarations(tree: RefTree, working = false) {
     fields(
       doc,
       root
-        ? ['version', 'project', 'inputs', 'tasks', 'include', 'coverage', 'exempt']
+        ? ['version', 'project', 'inputs', 'tasks', 'include', 'coverage', 'exempt', 'providers']
         : ['inputs', 'tasks'],
       context,
     );
@@ -99,7 +106,12 @@ export function declarations(tree: RefTree, working = false) {
       const label = `${context} task '${id}'`;
       if (tasks.has(id)) throw new Error(`${label}: duplicate task '${id}'`);
       const task = mapping(value, label);
-      fields(task, ['run', 'inputs', 'env', 'links'], label);
+      fields(task, ['run', 'inputs', 'env', 'links', 'needs'], label);
+      let needs: string[] | undefined;
+      if ('needs' in task) {
+        if (!Array.isArray(task.needs)) throw new Error(`${label}: needs must be a list`);
+        needs = [...new Set(task.needs.map((name) => text(name, `${label} provider name`)))];
+      }
       let env: string[] | undefined;
       if ('env' in task) {
         if (!Array.isArray(task.env)) throw new Error(`${label}: env must be a list`);
@@ -127,11 +139,24 @@ export function declarations(tree: RefTree, working = false) {
         inputs: patterns(task.inputs, label),
         env,
         links,
+        needs,
       });
     }
     return doc;
   }
   const root = read('proof.yaml', true);
+  const providers = new Map<string, Provider>();
+  for (const [name, value] of Object.entries(
+    mapping('providers' in root ? root.providers : {}, 'proof.yaml providers'),
+  )) {
+    const label = `proof.yaml provider '${text(name, 'provider name')}'`;
+    const provider = mapping(value, label);
+    fields(provider, ['start', 'stop'], label);
+    providers.set(name, {
+      start: text(provider.start, `${label} start`),
+      ...('stop' in provider ? { stop: text(provider.stop, `${label} stop`) } : {}),
+    });
+  }
   if ('include' in root) {
     const pattern = text(root.include, 'proof.yaml include');
     const glob = new Bun.Glob(pattern);
@@ -158,6 +183,8 @@ export function declarations(tree: RefTree, working = false) {
   for (const [name, set] of sets) expand(set, contexts.get(name) as string, [name]);
   for (const [id, task] of tasks) {
     task.inputs = expand(task.inputs, `ref '${tree.ref}' task '${id}'`);
+    for (const name of task.needs ?? [])
+      if (!providers.has(name)) throw new Error(`task '${id}': unknown provider '${name}'`);
   }
   const context = `ref '${tree.ref}' proof.yaml`;
   const coverage: string[] = [];
@@ -176,6 +203,7 @@ export function declarations(tree: RefTree, working = false) {
   return {
     project: text(root.project, 'proof.yaml project'),
     tasks,
+    providers,
     coverage,
     exempt,
     include: 'include' in root ? text(root.include, 'proof.yaml include') : undefined,
