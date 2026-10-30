@@ -1,7 +1,7 @@
 import { posix } from 'node:path';
 import type { RefTree } from './git';
-import { metadata } from './import-metadata';
 import { workingFile } from './sandbox';
+import { type Edge, workspaces } from './workspaces';
 
 export type Source = {
   paths: Iterable<string>;
@@ -23,7 +23,7 @@ export function source(tree: RefTree, dirty?: string[]): Source {
   const cached = dirty === undefined ? sources.get(tree) : undefined;
   if (cached) return cached;
   const view: Source = {
-    paths: [...tree.files.keys()],
+    paths: [...new Set([...tree.files.keys(), ...(dirty ?? [])])],
     read: (path) =>
       tree.files.has(path) && !dirty?.includes(path)
         ? committed(tree, path)
@@ -40,40 +40,29 @@ export function source(tree: RefTree, dirty?: string[]): Source {
   if (dirty === undefined) sources.set(tree, view);
   return view;
 }
-const extensions = ['.tsx', '.ts', '.jsx', '.cts', '.cjs', '.js', '.mjs', '.mts', '.json'];
-export function resolveImport(path: string, view: Source) {
-  if (path.startsWith('../') || path.startsWith('/') || path.split('/').includes('.git')) return;
-  const candidates = [
-    path,
-    ...extensions.map((ext) => path + ext),
-    ...extensions.map((ext) => `${path}/index${ext}`),
-    ...(path.endsWith('.js') ? [`${path.slice(0, -3)}.ts`, `${path.slice(0, -3)}.tsx`] : []),
-  ];
-  return candidates.find((candidate) => view.mode(candidate) !== undefined);
-}
 const gap = String.raw`(?:\s|/\*[\s\S]*?\*/|//[^\n]*(?:\n|$))*`;
 const literal = /('(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`)/.source;
 function supplement(text: string) {
-  const edges: string[] = [];
+  const edges: Edge[] = [];
   let reason: string | undefined;
-  function add(value: string) {
+  function add(value: string, kind: Edge['kind']) {
     if (value.includes('\\') || value.includes('${')) reason ??= `ambiguous import ${value}`;
-    else edges.push(value.slice(1, -1));
+    else edges.push({ specifier: value.slice(1, -1), kind });
   }
   for (const match of text.matchAll(
     new RegExp(String.raw`\b(?:import|require)${gap}\(${gap}`, 'g'),
   )) {
     const tail = text.slice((match.index ?? 0) + match[0].length);
     const arg = new RegExp(String.raw`^${literal}${gap}(?:\)|,)`).exec(tail);
-    if (arg?.[1]) add(arg[1]);
+    if (arg?.[1]) add(arg[1], match[0].startsWith('require') ? 'require' : 'import');
     else reason ??= `computed import ${tail.split(')')[0]}`;
   }
   for (const match of text.matchAll(new RegExp(String.raw`\bfrom${gap}${literal}`, 'g'))) {
-    if (match[1]) add(match[1]);
+    if (match[1]) add(match[1], 'import');
   }
   return { edges, reason };
 }
-const scans = new Map<string, { edges: string[]; reason?: string }>();
+const scans = new Map<string, { edges: Edge[]; reason?: string }>();
 function scan(text: string, loader: 'ts' | 'tsx' | 'jsx' | 'js') {
   const id = new Bun.CryptoHasher('sha256').update(text).digest('hex') + loader;
   let result = scans.get(id);
@@ -82,10 +71,17 @@ function scan(text: string, loader: 'ts' | 'tsx' | 'jsx' | 'js') {
       const extra = supplement(text);
       result = {
         edges: [
-          ...new Set([
-            ...new Bun.Transpiler({ loader }).scanImports(text).map((edge) => edge.path),
-            ...extra.edges,
-          ]),
+          ...new Map(
+            [
+              ...new Bun.Transpiler({ loader }).scanImports(text).map(
+                (edge): Edge => ({
+                  specifier: edge.path,
+                  kind: edge.kind === 'require-call' ? 'require' : 'import',
+                }),
+              ),
+              ...extra.edges,
+            ].map((edge) => [JSON.stringify(edge), edge]),
+          ).values(),
         ],
         reason: extra.reason,
       };
@@ -106,7 +102,7 @@ export function closure(entry: string, view: Source) {
   const prior = cached.get(entry);
   if (prior) return prior;
   const paths = new Set<string>();
-  const local = metadata(view, (path) => resolveImport(path, view));
+  const local = workspaces(view);
   let reason: string | undefined;
   function visit(path: string) {
     if (paths.has(path)) return;
@@ -135,25 +131,19 @@ export function closure(entry: string, view: Source) {
     const scanned = scan(text, loader);
     if (scanned.reason) reason ??= `${path}: ${scanned.reason}`;
     for (const edge of scanned.edges) {
-      if (!edge.startsWith('.')) {
-        try {
-          const why = edge.startsWith('/') ? 'local import not followed' : local(path, edge);
-          if (why) reason ??= `${path}: ${why}: '${edge}'`;
-        } catch (error) {
-          reason ??= `${path}: import '${edge}': ${error}`;
-        }
-        continue;
+      try {
+        const deps = new Set<string>();
+        const spec = edge.specifier;
+        if (spec.startsWith('/')) throw new Error('local import not followed');
+        const target = spec.startsWith('.')
+          ? local.resolve(posix.join(posix.dirname(path), spec), deps)
+          : local.bare(path, edge, deps);
+        for (const dep of deps) visit(dep);
+        if (target) visit(target);
+        else if (spec.startsWith('.')) throw new Error('unresolved import');
+      } catch (error) {
+        reason ??= `${path}: import '${edge.specifier}': ${error}`;
       }
-      const joined = posix.join(posix.dirname(path), edge);
-      const target = resolveImport(joined, view);
-      // Bun resolves a directory through its package.json before index.*; that is not followed here.
-      if (
-        target?.startsWith(`${joined}/index`) &&
-        view.mode(`${joined}/package.json`) !== undefined
-      )
-        reason ??= `${path}: local import not followed: '${edge}'`;
-      else if (target) visit(target);
-      else reason ??= `${path}: unresolved import '${edge}'`;
     }
   }
   if (entry.startsWith('/') || entry.split('/').some((part) => ['..', '.git'].includes(part)))

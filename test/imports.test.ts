@@ -142,7 +142,6 @@ test('computed calls and unresolved imports are undecidable with file and expres
     ['require /* comment */ (name)', 'name'],
     ["import './missing'", './missing'],
     ["import './bad'", 'bad.ts'],
-    ["import './pkg'", 'local import not followed'],
   ] as const) {
     const r = fixture(
       { a: task('src/a.tsx') },
@@ -161,12 +160,9 @@ test('computed calls and unresolved imports are undecidable with file and expres
   }
 });
 
-test('workspace, aliases, self references and baseUrl imports cannot publish an external proof', () => {
+test('self references and baseUrl imports cannot publish an external proof', () => {
   const cases: [string, string, string, string][] = [
-    ['workspace', "import '@local/pkg/sub';", 'workspace import not followed', '@local/pkg/sub'],
-    ['spelled', "import '@local/lib';", 'workspace import not followed', '@local/lib'],
     ['absolute', "import '/abs/x';", 'local import not followed', '/abs/x'],
-    ['alias', "import 'alias/value';", 'workspace import not followed', 'alias/value'],
     ['self', "import 'root/sub';", 'local import not followed', 'root/sub'],
     ['subpath', "import '#local';", 'local import not followed', '#local'],
     ['base', "import 'lib/x';", 'local import not followed', 'lib/x'],
