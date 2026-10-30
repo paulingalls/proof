@@ -13,8 +13,11 @@ if (command === '--version') {
     if (command === 'record') {
       console.log(record(args));
     } else if (command === 'plan') {
-      if (args.length) throw new Error('usage: proof plan');
-      for (const row of plan()) console.log(`${row.state} ${row.task}: ${row.reason}`);
+      if (args.length && (args.length !== 1 || args[0] !== '--json'))
+        throw new Error('usage: proof plan [--json]');
+      const rows = plan();
+      if (args[0] === '--json') console.log(JSON.stringify(rows));
+      else for (const row of rows) console.log(`${row.state} ${row.task}: ${row.reason}`);
     } else {
       if (args.length !== 1 || !args[0]) throw new Error('usage: proof check <cases.yaml>');
       process.exitCode = await check(args[0]);

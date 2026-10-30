@@ -148,3 +148,26 @@ test('dirty records retain results without publishing even for unrelated dirtine
     expect(repo.cli(['plan'], env).out).toContain('RUN lint: no proof for key');
   }
 });
+
+test('JSON emits the same decisions as plain plan with exactly the public fields', () => {
+  const repo = fixture();
+  const env = state();
+  expect(record(repo, env).code).toBe(0);
+  const plain = repo.cli(['plan'], env);
+  const json = repo.cli(['plan', '--json'], env);
+  expect(json.code).toBe(0);
+  expect(json.err).toBe('');
+  const rows = JSON.parse(json.out);
+  expect(rows.map((row: { task: string }) => row.task)).toEqual(['lint', 'docs-check']);
+  for (const row of rows) {
+    expect(Object.keys(row).sort()).toEqual(['reason', 'state', 'task']);
+  }
+  expect(
+    rows
+      .map(
+        (row: { task: string; state: string; reason: string }) =>
+          `${row.state} ${row.task}: ${row.reason}\n`,
+      )
+      .join(''),
+  ).toBe(plain.out);
+});
