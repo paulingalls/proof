@@ -169,6 +169,7 @@ provider-free tasks have no `providers` field. Neither plan form starts resource
 
 ```
 proof plan [--json]          what must run, and why
+proof status --ref <ref> [--json]  proof state of every task at a committed ref
 proof run [--tasks <id>...]  run what must run, and record the results
 proof record <task> --outcome green|red|incomplete [--seconds N]
 proof lint                   check declarations against the staged tree
@@ -178,6 +179,31 @@ proof doctor                 which store is in use, and whether it's reachable
 
 `run` exits 0 when every task is proven or green, 1 when a task is red/incomplete or a provider fails, 130/143 when interrupted;
 any command exits 2 on a usage, declaration or store error.
+
+`proof status --ref <ref> [--json]` judges every task using that ref's committed
+`proof.yaml`, included declarations and input bytes, plus the caller's declared env values.
+It resolves branches, commit ids, lightweight tags and annotated tags without checking out the
+ref, running tasks or starting providers. Uncommitted edits and installed dependencies do not
+change its answer. For example:
+
+```sh
+bunx proof status --ref HEAD --json
+bunx proof status --ref release --json
+```
+
+Rows use the same format as `plan`: PROVEN names the proof's commit, host and time; RUN explains
+`no proof for key`, a contested proof or an undecidable key. JSON has the same row shape as
+`plan --json`. Status exits 0 when every task is PROVEN (including a ref with no tasks), 1 when
+any task is RUN, and 2 for an unknown ref, invalid declarations, usage or store error. An
+unreachable store uses the local replica and reports the fallback on stderr, keeping JSON
+stdout parseable.
+
+Status reads only the ref's committed files and your declared env, so a ref gets the same answer
+on every checkout. `plan` also looks at this checkout, so `status --ref HEAD` can say PROVEN where
+`plan` says RUN when the checkout has something the commit doesn't: an uncommitted or ignored file
+a task selects (even when `git status` is empty), a file hidden by `assume-unchanged` or
+`skip-worktree`, or a linked `node_modules` escaping into tracked files. Status's `trusted links`
+suffix restates the declaration rather than reporting an inspection.
 
 `proof check` compares the exact RUN set between committed refs without executing the declared
 commands. After the Quickstart's `src/text.ts` edit and commit, save this as `cases.yaml`:
@@ -198,7 +224,6 @@ Planned, specified in [R16](docs/2026-10-30-proof-requirements.md) and design §
 
 ```
 proof why <task>                          the key's parts, and the inputs changed since the newest proof
-proof status --ref <r>                    proof state at any ref, without a checkout
 proof invalidate --task <t> [--key k|--all] delete proofs (recorded as a manual contradiction)
 proof flakes [--since 30d]                tasks ranked by contradictions
 proof stats [--set land]                  median seconds per task; estimated minutes for a plan

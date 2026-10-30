@@ -8,12 +8,32 @@ import { Store } from './store';
 import { workspaces } from './workspaces';
 
 export async function plan() {
-  const { tree, project, tasks, dirty, declaration } = currentTree();
+  return planTree(currentTree());
+}
+
+export async function planTree(
+  {
+    tree,
+    project,
+    tasks,
+    dirty,
+    declaration,
+  }: {
+    tree: RefTree;
+    project: string;
+    tasks: Map<string, Task>;
+    dirty: string[];
+    declaration?: string;
+  },
+  inspect?: (task: Task) => ReturnType<typeof inspectTaskLinks>,
+) {
   const store = await Store.open();
   try {
     const rows = [];
     for (const [task, decl] of tasks)
-      rows.push(await decide(task, decl, tree, dirty, declaration, project, store));
+      rows.push(
+        await decide(task, decl, tree, dirty, declaration, project, store, inspect?.(decl)),
+      );
     return rows;
   } catch (error) {
     try {
