@@ -91,10 +91,11 @@ The package has its own tests for its own behaviour, on synthetic repos it build
     spawned scripts, env names, Maestro flow includes, and named sets.
   - **Shipped with the core:** the adapters for `imports-of` (TS and Python), `maestro` flow closure,
     `dotenv-keys` and `json` projection.
-- **R6. Environment classes are minimal.** Architecture belongs only in the classes where it changes results
-  (`docker`, `ios`, `web`), so the Intel and Apple-silicon Macs share host and static proofs. Tool versions that
-  change results are class dimensions: Bun, Python and uv, Xcode, simulator runtime. An Xcode update re-proves
-  the native journeys, with no override.
+- **R6. Environment classes are minimal.** No dimension enters a key by default: OS, CPU architecture and
+  Bun version do not change these results, and the Intel Mac (on an older macOS) shares every proof with the
+  Apple-silicon Macs (Paul, 2026-10-29). A repo declares a dimension only for tasks whose results it changes,
+  such as Xcode and the simulator runtime for native journeys; an Xcode update then re-proves those journeys,
+  with no override.
 
 ### Enforcement and correctness
 - **R7. Enforce declarations, never trust them.**
