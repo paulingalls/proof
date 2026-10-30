@@ -266,8 +266,13 @@ export class Store {
     await write(this.local);
     if (!this.remote) return 'local';
     if (this.offline) return 'not shared';
-    await write(this.remote);
-    return 'shared';
+    try {
+      await write(this.remote);
+      return 'shared';
+    } catch (error) {
+      this.fallback(error);
+      return 'sharing uncertain';
+    }
   }
 
   async close() {

@@ -1,9 +1,9 @@
 import { Database } from 'bun:sqlite';
 import { afterAll, afterEach, beforeAll, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { output, Postgres } from './support/postgres';
+import { output, Postgres, waitFor } from './support/postgres';
 import { Repo } from './support/repo';
 
 let postgres: Postgres;
@@ -227,3 +227,135 @@ for (const reds of [1, 2]) {
     }, 30_000);
   }
 }
+
+test('another machine’s later green cannot clear a remembered local contest', async () => {
+  const { repo, a, b, record, rows } = await setup();
+  record('green');
+  record('red', b);
+  expect(repo.cli(['plan'], a).out).toContain('contested:');
+  record('green', b);
+  expect(repo.cli(['plan'], a).out).toContain('PROVEN lint');
+  expect(rows()).toEqual([{ outcome: 'green' }]);
+  postgres.stop();
+  try {
+    expect(repo.cli(['plan'], a).out).toContain('RUN lint: contested:');
+  } finally {
+    await postgres.restart();
+  }
+});
+
+test('losing Postgres after planning retains results and makes only the attempted share uncertain', async () => {
+  const { repo, a, rows } = await setup();
+  const ready = join(state(), 'ready');
+  const release = join(state(), 'release');
+  repo.commit({
+    'proof.yaml': JSON.stringify({
+      version: 1,
+      project: 'example',
+      tasks: {
+        lint: {
+          run: `touch ${ready}; while ! test -e ${release}; do sleep 0.02; done`,
+          inputs: ['src/**'],
+        },
+        check: { run: 'exit 0', inputs: ['src/**'] },
+      },
+    }),
+  });
+  const child = repo.spawnCli(['run'], a);
+  const done = output(child);
+  const deadline = setTimeout(() => child.kill('SIGKILL'), 20_000);
+  let stopped = false;
+  try {
+    await waitFor(async () => existsSync(ready));
+    postgres.stop();
+    stopped = true;
+    writeFileSync(release, 'go');
+    const result = await done;
+    fallback(result);
+    expect(result.out).toContain('green lint; proof published; sharing uncertain');
+    expect(result.out).toContain('green check; proof published; not shared');
+    expect(rows()).toEqual([{ outcome: 'green' }, { outcome: 'green' }]);
+    expect(repo.cli(['plan'], a).out.match(/PROVEN/g)).toHaveLength(2);
+  } finally {
+    clearTimeout(deadline);
+    child.kill();
+    await child.exited;
+    if (stopped) await postgres.restart();
+  }
+}, 30_000);
+
+for (const outcome of ['green', 'incomplete']) {
+  test(`local ${outcome} and observed contest commit before the remote commit is lost`, async () => {
+    const { repo, a, b, sql, record, rows } = await setup();
+    record('green');
+    record('red', b);
+    await sql.unsafe(`CREATE FUNCTION block_commit() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN PERFORM pg_advisory_xact_lock(123456); RETURN NEW; END $$;
+      CREATE CONSTRAINT TRIGGER block_commit AFTER INSERT ON results
+      DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION block_commit()`);
+    const locker = postgres.connect(a.PROOF_STORE);
+    await locker`SELECT pg_advisory_lock(123456)`;
+    const child = repo.spawnCli(['record', 'lint', '--outcome', outcome], a);
+    const done = output(child);
+    const deadline = setTimeout(() => child.kill('SIGKILL'), 15_000);
+    try {
+      await waitFor(
+        async () =>
+          (
+            await sql`SELECT 1 FROM pg_locks
+        WHERE locktype = 'advisory' AND NOT granted`
+          ).length === 1,
+      );
+      expect(rows()).toEqual([{ outcome: 'green' }, { outcome }]);
+      if (outcome === 'incomplete') expect(rows('SELECT * FROM observed_contests')).toHaveLength(1);
+      const [waiting] =
+        await sql`SELECT pid FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`;
+      await sql`SELECT pg_terminate_backend(${waiting.pid})`;
+      const result = await done;
+      fallback(result);
+      expect(result.out).toContain('sharing uncertain');
+      expect(await sql`SELECT outcome FROM results ORDER BY id`).toEqual([
+        { outcome: 'green' },
+        { outcome: 'red' },
+      ]);
+      const local = repo.cli(['plan'], { PROOF_STATE_DIR: a.PROOF_STATE_DIR });
+      expect(local.out).toContain(outcome === 'green' ? 'PROVEN lint' : 'RUN lint: contested:');
+    } finally {
+      clearTimeout(deadline);
+      child.kill();
+      await child.exited;
+      await locker`SELECT pg_advisory_unlock(123456)`;
+    }
+  }, 30_000);
+}
+
+test('a terminated shared proof read falls back to the local proof once', async () => {
+  const { repo, a, sql, record } = await setup();
+  record('green');
+  const locker = postgres.connect(a.PROOF_STORE);
+  await locker`BEGIN`;
+  await locker`LOCK TABLE proofs IN ACCESS EXCLUSIVE MODE`;
+  const child = repo.spawnCli(['plan'], a);
+  const done = output(child);
+  const deadline = setTimeout(() => child.kill('SIGKILL'), 15_000);
+  try {
+    await waitFor(
+      async () =>
+        (
+          await sql`SELECT 1 FROM pg_locks
+      WHERE relation = 'proofs'::regclass AND NOT granted`
+        ).length === 1,
+    );
+    const [waiting] = await sql`SELECT pid FROM pg_locks
+      WHERE relation = 'proofs'::regclass AND NOT granted`;
+    await sql`SELECT pg_terminate_backend(${waiting.pid})`;
+    const result = await done;
+    fallback(result);
+    expect(result.out).toContain('PROVEN lint');
+  } finally {
+    clearTimeout(deadline);
+    child.kill();
+    await child.exited;
+    await locker`ROLLBACK`;
+  }
+}, 30_000);
