@@ -33,7 +33,7 @@ function selects(task: Task, path: string) {
 
 // The literal directory before a pattern's first glob character: a superset for git pathspecs.
 function prefix(pattern: string) {
-  const glob = pattern.search(/[*?[{\\]/);
+  const glob = pattern.search(/[(!*?[{\\]/);
   if (glob === -1) return pattern;
   return pattern.slice(0, pattern.lastIndexOf('/', glob) + 1) || undefined;
 }

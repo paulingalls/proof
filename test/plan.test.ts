@@ -132,6 +132,22 @@ test('plan gates selected dirty inputs but ignores unrelated files and tags', ()
   }
 });
 
+test('extglob inputs detect selected ignored dirtiness', () => {
+  const repo = fixture();
+  const doc = JSON.parse(repo.git('show', 'HEAD:proof.yaml'));
+  doc.tasks.lint.inputs = ['src/@(a|b).ts'];
+  repo.commit({
+    'proof.yaml': JSON.stringify(doc),
+    '.gitignore': 'src/b.ts\n',
+  });
+  const env = state();
+  expect(record(repo, env).out).toContain('proof published');
+  repo.write('src/b.ts', 'ignored input');
+  const result = repo.cli(['plan'], env);
+  expect(result.code).toBe(0);
+  expect(result.out).toContain("RUN lint: undecidable: dirty input 'src/b.ts'");
+});
+
 test('restored historical bytes are undecidable until committed', () => {
   const repo = fixture();
   const env = state();
