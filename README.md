@@ -117,7 +117,17 @@ proof doctor                 which store is in use, and whether it's reachable
 ```
 
 `run` exits 0 when every task is proven or green, 1 when one is red, 130/143 when interrupted;
-any command exits 2 on a usage, declaration or store error. Planned: `why`, `status --ref`, `invalidate`, `flakes`, `stats`.
+any command exits 2 on a usage, declaration or store error.
+
+Planned, specified in [R16](docs/2026-10-30-proof-requirements.md) and design §4.6:
+
+```
+proof why <task>                          the key's parts, and the inputs changed since the newest proof
+proof status --ref <r>                    proof state at any ref, without a checkout
+proof invalidate --task <t> [--key k|--all] delete proofs (recorded as a manual contradiction)
+proof flakes [--since 30d]                tasks ranked by contradictions
+proof stats [--set land]                  median seconds per task; estimated minutes for a plan
+```
 
 ## Sharing proofs across machines
 
