@@ -83,6 +83,11 @@ async function initialize(backend: Backend) {
           red_result ${reference} NOT NULL REFERENCES results(id), kind TEXT NOT NULL,
           deleted_proof INTEGER NOT NULL, recorded_at TEXT NOT NULL
         )`);
+    if (!backend.remote)
+      await query(`CREATE TABLE IF NOT EXISTS observed_contests (
+        result_id INTEGER PRIMARY KEY REFERENCES results(id),
+        red_commit TEXT NOT NULL, red_host TEXT NOT NULL
+      )`);
     if (!row) await query('INSERT INTO schema_version (singleton, version) VALUES (1, 1)');
   });
 }
@@ -125,20 +130,57 @@ export class Store {
     console.error(`store unreachable (${error.message}); using this machine's own proofs`);
   }
 
-  private get backend() {
-    return !this.offline && this.remote ? this.remote : this.local;
+  async proof(project: string, task: string, key: string) {
+    if (this.remote && !this.offline) {
+      try {
+        const proof = await this.lookup(project, task, key, this.remote.query, false);
+        await this.observe(project, task, key, this.remote.query, proof);
+        return proof;
+      } catch (error) {
+        this.fallback(error);
+      }
+    }
+    return this.lookup(project, task, key, this.local.query, true);
   }
 
-  async proof(project: string, task: string, key: string, query = this.backend.query) {
+  private async observe(project: string, task: string, key: string, query: Query, proof?: Proof) {
+    let red = proof;
+    if (!proof) {
+      [red] = await query<Proof>(
+        `SELECT r."commit" AS red_commit, r.host AS red_host
+        FROM contradictions c JOIN results r ON r.id = c.red_result
+        WHERE c.project = ? AND c.task = ? AND c.key = ? AND c.deleted_proof = 1 LIMIT 1`,
+        project,
+        task,
+        key,
+      );
+    }
+    if (red?.red_commit) {
+      await this.local.query(
+        `INSERT OR IGNORE INTO observed_contests
+        (result_id, red_commit, red_host)
+        SELECT result_id, ?, ? FROM proofs WHERE project = ? AND task = ? AND key = ?`,
+        red.red_commit,
+        red.red_host,
+        project,
+        task,
+        key,
+      );
+    }
+  }
+
+  private async lookup(project: string, task: string, key: string, query: Query, local: boolean) {
     const [proof] = await query<Proof>(
       `
       SELECT p.result_id, r."commit", r.host, r.finished_at,
-        red."commit" AS red_commit, red.host AS red_host
+        ${local ? 'COALESCE(red."commit", o.red_commit)' : 'red."commit"'} AS red_commit,
+        ${local ? 'COALESCE(red.host, o.red_host)' : 'red.host'} AS red_host
       FROM proofs p JOIN results r
       ON r.id = p.result_id AND r.project = p.project AND r.task = p.task AND r.key = p.key
       LEFT JOIN contradictions c ON c.project = p.project AND c.task = p.task AND c.key = p.key
         AND c.green_result = p.result_id AND c.deleted_proof = 0
       LEFT JOIN results red ON red.id = c.red_result
+      ${local ? 'LEFT JOIN observed_contests o ON o.result_id = p.result_id' : ''}
       WHERE p.project = ? AND p.task = ? AND p.key = ?
     `,
       project,
@@ -190,30 +232,35 @@ export class Store {
             result.id,
           );
         if (outcome === 'red' && !dirtyInputs) {
-          const proof = await this.proof(project, task, key, query);
-          if (!proof) return;
-          await query(
-            `
+          const proof = await this.lookup(project, task, key, query, !backend.remote);
+          if (proof) {
+            await query(
+              `
           INSERT INTO contradictions
             (project, task, key, green_result, red_result, kind, deleted_proof, recorded_at)
           VALUES (?, ?, ?, ?, ?, 'ordinary', ?, ?)
         `,
-            project,
-            task,
-            key,
-            proof.result_id,
-            result.id,
-            Number(proof.red_commit !== null),
-            finishedAt,
-          );
-          if (proof.red_commit !== null)
-            await query(
-              `DELETE FROM proofs WHERE project = ? AND task = ? AND key = ? AND result_id = ?`,
               project,
               task,
               key,
               proof.result_id,
+              result.id,
+              Number(proof.red_commit !== null),
+              finishedAt,
             );
+            if (proof.red_commit !== null)
+              await query(
+                `DELETE FROM proofs WHERE project = ? AND task = ? AND key = ? AND result_id = ?`,
+                project,
+                task,
+                key,
+                proof.result_id,
+              );
+          }
+        }
+        if (backend.remote) {
+          const proof = await this.lookup(project, task, key, query, false);
+          await this.observe(project, task, key, query, proof);
         }
       });
     await write(this.local);

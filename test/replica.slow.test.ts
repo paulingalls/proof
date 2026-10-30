@@ -186,3 +186,44 @@ test('without a remote configured the local lifecycle has no sharing diagnostics
   }
   expect(repo.cli(['plan'], env).out.match(/PROVEN/g)).toHaveLength(2);
 });
+
+for (const reds of [1, 2]) {
+  for (const observer of ['plan', 'record']) {
+    test(`${observer} remembers ${reds === 1 ? 'contest' : 'deletion'} offline without importing history`, async () => {
+      const { repo, clone, a, b, record, rows } = await setup();
+      record('green');
+      for (let i = 0; i < reds; i++) record('red', b);
+      for (let i = 0; i < 2; i++) {
+        const result = observer === 'plan' ? repo.cli(['plan'], a) : record('incomplete');
+        expect(result.code).toBe(0);
+        expect(result.out).not.toContain('PROVEN');
+      }
+      expect(clone.cli(['plan'], { ...b, PROOF_STATE_DIR: state() }).code).toBe(0);
+      expect(rows()).toEqual(
+        observer === 'plan'
+          ? [{ outcome: 'green' }]
+          : [{ outcome: 'green' }, { outcome: 'incomplete' }, { outcome: 'incomplete' }],
+      );
+      postgres.stop();
+      try {
+        const result = repo.cli(['plan'], a);
+        fallback(result);
+        expect(result.out).toContain('RUN lint: contested:');
+        expect(result.out).not.toContain('PROVEN');
+        const local = { PROOF_STATE_DIR: a.PROOF_STATE_DIR };
+        expect(repo.cli(['plan'], local).out).not.toContain('PROVEN');
+        record('incomplete');
+        repo.write('src/a.ts', 'dirty');
+        record('green');
+        repo.git('restore', '.');
+        expect(repo.cli(['plan'], a).out).not.toContain('PROVEN');
+        record('red');
+        expect(rows('SELECT * FROM proofs')).toHaveLength(0);
+        record('green');
+        expect(repo.cli(['plan'], a).out).toContain('PROVEN lint');
+      } finally {
+        await postgres.restart();
+      }
+    }, 30_000);
+  }
+}
