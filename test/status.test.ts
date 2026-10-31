@@ -1,3 +1,4 @@
+import { Database } from 'bun:sqlite';
 import { afterEach, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { hostname, tmpdir } from 'node:os';
@@ -53,10 +54,16 @@ test('historical declarations and proofs, aggregate exit, tags and unknown refs'
   expect(JSON.parse(first.out)).toEqual([
     {
       task: 'gate',
+      key: expect.stringMatching(/^[a-f0-9]{64}$/),
       state: 'PROVEN',
       reason: expect.stringMatching(new RegExp(`^proven at ${a} on ${hostname()} .+Z$`)),
     },
-    { task: 'extra', state: 'RUN', reason: 'no proof for key' },
+    {
+      task: 'extra',
+      key: expect.stringMatching(/^[a-f0-9]{64}$/),
+      state: 'RUN',
+      reason: 'no proof for key',
+    },
   ]);
   const clone = new Repo(repo);
   repos.push(clone);
@@ -73,6 +80,7 @@ test('historical declarations and proofs, aggregate exit, tags and unknown refs'
   expect(later.code).toBe(1);
   expect(JSON.parse(later.out)[0]).toEqual({
     task: 'gate',
+    key: expect.stringMatching(/^[a-f0-9]{64}$/),
     state: 'RUN',
     reason: 'no proof for key',
   });
@@ -107,6 +115,8 @@ test('clean HEAD matches plan rows and rendering for proof, needs, contest and u
   expect(rows[1].providers).toEqual(['service']);
   expect(rows[2].reason).toContain('contested:');
   expect(rows[3].reason).toContain('undecidable:');
+  for (const row of rows.slice(0, 3)) expect(row.key).toMatch(/^[a-f0-9]{64}$/);
+  expect(rows[3]).not.toHaveProperty('key');
   expect(repo.cli(['status', '--ref', 'HEAD'], env).out).toBe(repo.cli(['plan'], env).out);
   expect(existsSync(join(repo.path, 'executed'))).toBe(false);
 }, 30_000);
@@ -217,4 +227,29 @@ test('status requires exactly one ref and optional JSON in either order', () => 
     });
   }
   expect(repo.cli(['status', '--json', '--ref', 'HEAD'], env)).toEqual(status(repo, env));
+});
+
+test('plan and status expose the key run records before and after proof', () => {
+  const { repo, env } = fixture({ gate: { run: 'true', inputs: ['src/**'] } });
+  const planned = repo.cli(['plan', '--json'], env);
+  const before = status(repo, env);
+  expect(planned.code).toBe(0);
+  expect(before.code).toBe(1);
+  expect(before.out).toBe(planned.out);
+  const row = JSON.parse(before.out)[0];
+  expect(row.key).toMatch(/^[a-f0-9]{64}$/);
+  const run = repo.cli(['run'], env);
+  expect(run.code, run.err + run.out).toBe(0);
+  const db = new Database(join(env.PROOF_STATE_DIR, 'proof.db'));
+  try {
+    expect(db.query('SELECT key FROM results').all()).toEqual([{ key: row.key }]);
+  } finally {
+    db.close();
+  }
+  const after = status(repo, env);
+  const proven = repo.cli(['plan', '--json'], env);
+  expect(after.code).toBe(0);
+  expect(proven.code).toBe(0);
+  expect(after.out).toBe(proven.out);
+  expect(JSON.parse(after.out)[0]).toMatchObject({ state: 'PROVEN', key: row.key });
 });

@@ -104,7 +104,13 @@ test('validates root providers and included needs; lifecycle declarations never 
   const included = f.cli('plan', '--json');
   expect(included.code).toBe(0);
   expect(JSON.parse(included.out)).toEqual([
-    { task: 'included', state: 'RUN', reason: 'no proof for key', providers: ['stack'] },
+    {
+      task: 'included',
+      key: expect.stringMatching(/^[a-f0-9]{64}$/),
+      state: 'RUN',
+      reason: 'no proof for key',
+      providers: ['stack'],
+    },
   ]);
   for (const [providers, needs, message] of [
     [[], ['stack'], 'providers'],

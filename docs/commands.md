@@ -144,6 +144,34 @@ share whose commit is uncertain says `sharing uncertain` and claims no shared de
 Reconnection does not replay results. Schedule fresh runs in the repository using cron or
 launchd; proof provides no scheduler.
 
+`plan --json` and `status --ref <ref> --json` return arrays of task decisions.
+Each row has `task`, `state` and `reason`. A decidable row also has `key`, the
+64-character lowercase hexadecimal key that `run` records, even when no proof exists.
+An undecidable row omits `key` and explains the cause in `reason`.
+RUN rows with `needs` also include `providers`, the names a run would start;
+PROVEN rows and tasks without needs omit `providers`.
+
+For a committed `text` task selecting `src/text.ts`, using a fresh store with no proofs:
+
+```sh
+bunx proof plan --json
+bunx proof status --ref HEAD --json
+printf 'unrelated\n' > notes.txt
+bunx proof plan --json
+git tag release
+bunx proof plan --json
+printf 'export const text = 2;\n' > src/text.ts
+bunx proof plan --json
+bunx proof status --ref HEAD --json
+```
+
+The first two commands print identical RUN rows with `reason: "no proof for key"`
+and the same `key`. The untracked note and tag leave the plan row unchanged.
+The input edit makes plan omit `key` and report
+`undecidable: dirty input 'src/text.ts'`; status still prints the original committed row.
+Committing the input edit gives plan a different key. Plan exits 0 throughout;
+status exits 1 here because the task has no proof.
+
 `proof why <task>` starts with the task's `plan` decision, then prints its current key
 parts: selected paths with file identities and modes, JSON member identities, declared env and dimension names
 (without values), and the declaration hash. These parts use the files on disk, including staged
