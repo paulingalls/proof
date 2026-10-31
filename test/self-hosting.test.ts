@@ -20,7 +20,7 @@ function scenario(check: (r: Repo, run: (args: string[], executed: string[]) => 
         task.run = `echo ${id} >> '${log}'`;
       const files = `src/example.ts scripts/example.ts test/example.test.ts
       test/example.slow.test.ts test/support/repo.ts test/support/suite.ts
-      test/support/postgres.ts package.json bun.lock tsconfig.json biome.json
+      test/support/postgres.ts test/support/jobs.ts package.json bun.lock tsconfig.json biome.json
       .gitignore README.md docs/store.md`.split(/\s+/);
       r.commit(Object.fromEntries(files.map((path) => [path, '{}\n'])));
       r.write('proof.yaml', JSON.stringify(declaration));

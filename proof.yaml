@@ -38,6 +38,7 @@ tasks:
       - test/**/*.slow.test.ts
       - test/support/repo.ts
       - test/support/postgres.ts
+      - test/support/jobs.ts
       - package.json
       - tsconfig.json
       - docs/store.md
