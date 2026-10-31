@@ -100,7 +100,9 @@ exempt:
   `package.json` above changes nothing), or `{imports-of: entry}`: the TypeScript import
   closure from that entry, following workspace packages and tsconfig `paths`, `baseUrl` and
   `extends` the way Bun does. An import proof can't follow, such as a computed `import()`, makes
-  the task undecidable, so it always runs and says why.
+  the task undecidable, so it always runs and says why. Text in strings, templates and comments
+  is not an import. A computed call inside a template's `${}` is not seen and leaves the task
+  decidable; literal imports there are still followed.
 - **Closure manifests**: a `package.json` reached only as import resolver metadata keys
   `name`, `main`, `module`, `type`, `exports`, `imports`, `workspaces`, `extends` and
   `compilerOptions`. A committed `version` bump or changelog edit therefore preserves the closure

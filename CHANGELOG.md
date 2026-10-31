@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- `import(...)` and `require(...)` text in strings, templates and comments no longer reads as
+  an import; 0.11.1 fixed only statements. A computed call inside a template's `${}` now goes unseen.
+
 ## 0.11.1
 
 - `plan --json` and `status --json` rows carry each decidable task's `key`, so a repo can prove a
