@@ -70,7 +70,7 @@ test('dimension-only identity uses current values, stored hashes and each ref co
   expect(why).toContain('changed env dimension:tool');
   expect(why).not.toContain('raw-marker');
   expect(count()).toBe(before);
-  const c = f.repo.commit({ 'proof.yaml': doc({ tool: "printf '%s' raw-marker-B" }) });
+  const c = f.repo.commit({ 'proof.yaml': doc({ tool: 'echo "  raw-marker-B"' }) });
   const cases = [
     { name: 'change', from: a, to: b, expect: ['native'] },
     { name: 'same value', from: b, to: c, expect: [] },

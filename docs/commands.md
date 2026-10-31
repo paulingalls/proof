@@ -144,7 +144,7 @@ Reconnection does not replay results. Schedule fresh runs in the repository usin
 launchd; proof provides no scheduler.
 
 `proof why <task>` starts with the task's `plan` decision, then prints its current key
-parts: selected paths with file identities and modes, JSON member identities, declared env names
+parts: selected paths with file identities and modes, JSON member identities, declared env and dimension names
 (without values), and the declaration hash. These parts use the files on disk, including staged
 and unstaged edits, additions, deletions and selected ignored files. Git decides whether a
 tracked path is clean, so a line-ending or LFS filter never reads as a change; blob ids of
