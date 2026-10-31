@@ -395,6 +395,97 @@ If the store is unreachable, `proof` says so and uses that machine's own proofs;
 meanwhile aren't uploaded later. The store holds metadata only (task, key, outcome, host, timings, per-name env hashes),
 never logs or output. It's a cache: losing it costs re-runs, never correctness.
 
+## How this repo uses proof
+
+This repository declares four real tasks. `lint`, `typecheck` and `test-fast` belong to
+both `commit` and `push`; `test-slow` belongs to `push`. Each sandbox holds only the
+files its command reads. Coverage makes `proof lint` reject unowned source, script
+and test files.
+
+```yaml
+version: 1
+project: proof
+inputs:
+  code:
+    - src/**
+    - test/**
+    - scripts/**
+    - package.json
+    - bun.lock
+    - tsconfig.json
+tasks:
+  lint:
+    run: bun run lint
+    inputs: [$code, biome.json, .gitignore]
+    links: [node_modules]
+    sets: [commit, push]
+  typecheck:
+    run: bun run typecheck
+    inputs: [$code]
+    links: [node_modules]
+    sets: [commit, push]
+  test-fast:
+    run: bun run test-fast
+    inputs:
+      - src/**
+      - test/*.test.ts
+      - '!test/*.slow.test.ts'
+      - test/support/repo.ts
+      - test/support/suite.ts
+      - package.json
+      - tsconfig.json
+      - proof.yaml
+    sets: [commit, push]
+  test-slow:
+    run: bun run test-slow
+    inputs:
+      - src/**
+      - test/*.slow.test.ts
+      - test/support/repo.ts
+      - test/support/postgres.ts
+      - package.json
+      - tsconfig.json
+      - docs/store.md
+    sets: [push]
+coverage: [src/**, scripts/**, test/**]
+```
+
+The ordered pre-commit hook scans secrets, then runs:
+
+```sh
+bun --no-env-file src/cli.ts lint
+bun --no-env-file src/cli.ts run --staged --set commit
+```
+
+The pre-push hook scans outgoing commits for secrets with Git's ref-update stdin,
+then runs:
+
+```sh
+bun --no-env-file src/cli.ts run --set push
+```
+
+A cold commit executes lint, typecheck and fast tests. Push reuses those staged
+proofs after commit and executes only slow tests; the next push reuses all four.
+With proofs seeded, a README-only commit runs no task. Editing `docs/store.md`
+selects slow tests because they execute its setup example. Test edits rerun lint
+and typecheck; fast and slow test inventories select their respective test task.
+The sprint gate retains `bun install --frozen-lockfile`.
+
+Measured on this arm64 Mac with Bun 1.4.4 on October 30, 2026, using installed
+hooks and an isolated SQLite store. Times include secret scanning and declaration
+lint where applicable; load is the starting one-minute load average.
+
+| Hook | Seconds | Load | Commands executed |
+| --- | ---: | ---: | --- |
+| Cold commit | 32.03 | 76.54 | lint, typecheck, test-fast (71 tests) |
+| Cold push after commit | 65.98 | 69.25 | test-slow (204 tests) |
+| Warm commit | 0.43 | 71.80 | none |
+| Warm push | 0.70 | 114.94 | none |
+
+A separate README-only commit and push took 0.48 s and 2.35 s at load 107.98,
+executing no task. Store result counts stayed at one per task across all these
+runs. These are observations on a shared machine, not timing guarantees.
+
 ## Status
 
 Pre-alpha. TypeScript on Bun, zero runtime dependencies, MIT. The `proof` bin starts with

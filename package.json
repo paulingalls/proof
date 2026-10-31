@@ -18,7 +18,9 @@
     "format": "biome check --write",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "prepare": "lefthook install"
+    "prepare": "lefthook install",
+    "test-fast": "bun test --parallel=2 --path-ignore-patterns '**/*.slow.test.ts'",
+    "test-slow": "bun test --parallel --timeout=30000 ./test/*.slow.test.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.15",
