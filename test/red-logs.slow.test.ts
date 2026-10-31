@@ -69,7 +69,7 @@ test('serial stdout and stderr arrive live exactly once', async () => {
 test('SIGTERM reaches a task while the live tail is behind a slow stdout', async () => {
   const f = fixture({
     a: task(
-      `trap 'touch scratch/stopped; exit 0' TERM; i=0; while [ $i -lt 500000 ]; do echo ${'x'.repeat(99)}; i=$((i+1)); done`,
+      `trap 'touch scratch/stopped; exit 0' TERM; touch scratch/started; i=0; while [ $i -lt 500000 ]; do echo ${'x'.repeat(99)}; i=$((i+1)); done`,
     ),
   });
   const child = f.repo.spawnCli(['run'], f.env);
@@ -78,7 +78,8 @@ test('SIGTERM reaches a task while the live tail is behind a slow stdout', async
     while (!(await reader.read()).done) if (!f.has('stopped')) await Bun.sleep(200);
   })();
   try {
-    await Bun.sleep(1000);
+    await until(() => f.has('started'));
+    await Bun.sleep(200);
     child.kill('SIGTERM');
     await until(() => f.has('stopped'));
     expect(await child.exited).toBe(143);
