@@ -10,7 +10,7 @@ proof invalidate --task <t> [--key k | --all]  delete proofs with a manual audit
 proof flakes [--since Nd]    tasks ranked by ordinary contradictions
 proof lint                   check declarations against the staged tree
 proof check <cases.yaml>     run a requirement suite
-proof doctor                 which store is in use, and whether it's reachable
+proof doctor                 store health and all declared dimension values
 proof stats [--set <name>] [--since Nd]  timings, current RUN estimate and time saved
 ```
 
@@ -144,7 +144,7 @@ Reconnection does not replay results. Schedule fresh runs in the repository usin
 launchd; proof provides no scheduler.
 
 `proof why <task>` starts with the task's `plan` decision, then prints its current key
-parts: selected paths with file identities and modes, JSON member identities, declared env names
+parts: selected paths with file identities and modes, JSON member identities, declared env and dimension names
 (without values), and the declaration hash. These parts use the files on disk, including staged
 and unstaged edits, additions, deletions and selected ignored files. Git decides whether a
 tracked path is clean, so a line-ending or LFS filter never reads as a change; blob ids of
@@ -184,10 +184,11 @@ is authoritative while online; an unreachable store announces fallback once and 
 machine's own proofs.
 
 `proof status --ref <ref> [--set <name>] [--json]` judges selected tasks using that ref's committed
-`proof.yaml`, included declarations and input bytes, plus the caller's declared env values.
+`proof.yaml`, included declarations and input bytes, plus the caller's declared env and
+dimension values.
 It resolves branches, commit ids, lightweight tags and annotated tags without checking out the
-ref, running tasks or starting providers. Uncommitted edits and installed dependencies do not
-change its answer. For example:
+ref, running tasks or starting providers. Input bytes come from the ref; env, dotenv and dimension
+values come from this invocation. For example:
 
 ```sh
 bunx proof status --ref HEAD --json
@@ -201,8 +202,9 @@ any selected task is RUN, and 2 for an unknown ref, invalid declarations, usage 
 unreachable store uses the local replica and reports the fallback on stderr, keeping JSON
 stdout parseable.
 
-Status reads only the ref's committed files and your declared env, so a ref gets the same answer
-on every checkout. `plan` also looks at this checkout, so `status --ref HEAD` can say PROVEN where
+Status reads the ref's committed files and declarations, declared env, checkout dotenv values,
+and dimension commands evaluated on the current machine. `plan` also looks at this checkout,
+so `status --ref HEAD` can say PROVEN where
 `plan` says RUN when the checkout has something the commit doesn't: an uncommitted or ignored file
 a task selects (even when `git status` is empty), a file hidden by `assume-unchanged` or
 `skip-worktree`, or a linked `node_modules` escaping into tracked files. Status's `trusted links`

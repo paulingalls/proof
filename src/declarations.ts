@@ -16,6 +16,7 @@ export type Task = {
   run: string;
   inputs: Input[];
   env?: string[];
+  dimensions?: [string, string][];
   links?: string[];
   needs?: string[];
   sets?: string[];
@@ -61,6 +62,7 @@ function patterns(value: unknown, context: string): Input[] {
     if ('dotenv' in projection) {
       fields(projection, ['dotenv', 'exclude'], label);
       const path = text(projection.dotenv, `${label} dotenv`);
+      if (path === 'dimension') throw new Error(`${label}: reserved dotenv '${path}'`);
       if (isAbsolute(path) || path.split('/').some((p) => ['', '.', '..', '.git'].includes(p)))
         throw new Error(`${label}: unsafe dotenv '${path}'`);
       if (
@@ -93,6 +95,7 @@ export function declarations(tree: RefTree, working = false) {
   const sets = new Map<string, Input[]>();
   const tasks = new Map<string, Task>();
   const contexts = new Map<string, string>();
+  const requested = new Map<string, string[]>();
   function read(path: string, root: boolean) {
     const context = `ref '${tree.ref}' ${path}`;
     let parsed: unknown;
@@ -117,6 +120,7 @@ export function declarations(tree: RefTree, working = false) {
             'exempt',
             'providers',
             'lanes',
+            'dimensions',
           ]
         : ['inputs', 'tasks'],
       context,
@@ -140,7 +144,14 @@ export function declarations(tree: RefTree, working = false) {
       const label = `${context} task '${id}'`;
       if (tasks.has(id)) throw new Error(`${label}: duplicate task '${id}'`);
       const task = mapping(value, label);
-      fields(task, ['run', 'inputs', 'env', 'links', 'needs', 'sets', 'lane'], label);
+      fields(task, ['run', 'inputs', 'env', 'links', 'needs', 'sets', 'lane', 'dimensions'], label);
+      if ('dimensions' in task) {
+        if (!Array.isArray(task.dimensions)) throw new Error(`${label}: dimensions must be a list`);
+        requested.set(
+          id,
+          [...new Set(task.dimensions.map((name) => text(name, `${label} dimension name`)))].sort(),
+        );
+      }
       let membership: string[] | undefined;
       if ('sets' in task) {
         if (!Array.isArray(task.sets)) throw new Error(`${label}: sets must be a list`);
@@ -188,6 +199,14 @@ export function declarations(tree: RefTree, working = false) {
     return doc;
   }
   const root = read('proof.yaml', true);
+  const dimensions = new Map<string, string>();
+  for (const [name, command] of Object.entries(
+    mapping('dimensions' in root ? root.dimensions : {}, 'proof.yaml dimensions'),
+  )) {
+    const label = `proof.yaml dimension '${text(name, 'dimension name')}'`;
+    if (name.includes(':')) throw new Error(`${label}: name must not contain ':'`);
+    dimensions.set(name, text(command, label));
+  }
   const lanes = new Map<string, number>();
   for (const [name, limit] of Object.entries(
     mapping('lanes' in root ? root.lanes : {}, 'proof.yaml lanes'),
@@ -235,6 +254,11 @@ export function declarations(tree: RefTree, working = false) {
   }
   for (const [name, set] of sets) expand(set, contexts.get(name) as string, [name]);
   for (const [id, task] of tasks) {
+    task.dimensions = requested.get(id)?.map((name) => {
+      const command = dimensions.get(name);
+      if (command === undefined) throw new Error(`task '${id}': unknown dimension '${name}'`);
+      return [name, command];
+    });
     if (task.lane !== undefined && task.lane !== 'solo' && !lanes.has(task.lane))
       throw new Error(`task '${id}': unknown lane '${task.lane}'`);
     task.inputs = expand(task.inputs, `ref '${tree.ref}' task '${id}'`);
@@ -259,6 +283,7 @@ export function declarations(tree: RefTree, working = false) {
     project: text(root.project, 'proof.yaml project'),
     tasks,
     providers,
+    dimensions,
     lanes,
     coverage,
     exempt,

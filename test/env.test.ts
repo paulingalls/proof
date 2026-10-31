@@ -103,7 +103,10 @@ test('missing and empty env preserve the pinned version-4 key', () => {
   } finally {
     db.close();
   }
-  repo.commit({ 'proof.yaml': declaration([]) });
+  const empty = JSON.parse(declaration([]));
+  empty.dimensions = { unused: 'exit 99' };
+  empty.tasks.lint.dimensions = [];
+  repo.commit({ 'proof.yaml': JSON.stringify(empty) });
   expect(success(repo.cli(['plan'], state))).toContain('PROVEN lint');
 });
 
