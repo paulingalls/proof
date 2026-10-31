@@ -277,3 +277,49 @@ test('empty-store JSON distinguishes input changes from unrelated dirt and tags'
   expect(rows()[0].key).toMatch(/^[a-f0-9]{64}$/);
   expect(rows()[0].key).not.toBe(baseline[0].key);
 });
+
+test('shared globs keep dirty selection and negation task-local in either order', () => {
+  for (const order of [
+    ['all', 'filtered'],
+    ['filtered', 'all'],
+  ]) {
+    const r = fixture();
+    const tasks = Object.fromEntries(
+      order.map((id) => [
+        id,
+        {
+          run: 'true',
+          inputs: id === 'all' ? ['src/**'] : ['src/**', '!src/gen/**'],
+        },
+      ]),
+    );
+    r.commit({
+      'proof.yaml': JSON.stringify({ version: 1, project: 'shared', tasks }),
+      'src/gen/x.ts': 'generated',
+      '.gitignore': 'src/gen/new.ts\n',
+    });
+    const env = state();
+    for (const id of order) expect(r.cli(['record', id, '--outcome', 'green'], env).code).toBe(0);
+    const rows = () => JSON.parse(r.cli(['plan', '--json'], env).out);
+    const clean = rows();
+    r.write('src/gen/new.ts', 'ignored');
+    expect(rows()).toEqual(
+      clean.map((row: { task: string }) =>
+        row.task === 'all'
+          ? { task: 'all', state: 'RUN', reason: "undecidable: dirty input 'src/gen/new.ts'" }
+          : row,
+      ),
+    );
+    rmSync(join(r.path, 'src/gen/new.ts'));
+    r.write('src/a.ts', 'edited');
+    expect(rows()).toEqual(
+      order.map((task) => ({ task, state: 'RUN', reason: "undecidable: dirty input 'src/a.ts'" })),
+    );
+    r.git('restore', 'src/a.ts');
+    expect(rows()).toEqual(clean);
+    const from = r.git('rev-parse', 'HEAD');
+    const to = r.commit({ 'src/gen/x.ts': 'changed' });
+    const result = r.check([{ name: 'task-local exclusion', from, to, expect: ['all'] }]);
+    expect(result.code, result.err + result.out).toBe(0);
+  }
+});

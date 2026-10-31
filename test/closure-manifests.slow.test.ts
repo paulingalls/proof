@@ -150,3 +150,26 @@ test('sandbox keeps exact clean and dirty manifest bytes, with dirty reasons', (
     }
   }
 });
+
+test('shared resolved edges replay metadata and preserve the first reason per closure', () => {
+  const { r, cli } = fixture({ a: [{ 'imports-of': 'a.ts' }], b: [{ 'imports-of': 'b.ts' }] });
+  const from = r.commit({
+    'a.ts': "import './shared';",
+    'b.ts': "import './shared';",
+    'shared.ts': "import 'pkg';",
+  });
+  const version = r.commit({ [manifest]: JSON.stringify({ ...pkg, version: '2' }) });
+  const member = r.commit({ [manifest]: JSON.stringify({ ...pkg, version: '2', main: './b.ts' }) });
+  const leaf = r.commit({ 'packages/p/a.ts': 'export const changed = true;' });
+  const result = r.check([
+    { name: 'version', from, to: version, expect: [] },
+    { name: 'member', from: version, to: member, expect: ['a', 'b'] },
+    { name: 'leaf', from: member, to: leaf, expect: ['a', 'b'] },
+  ]);
+  expect(result.code, result.err + result.out).toBe(0);
+  r.commit({ 'shared.ts': "const name = 'pkg'; import(name); import './absent';" });
+  expect(JSON.parse(cli(['plan', '--json'])).map((row: { reason: string }) => row.reason)).toEqual([
+    'undecidable: shared.ts: computed import name',
+    'undecidable: shared.ts: computed import name',
+  ]);
+});
