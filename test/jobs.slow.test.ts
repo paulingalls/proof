@@ -1,4 +1,6 @@
 import { expect, test } from 'bun:test';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fixture, spawn, stop, task, until, wait } from './support/jobs';
 
 test('default and explicit jobs=1 preserve the serial transcript', () => {
@@ -210,4 +212,134 @@ test('eight simultaneous greens retain every result and matching proof locally',
   expect(JSON.parse(plan.out).map((r: { state: string }) => r.state)).toEqual(
     ids.map(() => 'PROVEN'),
   );
+}, 15000);
+
+test('completed task blocks combine streams without interleaving or storing output', async () => {
+  const f = fixture({
+    a: task(
+      `printf a-private-out; printf a-private-err >&2; touch scratch/a; ${wait('release-a')}; echo a-private-end`,
+    ),
+    b: task(
+      `printf b-private-out; printf b-private-err >&2; touch scratch/b; ${wait('release-b')}; echo b-private-end`,
+    ),
+  });
+  const { child, output } = spawn(f, '--jobs', '2');
+  try {
+    await until(() => f.has('a') && f.has('b'));
+    f.mark('release-b');
+    await until(() => f.rows().some((r) => r.task === 'b'));
+    f.mark('release-a');
+    expect(await child.exited).toBe(0);
+    const [out, err] = await output;
+    expect(err).toBe('');
+    expect(out).toContain(
+      '--- b\nb-private-outb-private-errb-private-end\n--- a\na-private-outa-private-erra-private-end\ngreen a; proof published\ngreen b; proof published\n',
+    );
+    for (const path of readdirSync(f.env.PROOF_STATE_DIR)) {
+      const bytes = readFileSync(join(f.env.PROOF_STATE_DIR, path)).toString();
+      expect(bytes).not.toContain('a-private');
+      expect(bytes).not.toContain('b-private');
+    }
+    expect(readdirSync(f.env.TMPDIR)).toEqual([]);
+  } finally {
+    f.mark('release-a');
+    f.mark('release-b');
+    await stop(child);
+  }
+}, 15000);
+
+for (const committed of [false, true]) {
+  test(`both provider waiters refresh after input edit, committed=${committed}`, async () => {
+    const f = fixture(
+      {
+        a: task('test "$(cat input)" = changed', ['stack']),
+        b: task('test "$(cat input)" = changed', ['stack']),
+      },
+      {
+        stack: {
+          start: `touch scratch/starting; ${wait('release')}; echo changed > input${committed ? '; git add input; git commit -qm provider' : ''}`,
+        },
+      },
+    );
+    for (const id of ['a', 'b'])
+      for (const outcome of ['green', 'red'])
+        expect(f.repo.cli(['record', id, '--outcome', outcome], f.env).code).toBe(0);
+    const proofs = f.rows('proofs');
+    const contests = f.rows('contradictions');
+    const { child, output } = spawn(f, '--jobs', '2');
+    try {
+      await until(() => f.has('starting'));
+      f.mark('release');
+      expect(await child.exited).toBe(0);
+      const [out, err] = await output;
+      expect(err).toBe('');
+      for (const id of ['a', 'b']) {
+        expect(out).toContain(
+          `RUN ${id}: ${committed ? 'no proof for key' : "undecidable: dirty input 'input'"}`,
+        );
+        expect(out).toContain(
+          `green ${id}; ${committed ? 'no proof published: HEAD changed' : "no proof published: new dirty path 'input'"}`,
+        );
+      }
+      expect(f.rows('proofs')).toEqual(proofs);
+      expect(f.rows('contradictions')).toEqual(contests);
+    } finally {
+      f.mark('release');
+      await stop(child);
+    }
+  }, 15000);
+}
+
+test('queued PROVEN task refreshes its decision before dispatch', async () => {
+  const f = fixture(
+    {
+      a: task(`touch scratch/a; ${wait('release')}`),
+      b: task(`touch scratch/b; ${wait('release-b')}`),
+      c: { ...task('test "$(cat later)" = changed; touch scratch/c'), inputs: ['later'] },
+    },
+    {},
+    { later: 'old' },
+  );
+  expect(f.repo.cli(['record', 'c', '--outcome', 'green'], f.env).code).toBe(0);
+  const { child, output } = spawn(f, '--jobs', '2');
+  try {
+    await until(() => f.has('a') && f.has('b'));
+    f.repo.write('later', 'changed');
+    f.mark('release');
+    await until(() => f.has('c'));
+    f.mark('release-b');
+    expect(await child.exited).toBe(0);
+    const [out, err] = await output;
+    expect(err).toBe('');
+    expect(out).toContain('PROVEN c:');
+    expect(out).toContain("RUN c: undecidable: dirty input 'later'");
+    expect(out).toContain("green c; no proof published: dirty path 'later'");
+  } finally {
+    f.mark('release');
+    f.mark('release-b');
+    await stop(child);
+  }
+}, 15000);
+
+test('staged startup remembers restored unstaged bytes for concurrent dependents', () => {
+  const f = fixture(
+    {
+      a: task('true', ['stack']),
+      b: task('false', ['stack']),
+    },
+    { stack: { start: 'cp input scratch/seen; git show :input > input' } },
+  );
+  for (const id of ['a', 'b'])
+    for (const outcome of ['green', 'red'])
+      expect(f.repo.cli(['record', id, '--outcome', outcome], f.env).code).toBe(0);
+  const proofs = f.rows('proofs');
+  const contests = f.rows('contradictions');
+  f.repo.write('input', 'unstaged');
+  const result = f.run('--staged', '--jobs', '2');
+  expect(result.code, result.err + result.out).toBe(1);
+  expect(f.read('seen')).toBe('unstaged');
+  for (const id of ['a', 'b'])
+    expect(result.out).toContain(`${id}; no proof published: provider can see unstaged 'input'`);
+  expect(f.rows('proofs')).toEqual(proofs);
+  expect(f.rows('contradictions')).toEqual(contests);
 }, 15000);

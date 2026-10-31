@@ -85,3 +85,19 @@ export async function stop(child: ReturnType<Repo['spawnCli']>) {
   await until(() => child.exitCode !== null);
   await child.exited;
 }
+export function alive(pid: number) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+    return false;
+  }
+}
+export function killGroup(pid: number) {
+  try {
+    process.kill(-pid, 'SIGKILL');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+  }
+}
