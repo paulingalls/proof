@@ -46,20 +46,29 @@ export function source(tree: RefTree, dirty?: string[]): Source {
 }
 const gap = String.raw`(?:\s|/\*[\s\S]*?\*/|//[^\n]*(?:\n|$))*`;
 const literal = /('(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`)/.source;
-function supplement(text: string) {
+type Loader = 'ts' | 'tsx' | 'jsx' | 'js';
+function supplement(text: string, loader: Loader) {
   const edges: Edge[] = [];
   let reason: string | undefined;
+  const call = () => new RegExp(String.raw`\b(?:import|require)${gap}\(${gap}`, 'g');
+  const literalArgument = new RegExp(String.raw`^${literal}${gap}(?:\)|,)`);
+  // Only the transpiler knows a comment from code; a hand tokenizer desyncs on regex literals and
+  // could hide a real call. Its output keeps every call that runs, so it confirms a computed one.
+  const runs = () => {
+    const code = new Bun.Transpiler({ loader }).transformSync(text);
+    return [...code.matchAll(call())].some(
+      (match) => !literalArgument.test(code.slice(match.index + match[0].length)),
+    );
+  };
   function add(value: string, kind: Edge['kind']) {
     if (value.includes('\\') || value.includes('${')) reason ??= `ambiguous import ${value}`;
     else edges.push({ specifier: value.slice(1, -1), kind });
   }
-  for (const match of text.matchAll(
-    new RegExp(String.raw`\b(?:import|require)${gap}\(${gap}`, 'g'),
-  )) {
+  for (const match of text.matchAll(call())) {
     const tail = text.slice((match.index ?? 0) + match[0].length);
-    const arg = new RegExp(String.raw`^${literal}${gap}(?:\)|,)`).exec(tail);
+    const arg = literalArgument.exec(tail);
     if (arg?.[1]) add(arg[1], match[0].startsWith('require') ? 'require' : 'import');
-    else reason ??= `computed import ${tail.split(')')[0]}`;
+    else if (!reason && runs()) reason = `computed import ${tail.split(')')[0]}`;
   }
   for (const match of text.matchAll(new RegExp(String.raw`\bfrom${gap}${literal}`, 'g'))) {
     if (match[1]) add(match[1], 'import');
@@ -67,12 +76,12 @@ function supplement(text: string) {
   return { edges, reason };
 }
 const scans = new Map<string, { edges: Edge[]; reason?: string }>();
-function scan(text: string, loader: 'ts' | 'tsx' | 'jsx' | 'js') {
+function scan(text: string, loader: Loader) {
   const id = new Bun.CryptoHasher('sha256').update(text).digest('hex') + loader;
   let result = scans.get(id);
   if (!result) {
     try {
-      const extra = supplement(text);
+      const extra = supplement(text, loader);
       result = {
         edges: [
           ...new Map(
