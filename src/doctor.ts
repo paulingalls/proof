@@ -1,9 +1,10 @@
 import { declarations } from './declarations';
+import { dimension } from './dimensions';
 import { RefTree } from './git';
 import { Store } from './store';
 
 export async function doctor() {
-  const { project } = declarations(new RefTree('HEAD'), true);
+  const { project, dimensions } = declarations(new RefTree('HEAD'), true);
   const diagnostic = await Store.diagnose();
   console.log(`Store: ${diagnostic.store}`);
   console.log(
@@ -13,5 +14,11 @@ export async function doctor() {
   console.log(`Replica: ${diagnostic.replica}`);
   console.log(`Project: ${project}`);
   console.log(`Bun: ${Bun.version}`);
-  return diagnostic.reason ? 1 : 0;
+  let failed = Boolean(diagnostic.reason);
+  for (const [name, command] of dimensions) {
+    const resolved = dimension(name, command);
+    console.log(`Dimension ${name}: ${resolved.value ?? `unavailable (${resolved.reason})`}`);
+    failed ||= resolved.reason !== undefined;
+  }
+  return failed ? 1 : 0;
 }

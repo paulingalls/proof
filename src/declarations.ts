@@ -62,6 +62,7 @@ function patterns(value: unknown, context: string): Input[] {
     if ('dotenv' in projection) {
       fields(projection, ['dotenv', 'exclude'], label);
       const path = text(projection.dotenv, `${label} dotenv`);
+      if (path === 'dimension') throw new Error(`${label}: reserved dotenv '${path}'`);
       if (isAbsolute(path) || path.split('/').some((p) => ['', '.', '..', '.git'].includes(p)))
         throw new Error(`${label}: unsafe dotenv '${path}'`);
       if (
@@ -203,6 +204,7 @@ export function declarations(tree: RefTree, working = false) {
     mapping('dimensions' in root ? root.dimensions : {}, 'proof.yaml dimensions'),
   )) {
     const label = `proof.yaml dimension '${text(name, 'dimension name')}'`;
+    if (name.includes(':')) throw new Error(`${label}: name must not contain ':'`);
     dimensions.set(name, text(command, label));
   }
   const lanes = new Map<string, number>();

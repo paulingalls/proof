@@ -158,3 +158,56 @@ for (const output of ['printf raw-marker; printf raw-error >&2; exit 1', 'true',
     for (const table of ['results', 'proofs'])
       expect(f.rows(table).map((r) => r.task)).toEqual(['plain']);
   });
+
+test('dimension namespace cannot alias dotenv or ordinary env identities', () => {
+  const f = fixture();
+  for (const source of [
+    doc({}, { native: { ...task(), inputs: [{ dotenv: 'dimension' }] } }),
+    doc({}, {}, { inputs: { bad: [{ dotenv: 'dimension' }] } }),
+    doc({ 'a:b': 'printf demo' }, {}),
+  ]) {
+    f.repo.commit({ 'proof.yaml': source });
+    expect(f.cli(['plan'], 2)).toContain(source.includes('a:b') ? 'a:b' : 'dimension');
+  }
+  f.repo.commit({
+    'proof.yaml': doc(
+      { TOOL: 'cat .git/value' },
+      {
+        native: { ...task(['TOOL']), env: ['TOOL'], inputs: ['input', { dotenv: 'config' }] },
+      },
+    ),
+    '.gitignore': 'config',
+  });
+  f.repo.write('config', 'TOOL=file');
+  f.repo.write('.git/value', 'demo');
+  f.cli(['record', 'native', '--outcome', 'green']);
+  expect(JSON.parse(f.rows()[0]?.env_hashes as string).map(([name]: string[]) => name)).toEqual([
+    'TOOL',
+    'config:TOOL',
+    'dimension:TOOL',
+  ]);
+  f.repo.write('.git/value', 'changed');
+  expect(f.cli(['why', 'native']).match(/changed env .*/g)).toEqual(['changed env dimension:TOOL']);
+});
+
+test('doctor reports every dimension value and failure before exiting', () => {
+  const f = fixture(doc({ first: 'printf demo', broken: 'exit 1', last: 'printf last-value' }, {}));
+  const report = f.cli(['doctor'], 1);
+  for (const line of [
+    'Store:',
+    'Reachability:',
+    'Schema version:',
+    'Replica:',
+    'Project:',
+    'Bun:',
+    'Dimension first: demo',
+    "Dimension broken: unavailable (dimension 'broken': command failed)",
+    'Dimension last: last-value',
+  ])
+    expect(report).toContain(line);
+  f.repo.commit({ 'proof.yaml': doc({ tool: 'printf demo' }) });
+  f.cli(['run']);
+  f.cli(['plan']);
+  f.cli(['why', 'native']);
+  expect(f.cli(['doctor'])).toContain('Dimension tool: demo');
+});
