@@ -40,7 +40,8 @@ In Paul's words: "only running what actually needs to run after a change, nothin
 ## 2. Definition of done: the requirement suite
 
 The suite is a list of real app-a commit pairs with the exact task set each must run. Section 1.2 of the
-design lists 14 cases. Examples:
+design lists 14 cases. Each pair's real diff replays at current HEAD under current declarations, because old
+trees have none (Paul, 2026-10-31). A path missing at HEAD fails its case. Examples:
 - a `CHANGELOG.md`-only change runs nothing
 - one gate script runs that gate
 - a `packages/db` query runs the DB tests and the stack gates that declare it
