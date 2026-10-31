@@ -77,3 +77,11 @@ export function spawn(f: ReturnType<typeof fixture>, ...args: string[]) {
   ]);
   return { child, output };
 }
+export async function stop(child: ReturnType<Repo['spawnCli']>) {
+  if (child.exitCode !== null) return;
+  child.kill('SIGINT');
+  await Bun.sleep(50);
+  if (child.exitCode === null) child.kill('SIGINT');
+  await until(() => child.exitCode !== null);
+  await child.exited;
+}
