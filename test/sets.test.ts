@@ -94,3 +94,43 @@ test('membership requires a list of nonempty strings', () => {
     );
   }
 });
+
+test('plan and status select their declaration view without changing proof identity', () => {
+  const task = fixture();
+  const declaration = (set: string) => JSON.stringify({ tasks: { earned: task('earned', [set]) } });
+  const a = repo.commit({
+    'proof.yaml': root({ pending: task('pending', ['push']) }),
+    'proof.d/tasks.yaml': declaration('commit'),
+    input: 'ok',
+  });
+  expect(rows('plan', '--set', 'push')).toEqual([['pending', 'RUN']]);
+  expect(rows('status', '--set', 'push', '--ref', 'HEAD')).toEqual([['pending', 'RUN']]);
+  expect(cli('run', '--set', 'commit').code).toBe(0);
+  const before = log();
+  repo.commit({
+    'proof.yaml': root({ pending: task('pending', ['commit']) }),
+    'proof.d/tasks.yaml': declaration('push'),
+  });
+  expect(rows('plan', '--set', 'push')).toEqual([['earned', 'PROVEN']]);
+  expect(cli('run', '--set', 'push').out).toContain('PROVEN earned');
+  expect(log()).toBe(before);
+  expect(rows('plan', '--set', 'commit')).toEqual([['pending', 'RUN']]);
+  expect(rows('status', '--ref', a, '--set', 'commit')).toEqual([['earned', 'PROVEN']]);
+  expect(rows('status', '--ref', a, '--set', 'push')).toEqual([['pending', 'RUN']]);
+  expect(rows('status', '--ref', 'HEAD', '--set', 'push')).toEqual([['earned', 'PROVEN']]);
+  repo.write('proof.d/tasks.yaml', declaration('working'));
+  const dirty = cli('run', '--set', 'working');
+  expect(dirty.code).toBe(0);
+  expect(dirty.out).toContain('not recorded: dirty declaration');
+  expect(log()).toBe(`${before}earned\n`);
+  expect(rows('status', '--ref', 'HEAD', '--set', 'push')).toEqual([['earned', 'PROVEN']]);
+  for (const command of ['plan', 'status']) {
+    const prefix = command === 'status' ? ['--ref', 'HEAD'] : [];
+    for (const args of [['--set'], ['--set', 'push', '--set', 'commit']])
+      expect(cli(command, ...prefix, ...args)).toEqual({
+        code: 2,
+        out: '',
+        err: `proof: usage: proof ${command} ${command === 'status' ? '--ref <ref> ' : ''}[--set <name>] [--json]\n`,
+      });
+  }
+}, 30_000);

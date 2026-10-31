@@ -39,6 +39,7 @@ if (command === '--version') {
       console.log(await record(args));
     } else if (command === 'status') {
       let ref: string | undefined;
+      let set: string | undefined;
       let json = false;
       for (let i = 0; i < args.length; i++) {
         const arg = args[i];
@@ -50,18 +51,37 @@ if (command === '--version') {
           !args[i + 1]?.startsWith('-')
         )
           ref = args[++i];
-        else throw new Error('usage: proof status --ref <ref> [--json]');
+        else if (
+          arg === '--set' &&
+          set === undefined &&
+          args[i + 1] &&
+          !args[i + 1]?.startsWith('-')
+        )
+          set = args[++i];
+        else throw new Error('usage: proof status --ref <ref> [--set <name>] [--json]');
       }
-      if (!ref) throw new Error('usage: proof status --ref <ref> [--json]');
-      const rows = await status(ref);
+      if (!ref) throw new Error('usage: proof status --ref <ref> [--set <name>] [--json]');
+      const rows = await status(ref, set);
       if (json) console.log(JSON.stringify(rows));
       else for (const row of rows) console.log(renderDecision(row));
       process.exitCode = rows.every((row) => row.state === 'PROVEN') ? 0 : 1;
     } else if (command === 'plan') {
-      if (args.length && (args.length !== 1 || args[0] !== '--json'))
-        throw new Error('usage: proof plan [--json]');
-      const rows = await plan();
-      if (args[0] === '--json') console.log(JSON.stringify(rows));
+      let set: string | undefined;
+      let json = false;
+      for (let i = 0; i < args.length; i++) {
+        const arg = args[i];
+        if (arg === '--json' && !json) json = true;
+        else if (
+          arg === '--set' &&
+          set === undefined &&
+          args[i + 1] &&
+          !args[i + 1]?.startsWith('-')
+        )
+          set = args[++i];
+        else throw new Error('usage: proof plan [--set <name>] [--json]');
+      }
+      const rows = await plan(set);
+      if (json) console.log(JSON.stringify(rows));
       else for (const row of rows) console.log(renderDecision(row));
     } else {
       if (args.length !== 1 || !args[0]) throw new Error('usage: proof check <cases.yaml>');
