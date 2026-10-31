@@ -99,6 +99,7 @@ export function declarations(tree: RefTree, working = false) {
   const tasks = new Map<string, Task>();
   const contexts = new Map<string, string>();
   const requested = new Map<string, string[]>();
+  const unkeyed: unknown[] = [];
   function read(path: string, root: boolean) {
     const context = `ref '${tree.ref}' ${path}`;
     let parsed: unknown;
@@ -126,9 +127,10 @@ export function declarations(tree: RefTree, working = false) {
             'dimensions',
             'unkeyed',
           ]
-        : ['inputs', 'tasks'],
+        : ['inputs', 'tasks', 'unkeyed'],
       context,
     );
+    if ('unkeyed' in doc) unkeyed.push(...filePatterns(doc.unkeyed, `${context} unkeyed`));
     if (root) {
       if (doc.version !== 1) throw new Error(`${context}: version must be 1`);
       text(doc.project, `${context} project`);
@@ -274,7 +276,7 @@ export function declarations(tree: RefTree, working = false) {
     for (const name of task.needs ?? [])
       if (!providers.has(name)) throw new Error(`task '${id}': unknown provider '${name}'`);
   }
-  resolveUnkeyed('unkeyed' in root ? root.unkeyed : [], tasks, tree, working);
+  resolveUnkeyed(unkeyed, tasks, tree, working);
   const context = `ref '${tree.ref}' proof.yaml`;
   const coverage: string[] = [];
   if ('coverage' in root) {

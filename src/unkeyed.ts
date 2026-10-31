@@ -27,7 +27,10 @@ export function resolveUnkeyed(
   const available = [...new Set([...tree.files.keys(), ...dirty])].filter(
     (path) => !working || existsSync(path),
   );
+  const present = new Set(available);
   function matches(pattern: string, label: string) {
+    // A generated list holds hundreds of literal paths; one scan of the tree each would dominate plan.
+    if (present.has(pattern)) return [pattern];
     const glob = new Bun.Glob(pattern);
     const paths = available.filter((path) => glob.match(path));
     if (!paths.length) throw new Error(`${context} ${label}: unmatched '${pattern}'`);

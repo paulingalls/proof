@@ -153,7 +153,8 @@ exempt:
   one task whose `keyed` matches it **and whose inputs actually receive it**. Every `keyed`
   match must be inside `unkeyed`. Uncovered files, including new files under a broad glob
   or files a representative stops importing, are declaration errors on every command.
-  `keyed` does not add inputs. Included tasks can be representatives.
+  `keyed` does not add inputs. Included tasks can be representatives, and an included file can
+  carry `unkeyed`, which adds to the root list, so a generated list can live in `proof.d`.
 
   This applies to direct inputs, JSON and dotenv-name projections, resolver manifest members,
   and files reached through `imports-of` or `maestro`. Traversal continues through an unkeyed

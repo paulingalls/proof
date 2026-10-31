@@ -173,3 +173,27 @@ test('unkeyed bytes stay in sandboxes while only representatives key them', () =
   r.commit({ 'proof.yaml': JSON.stringify(doc) });
   expect(cli(['why', 'closure'])).toContain('now keyed leaf.ts');
 }, 30000);
+
+test('an included file extends unkeyed, as a generated list does', () => {
+  const { r, doc, cli } = fixture();
+  const { unkeyed: _, ...rest } = doc;
+  r.commit({
+    'proof.yaml': JSON.stringify({
+      ...rest,
+      tasks: { reader: task(['shared.ts']), smoke: task(['shared.ts'], ['shared.ts']) },
+    }),
+    'proof.d/tasks.yaml': JSON.stringify({ unkeyed: ['shared.ts'] }),
+  });
+  const keys = () =>
+    Object.fromEntries(
+      JSON.parse(cli(['plan', '--json'])).map((row: { task: string; key: string }) => [
+        row.task,
+        row.key,
+      ]),
+    );
+  const before = keys();
+  r.commit({ 'shared.ts': 'export const changed = 1;' });
+  const after = keys();
+  expect(after.reader).toBe(before.reader);
+  expect(after.smoke).not.toBe(before.smoke);
+}, 30_000);
