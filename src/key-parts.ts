@@ -1,4 +1,5 @@
 import type { Task } from './declarations';
+import { dimension } from './dimensions';
 import { dotenv } from './dotenv';
 import type { RefTree } from './git';
 import { select } from './key';
@@ -146,6 +147,10 @@ export function keyParts(task: Task, tree: RefTree, historical = false) {
       ]);
   if (!historical) {
     const entries = new Map(env);
+    for (const [name, command] of task.dimensions ?? []) {
+      const { value } = dimension(name, command);
+      entries.set(`dimension:${name}`, hash(value));
+    }
     for (const input of task.inputs) {
       if (typeof input === 'string' || !('dotenv' in input)) continue;
       const path = input.dotenv;

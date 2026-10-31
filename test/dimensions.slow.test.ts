@@ -70,3 +70,45 @@ test('dimension declarations validate every reader and included, unselected task
   f.repo.commit({ 'proof.d/tasks.yaml': '{"dimensions":{"bad":"true"}}' });
   expect(f.cli(['plan'], 2)).toContain("unknown field 'dimensions'");
 });
+
+test('dimension-only identity uses current values, stored hashes and each ref command', () => {
+  const old = 'echo hit >> .git/old-counter; cat .git/value; printf "$TOOL"';
+  const f = fixture(doc({ tool: old }));
+  f.repo.write('.git/value', 'raw-marker-A');
+  f.cli(['run', '--jobs', '2']);
+  const a = f.repo.git('rev-parse', 'HEAD');
+  expect(f.cli(['plan'], 0, join(f.repo.path, 'node_modules'))).toContain('PROVEN native');
+  expect(JSON.parse(f.rows()[0]?.env_hashes as string)).toEqual([
+    ['dimension:tool', new Bun.CryptoHasher('sha256').update('raw-marker-Aambient').digest('hex')],
+  ]);
+  for (const table of ['results', 'proofs'])
+    expect(JSON.stringify(f.rows(table))).not.toContain('raw-marker');
+  f.repo.write('.git/value', 'raw-marker-B');
+  const plan = f.cli(['plan']);
+  expect(plan).toContain('RUN native');
+  expect(plan).toContain('PROVEN plain');
+  expect(f.cli(['status', '--ref', a], 1)).toContain('RUN native');
+  f.repo.write('.git/value', 'raw-marker-A');
+  expect(f.cli(['status', '--ref', a])).toContain('PROVEN native');
+  const count = () => Bun.file(join(f.repo.path, '.git/old-counter')).size;
+  const before = count();
+  const b = f.repo.commit({ 'proof.yaml': doc({ tool: 'printf raw-marker-B' }) });
+  const why = f.cli(['why', 'native']);
+  expect(why).toContain('changed env dimension:tool');
+  expect(why).not.toContain('raw-marker');
+  expect(count()).toBe(before);
+  const c = f.repo.commit({
+    'proof.yaml': doc(
+      { unused: 'exit 99', tool: "printf '%s' raw-marker-B" },
+      { native: task(['tool', 'tool']), plain: task([]) },
+    ),
+  });
+  f.repo.write(
+    '.git/cases.yaml',
+    JSON.stringify([
+      { name: 'change', from: a, to: b, expect: ['native'] },
+      { name: 'same value', from: b, to: c, expect: [] },
+    ]),
+  );
+  expect(f.cli(['check', '.git/cases.yaml'])).toContain('PASS same value');
+});
