@@ -112,3 +112,29 @@ test('dimension-only identity uses current values, stored hashes and each ref co
   );
   expect(f.cli(['check', '.git/cases.yaml'])).toContain('PASS same value');
 });
+
+test('commands are lazy and cached throughout plan, run and stored-proof why', () => {
+  const command = 'echo hit >> .git/counter; printf demo';
+  const f = fixture(
+    doc(
+      { tool: command, alias: command },
+      {
+        native: task(['tool']),
+        second: task(['alias']),
+        plain: { ...task(), sets: ['plain'] },
+      },
+    ),
+  );
+  for (const [args, count] of [
+    [['plan'], 1],
+    [['plan', '--set', 'plain'], 0],
+    [['run', '--jobs', '2'], 1],
+    [['why', 'native'], 1],
+    [['plan'], 1],
+  ] as [string[], number][]) {
+    f.repo.write('.git/counter', '');
+    f.cli(args);
+    expect(Bun.file(join(f.repo.path, '.git/counter')).size).toBe(count * 4);
+  }
+  expect(f.rows()).toHaveLength(3);
+});
