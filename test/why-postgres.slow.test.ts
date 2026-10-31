@@ -48,6 +48,7 @@ function changes(out: string) {
 test('newest remote proof crosses clone/key boundaries without importing remote history', async () => {
   const { sql, PROOF_STORE } = await postgres.database();
   const repo = fixture();
+  const oldest = repo.git('rev-parse', 'HEAD');
   const env = { PROOF_STORE, PROOF_STATE_DIR: state(), PROOF_WHY_MODE: 'remote-private-original' };
   expect(repo.cli(['record', 'gate', '--outcome', 'green'], env).code).toBe(0);
   const newest = repo.commit({ 'src/a': 'new' });
@@ -63,8 +64,20 @@ test('newest remote proof crosses clone/key boundaries without importing remote 
   repos.push(clone);
   clone.commit({ 'src/b': 'later' });
   expect(clone.cli(['record', 'gate', '--outcome', 'incomplete'], env).code).toBe(0);
-  await sql`UPDATE results SET finished_at = '2026-01-01T00:00:00.000Z'`;
   const reader = { ...env, PROOF_STATE_DIR: state(), PROOF_WHY_MODE: 'remote-private-new' };
+  await sql`UPDATE results SET finished_at = '2026-01-01T00:00:00.000Z'`;
+  await sql`UPDATE results SET finished_at = '2026-01-02T00:00:00.000Z'
+    WHERE "commit" = ${oldest}`;
+  const byFinishTime = clone.cli(['why', 'gate'], reader);
+  expect(byFinishTime.code).toBe(0);
+  expect(byFinishTime.out).toContain(`comparison: ${oldest} on `);
+  expect(changes(byFinishTime.out)).toEqual([
+    'changed file src/a',
+    'changed file src/b',
+    'changed env PROOF_WHY_MODE',
+  ]);
+  expect(byFinishTime.out + byFinishTime.err).not.toContain('remote-private');
+  await sql`UPDATE results SET finished_at = '2026-01-01T00:00:00.000Z'`;
   const result = clone.cli(['why', 'gate'], reader);
   expect(result.code).toBe(0);
   expect(result.out).toContain(`comparison: ${newest} on `);
