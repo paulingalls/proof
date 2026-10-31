@@ -2,6 +2,18 @@ import { isBuiltin } from 'node:module';
 import { posix } from 'node:path';
 import type { Source } from './imports';
 
+export const manifestMembers = [
+  'name',
+  'main',
+  'module',
+  'type',
+  'exports',
+  'imports',
+  'workspaces',
+  'extends',
+  'compilerOptions',
+];
+
 export type Edge = { specifier: string; kind: 'import' | 'require' };
 export function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))

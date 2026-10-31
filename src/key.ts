@@ -47,16 +47,21 @@ export function select(
 ) {
   const view = source(tree, working ? dirty : undefined);
   const paths = new Set<string>();
+  const manifests = new Set<string>();
+  const whole = new Set<string>();
   let reason: string | undefined;
   for (const pattern of task.inputs) {
     if (typeof pattern !== 'string') {
       if ('imports-of' in pattern) {
         const found = closure(pattern['imports-of'], view);
         for (const path of found.paths) paths.add(path);
+        for (const path of found.whole) whole.add(path);
+        for (const path of found.manifests) manifests.add(path);
         reason ??= found.reason;
       }
       if ('maestro' in pattern) {
         const found = maestro(pattern.maestro, view);
+        for (const path of found.paths) whole.add(path);
         for (const path of found.paths) paths.add(path);
         reason ??= found.reason;
       }
@@ -69,13 +74,22 @@ export function select(
     for (const path of candidates(available, positive, negative ? [...dirty, ...paths] : dirty)) {
       if (glob.match(path)) {
         matched = true;
-        if (negative) paths.delete(path);
-        else paths.add(path);
+        if (negative) {
+          paths.delete(path);
+          whole.delete(path);
+        } else {
+          paths.add(path);
+          whole.add(path);
+        }
       }
     }
     if (!matched) reason ??= `unmatched input '${pattern}'`;
   }
-  return { paths, reason };
+  return {
+    paths,
+    manifests: [...manifests].filter((path) => paths.has(path) && !whole.has(path)),
+    reason,
+  };
 }
 
 export function selection(task: Task, tree: RefTree, dirty: string[] = []) {
@@ -160,7 +174,7 @@ export function key(id: string, task: Task, tree: RefTree, dirty: string[] = [])
   }
   const parts = keyParts(task, tree);
   if (parts.reasons.length) return { reason: parts.reasons[0] as string };
-  const tuple: unknown[] = [2, id, parts.declaration, [...parts.files, ...parts.members]];
+  const tuple: unknown[] = [3, id, parts.declaration, [...parts.files, ...parts.members]];
   if (task.env?.length) tuple.push(parts.env.map(([name, hash]) => ['env', name, hash]));
   const hash = new Bun.CryptoHasher('sha256').update(JSON.stringify(tuple)).digest('hex');
   return { key: hash, env: parts.env };

@@ -105,7 +105,10 @@ function scan(text: string, loader: Loader) {
   }
   return result;
 }
-const closures = new WeakMap<Source, Map<string, { paths: Set<string>; reason?: string }>>();
+const closures = new WeakMap<
+  Source,
+  Map<string, { paths: Set<string>; manifests: Set<string>; whole: Set<string>; reason?: string }>
+>();
 export function closure(entry: string, view: Source) {
   let cached = closures.get(view);
   if (!cached) {
@@ -115,9 +118,12 @@ export function closure(entry: string, view: Source) {
   const prior = cached.get(entry);
   if (prior) return prior;
   const paths = new Set<string>();
+  const manifests = new Set<string>();
+  const whole = new Set<string>();
   const local = workspaces(view);
   let reason: string | undefined;
-  function visit(path: string) {
+  function visit(path: string, metadata = false) {
+    if (!metadata) whole.add(path);
     if (paths.has(path)) return;
     paths.add(path);
     const mode = view.mode(path);
@@ -152,7 +158,10 @@ export function closure(entry: string, view: Source) {
         const target = spec.startsWith('.')
           ? local.resolve(posix.join(posix.dirname(path), spec), deps)
           : local.bare(path, edge, deps);
-        for (const dep of deps) visit(dep);
+        for (const dep of deps) {
+          if (posix.basename(dep) === 'package.json') manifests.add(dep);
+          visit(dep, true);
+        }
         if (target) visit(target);
         else if (spec.startsWith('.')) throw new Error('unresolved import');
       } catch (error) {
@@ -161,9 +170,9 @@ export function closure(entry: string, view: Source) {
     }
   }
   if (entry.startsWith('/') || entry.split('/').some((part) => ['..', '.git'].includes(part)))
-    return { paths, reason: `unsafe entry '${entry}'` };
+    return { paths, manifests, whole, reason: `unsafe entry '${entry}'` };
   visit(entry);
-  const result = { paths, reason };
+  const result = { paths, manifests, whole, reason };
   cached.set(entry, result);
   return result;
 }
