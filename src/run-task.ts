@@ -79,7 +79,7 @@ export async function runTask(
             providerMismatches.set(dependent, mismatch);
         }
       }
-      started ||= !providers.attempted([name]);
+      started = true;
       await providers.start(name, provider);
     }
   }

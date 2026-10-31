@@ -39,18 +39,29 @@ function sqlite(): Backend {
   }
   const query: Query = async <T>(sql: string, ...values: Value[]) =>
     db.query(sql).all(...values) as T[];
+  let transactions = Promise.resolve();
   return {
     query,
     remote: false,
     async transaction(_lock, work) {
-      db.exec('BEGIN IMMEDIATE');
+      const previous = transactions;
+      let release = () => {};
+      transactions = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await previous;
       try {
-        const result = await work(query);
-        db.exec('COMMIT');
-        return result;
-      } catch (error) {
-        db.exec('ROLLBACK');
-        throw error;
+        db.exec('BEGIN IMMEDIATE');
+        try {
+          const result = await work(query);
+          db.exec('COMMIT');
+          return result;
+        } catch (error) {
+          db.exec('ROLLBACK');
+          throw error;
+        }
+      } finally {
+        release();
       }
     },
     async close() {

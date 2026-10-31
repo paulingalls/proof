@@ -178,3 +178,36 @@ test('failed shared startup records three incomplete dependents and lets unrelat
     await stop(child);
   }
 }, 15000);
+
+test('eight simultaneous greens retain every result and matching proof locally', () => {
+  const ids = Array.from({ length: 8 }, (_, index) => `task${index}`);
+  const f = fixture(
+    Object.fromEntries(
+      ids.map((id) => [
+        id,
+        task(
+          `touch scratch/${id}; while test "$(find scratch/ -name 'task*' | wc -l)" -lt 8; do sleep 0.01; done`,
+        ),
+      ]),
+    ),
+  );
+  const result = f.run('--jobs', '8');
+  expect(result.code, result.err + result.out).toBe(0);
+  expect(result.err).toBe('');
+  const results = f.rows();
+  const proofs = f.rows('proofs');
+  expect(results).toHaveLength(8);
+  expect(proofs).toHaveLength(8);
+  for (const row of results) {
+    expect(row.outcome).toBe('green');
+    expect(proofs.find((p) => p.task === row.task)).toMatchObject({
+      key: row.key,
+      result_id: row.id,
+    });
+  }
+  const plan = f.repo.cli(['plan', '--json'], f.env);
+  expect(plan.code).toBe(0);
+  expect(JSON.parse(plan.out).map((r: { state: string }) => r.state)).toEqual(
+    ids.map(() => 'PROVEN'),
+  );
+}, 15000);

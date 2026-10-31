@@ -71,29 +71,44 @@ export async function run(args: string[]) {
       preview.set(id, renderDecision(row));
       console.log(renderDecision(row));
     }
-    for (const [index, id] of ids.entries()) {
-      if (processes.interrupted && !providers.live()) break;
-      await runTask(id, {
-        snapshot,
-        fresh,
-        staged,
-        parent,
-        ids: ids.slice(index),
-        store,
-        summary,
-        preview,
-        providerMismatches,
-        processes,
-        providers,
-        fail: () => {
-          failed = true;
-        },
-      });
-      const view = snapshot ?? currentTree();
-      await providers.stopExcept(
-        new Set(ids.slice(index + 1).flatMap((later) => view.tasks.get(later)?.needs ?? [])),
-      );
+    const unfinished = new Set(ids);
+    const slots = ids.map(() => [] as string[]);
+    let next = 0;
+    async function worker() {
+      while (next < ids.length) {
+        const index = next++;
+        const id = ids[index];
+        if (id === undefined) break;
+        if (processes.interrupted && !providers.live()) break;
+        await runTask(id, {
+          snapshot,
+          fresh,
+          staged,
+          parent,
+          ids: [...unfinished],
+          store,
+          summary: jobs === 1 ? summary : (slots[index] ?? []),
+          preview,
+          providerMismatches,
+          processes,
+          providers,
+          fail: () => {
+            failed = true;
+          },
+        });
+        unfinished.delete(id);
+        const view = snapshot ?? currentTree();
+        await providers.stopExcept(
+          new Set([...unfinished].flatMap((later) => view.tasks.get(later)?.needs ?? [])),
+        );
+      }
     }
+    const workers = await Promise.allSettled(
+      Array.from({ length: Math.min(jobs, ids.length) }, worker),
+    );
+    if (jobs > 1) summary.push(...slots.flat());
+    const rejected = workers.find((result) => result.status === 'rejected');
+    if (rejected?.status === 'rejected') throw rejected.reason;
     await providers.stopExcept(new Set());
     console.log(summary.join('\n'));
     return processes.interrupted
