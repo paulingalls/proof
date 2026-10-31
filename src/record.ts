@@ -41,7 +41,7 @@ export async function record(args: string[]) {
       : undefined;
   const store = await Store.open();
   try {
-    const sharing = await store.record(
+    const { sharing } = await store.record(
       project,
       id,
       current.key,

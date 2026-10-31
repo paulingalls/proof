@@ -41,8 +41,18 @@ can require one extra run of a newer local green.
 
 A red this machine never saw before going offline cannot be known locally. An
 offline proof therefore cannot guarantee that the shared store has no newer red.
-R10's super run, which runs every task fresh, is the specified backstop; this
-section does not imply that command is already implemented.
+`proof run --fresh` is R10's backstop: it executes every selected task regardless of proofs.
+An eligible fresh red deletes the proof immediately and writes a `super` contradiction in the
+same transaction. A fresh green uses the normal clean-green publication path. Incomplete
+results and reds over dirty selected inputs delete nothing. Ordinary reds retain R9's
+contest-then-delete rule. Contradiction kind is unconstrained text; `super` needs no schema bump.
+
+Deletion summaries name the task and key separately for local and shared commits. The store
+returns confirmed deletion decisions after commit; a pre-run lookup cannot establish that a
+proof was deleted. If a remote commit is lost, the summary reports `sharing uncertain` and
+any confirmed local deletion, without claiming shared deletion. An offline fresh red's local
+veto survives deletion and blocks a still-green remote after reconnect until a clean local
+green or confirmed red share clears it.
 
 Nothing is queued, replayed, or uploaded on reconnect. Local proofs are never
 copied to Postgres retroactively. A missed share costs another run. Without a

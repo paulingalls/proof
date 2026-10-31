@@ -74,6 +74,7 @@ export async function decide(
   project: string,
   store: Store,
   inspection = inspectTaskLinks(decl, tree, dirty),
+  fresh = false,
 ) {
   const links = [
     ...(inspection.trusted.length ? [`trusted links: ${inspection.trusted.join(', ')}`] : []),
@@ -94,6 +95,7 @@ export async function decide(
     if (current.key === undefined)
       return { task, state: 'RUN', reason: `undecidable: ${current.reason}` };
     if (inspection.escapes.length) return { task, state: 'RUN', reason: 'untrusted links' };
+    if (fresh) return { task, state: 'RUN', reason: 'fresh execution requested' };
     const proof = await store.proof(project, task, current.key);
     if (proof?.red_commit)
       return {
