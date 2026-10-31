@@ -231,9 +231,9 @@ and needs no declaration. Declaring it in root `lanes`, naming an undeclared lan
 using a limit other than a positive safe integer is a declaration error (exit 2).
 
 Lanes and limits are read once when the run starts. Like task sets, they do not enter
-proof identity: changing them preserves existing proofs. Limits apply within one
-`proof run` invocation. Per-host locking across clones (design §4.11) remains a milestone
-Candidate; separate invocations do not share lane capacity.
+proof identity: changing them preserves proofs, except for a task selecting `proof.yaml`,
+whose bytes enter its key. Limits apply per `proof run`; separate invocations do not share
+capacity. Per-host locking across clones (design §4.11) remains a milestone Candidate.
 
 The first interrupt signals every active task and provider-start process group; a second
 kills every active group, including teardown. Interrupted tasks record incomplete. A sandbox
