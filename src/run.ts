@@ -53,7 +53,8 @@ export async function run(args: string[]) {
           ? undefined
           : {
               project: (snapshot ?? currentTree()).project,
-              task: `provider-${name}`,
+              kind: 'providers',
+              task: name,
               live: jobs === 1,
             },
       );

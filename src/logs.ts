@@ -13,7 +13,13 @@ import {
 import { join, resolve } from 'node:path';
 import { statePath } from './config';
 
-export type LogIdentity = { project: string; task: string; key?: string; live: boolean };
+export type LogIdentity = {
+  project: string;
+  kind: 'tasks' | 'providers';
+  task: string;
+  key?: string;
+  live: boolean;
+};
 export type LogResult = { path?: string; error?: string };
 
 const CHUNK = 65536;
@@ -69,7 +75,9 @@ export class Capture {
       if (this.identity.live) this.tail(fstatSync(this.fd).size);
       else {
         const bytes = readFileSync(this.path);
-        console.log(`--- ${this.identity.task}\n${bytes.toString().replace(/\n$/, '')}`);
+        console.log(
+          `--- ${this.identity.kind === 'providers' ? 'provider-' : ''}${this.identity.task}\n${bytes.toString().replace(/\n$/, '')}`,
+        );
       }
     } catch (error) {
       this.error = String(error);
@@ -90,6 +98,7 @@ export class Capture {
         const directory = join(
           this.root,
           segment(this.identity.project),
+          this.identity.kind,
           segment(this.identity.task),
         );
         mkdirSync(directory, { recursive: true, mode: 0o700 });

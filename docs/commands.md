@@ -26,7 +26,7 @@ appear together on stdout when it finishes, under `--- <task>`; summaries stay i
 order. Both streams write to one capture file to preserve their write order.
 
 Red and incomplete tasks keep that file; their summary prints its absolute path under
-`<state directory>/logs/<project>/<task>/<UTC timestamp>-<first 8 of key>-<outcome>.log`.
+`<state directory>/logs/<project>/tasks/<task>/<UTC timestamp>-<first 8 of key>-<outcome>.log`.
 Keyless tasks and provider starts use `no-key`. Project and task names are encoded as single
 path segments (including `/`, `:`, `%`, `.` and `..`). Each task keeps its newest ten logs;
 a green deletes its capture and leaves earlier logs alone. The state directory is the same
@@ -36,7 +36,8 @@ local and never enter either store: they may contain private data.
 
 Providers start once, all dependents await readiness, and teardown waits for their running
 and pending users. Starts use the same capture and display rules, with `--- provider-<name>`
-blocks above one job. A failed start's summary names its retained log under `provider-<name>`;
+blocks above one job. A failed start's summary names its retained log under
+`logs/<project>/providers/<name>/`, with its own ten-log budget;
 a ready start deletes its capture. Background processes left by provider starts no longer
 send output to the terminal after startup finishes. Provider stops keep their inherited streams.
 

@@ -31,14 +31,14 @@ test('red bytes survive sandbox and worktree removal; green leaves no file', () 
   expect(result.code, result.err).toBe(1);
   expect(result.err).toBe('');
   const path = logPath(result.out, 'red');
-  expect(path.startsWith(`${f.env.PROOF_STATE_DIR}/logs/jobs/red/`)).toBe(true);
+  expect(path.startsWith(`${f.env.PROOF_STATE_DIR}/logs/jobs/tasks/red/`)).toBe(true);
   expect(path).toContain(`-${f.rows()[0]?.key.slice(0, 8)}-red.log`);
   const bytes = readFileSync(path, 'utf8');
   const sandbox = bytes.split('\n')[2] as string;
   expect(bytes).toBe(`out\nerr\n${sandbox}\ntail`);
   expect(result.out.split(bytes)).toHaveLength(2);
   expect(existsSync(sandbox)).toBe(false);
-  expect(existsSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/green'))).toBe(false);
+  expect(existsSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/tasks/green'))).toBe(false);
   expect(f.rows().map((r) => r.outcome)).toEqual(['red', 'green']);
   f.repo.git('worktree', 'remove', '--force', worktree);
   expect(readFileSync(path, 'utf8')).toBe(bytes);
@@ -117,7 +117,7 @@ setInterval(() => {}, 100);`,
     expect(bytes).toBe(`${sandbox}\nready\nhandled\n`);
     expect(existsSync(sandbox)).toBe(false);
     expect(f.rows().map((r) => r.outcome)).toEqual(['incomplete']);
-    expect(existsSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/later'))).toBe(false);
+    expect(existsSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/tasks/later'))).toBe(false);
   } finally {
     await stop(child);
   }
@@ -140,7 +140,7 @@ test('parallel captures separate a red from a green', () => {
   expect(readFileSync(logPath(result.out, 'red'), 'utf8')).toBe('red-outred-err');
   for (const id of ['red', 'green'])
     expect(result.out).toContain(`--- ${id}\n${id}-out${id}-err\n`);
-  expect(existsSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/green'))).toBe(false);
+  expect(existsSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/tasks/green'))).toBe(false);
 });
 
 test('failed provider retains one log and no dependent captures; ready provider cleans up', () => {
@@ -158,16 +158,16 @@ test('failed provider retains one log and no dependent captures; ready provider 
   const paths = [...result.out.matchAll(/provider 'stack' start failed; log: (.*)\n/g)];
   expect(paths).toHaveLength(1);
   const path = paths[0]?.[1] as string;
-  expect(path).toContain('/logs/jobs/provider-stack/');
+  expect(path).toContain('/logs/jobs/providers/stack/');
   expect(path).toEndWith('-no-key-red.log');
   expect(readFileSync(path, 'utf8')).toBe('provider-outprovider-err');
   expect(result.out).not.toContain('forbidden');
   expect(f.rows().map((r) => r.outcome)).toEqual(['incomplete', 'incomplete']);
   expect(f.read('stops')).toBe('stop\n');
-  expect(readdirSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs'))).toEqual(['provider-stack']);
+  expect(readdirSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs'))).toEqual(['providers']);
   f.mark('succeed');
   expect(f.run('--jobs', '2').code).toBe(0);
-  expect(readdirSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/provider-stack'))).toHaveLength(1);
+  expect(readdirSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/providers/stack'))).toHaveLength(1);
 });
 
 test('each task keeps its newest ten reds and a later green preserves them', () => {
@@ -187,7 +187,7 @@ test('each task keeps its newest ten reds and a later green preserves them', () 
   expect(existsSync(paths[0] as string)).toBe(false);
   for (let n = 1; n < paths.length; n++)
     expect(readFileSync(paths[n] as string, 'utf8')).toBe(`run-${n + 1}\n`);
-  expect(readdirSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/a'))).toHaveLength(10);
+  expect(readdirSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/tasks/a'))).toHaveLength(10);
   expect(existsSync(other)).toBe(true);
   expect(
     new Set(
@@ -199,7 +199,21 @@ test('each task keeps its newest ten reds and a later green preserves them', () 
   ).toBe(1);
   f.mark('succeed');
   expect(f.run('--tasks', 'a').code).toBe(0);
-  expect(readdirSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/a'))).toHaveLength(10);
+  expect(readdirSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/tasks/a'))).toHaveLength(10);
+}, 15000);
+
+test('provider retention cannot prune a task with the same printed label', () => {
+  const f = fixture(
+    { 'provider-stack': task('echo task-diagnostic; false'), dependent: task('true', ['stack']) },
+    { stack: { start: 'echo provider-diagnostic; false' } },
+  );
+  const path = logPath(f.run('--tasks', 'provider-stack').out, 'provider-stack');
+  for (let n = 0; n < 10; n++) {
+    const result = f.run('--tasks', 'dependent');
+    expect(result.code, result.err).toBe(1);
+    expect(result.out).toContain("provider 'stack' start failed; log: ");
+  }
+  expect(readFileSync(path, 'utf8')).toBe('task-diagnostic\n');
 }, 15000);
 
 test('project and task ids remain distinct single safe path segments', () => {
@@ -222,7 +236,7 @@ test('project and task ids remain distinct single safe path segments', () => {
     for (let i = 0; i < ids.length; i++) {
       const path = paths[i] as string;
       expect(path.startsWith(`${directory}/`)).toBe(true);
-      expect(path.slice(directory.length + 1).split('/')).toHaveLength(2);
+      expect(path.slice(directory.length + 1).split('/')).toHaveLength(3);
       expect(readFileSync(path, 'utf8')).toBe(ids[i] as string);
     }
   }
@@ -230,8 +244,8 @@ test('project and task ids remain distinct single safe path segments', () => {
 
 test('log finalization failure reports exit 2 while recording the actual red', () => {
   const f = fixture({ a: task('echo failure-marker; false') });
-  mkdirSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs'), { recursive: true });
-  writeFileSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/a'), 'obstruction');
+  mkdirSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/tasks'), { recursive: true });
+  writeFileSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/tasks/a'), 'obstruction');
   const result = f.run();
   expect(result.code).toBe(2);
   expect(result.out).toMatch(/red a; log failed: .*EEXIST/);

@@ -148,6 +148,7 @@ export async function runTask(
       const started = performance.now();
       const result = await processes.execute(task.run, sandbox.path, env, false, {
         project,
+        kind: 'tasks',
         task: id,
         key: current.key,
         live,
