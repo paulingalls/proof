@@ -3,6 +3,7 @@ import { declarationPaths, declarations, selectTasks } from './declarations';
 import { dirtyPaths, RefTree, resolveRef } from './git';
 import { key, scope, selection } from './key';
 import { currentTree, decide, inspectTaskLinks, renderDecision, STAGED_SUFFIX } from './plan';
+import { providerMismatch } from './provider-inputs';
 import { Providers } from './providers';
 import { Sandbox } from './sandbox';
 import { Store } from './store';
@@ -220,7 +221,7 @@ export async function run(args: string[]) {
           }
         }
         // Providers run in the checkout, so one can serve bytes this snapshot doesn't hold.
-        const unstaged = staged && task.needs?.length ? sandbox?.changed() : undefined;
+        const unstaged = staged && task.needs?.length ? providerMismatch(task, tree) : undefined;
         if (unstaged) unpublished = `provider can see unstaged '${unstaged}'`;
         // The command may have changed bytes without changing the dirty path names.
         const afterDirty = [...dirty];

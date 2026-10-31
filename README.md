@@ -209,7 +209,8 @@ any command exits 2 on a usage, declaration or store error.
 workspace resolution and sandbox inputs all use that snapshot. Unstaged and untracked files
 neither enter the sandbox nor block publication, with one exception: a provider runs in the
 checkout and can see unstaged bytes, so a task with `needs` publishes nothing when a selected
-input differs from the snapshot, and its red contests no proof. Provider edits, including
+input differs from the snapshot (including untracked or ignored glob matches), and its red
+contests no proof. Provider edits, including
 changes to the index, cannot replace the captured task view. Existing link
 escape checks still apply. Proofs keep the parent commit with a ` (staged)` marker.
 
