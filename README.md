@@ -195,7 +195,7 @@ provider-free tasks have no `providers` field. Neither plan form starts resource
 proof plan [--set <name>] [--json]  what must run, and why
 proof why <task>            current key parts and changes since the newest proof
 proof status --ref <ref> [--set <name>] [--json]  proof state at a committed ref
-proof run [--fresh | --staged] [--tasks <id> ... | --set <name>]  run tasks and record each result
+proof run [--fresh | --staged] [--jobs N] [--tasks <id> ... | --set <name>]  run tasks and record each result
 proof record <task> --outcome green|red|incomplete [--seconds N]
 proof lint                   check declarations against the staged tree
 proof check <cases.yaml>     run a requirement suite
