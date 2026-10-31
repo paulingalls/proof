@@ -133,6 +133,34 @@ exempt:
   task undecidable, naming the flow and reference. Declare other runtime reads, such as
   `assertScreenshot` reference images, with globs. For a declared task `a`, use
   `proof plan --json`, `proof run --tasks a`, and `proof lint` to inspect, execute and check ownership.
+- **Dotenv identity** has two forms:
+  ```yaml
+  inputs:
+    - {path: .env.example, dotenv-keys: true}
+    - {dotenv: .env.docker, exclude: [A, API_KEY]}
+  ```
+  `dotenv-keys` projects sorted unique names from a tracked file at the requested ref.
+  Committed value-only changes preserve proof; dirty tracked edits run undecidable.
+  `dotenv` reads the invocation checkout at every ref, including `status --ref`; each included
+  name contributes a value hash under `<file>:<NAME>`. Omit `exclude` to include every name;
+  when supplied it must be a nonempty list. Reordering or repeating declarations changes nothing.
+  Ordinary `env` names cannot contain `:`. Values never enter proof metadata or diagnostics;
+  `proof why gate` reports, for example, `changed env .env.docker:FLAG`.
+
+  Both forms accept blank lines, comments, optional `export`, whitespace around `=`, empty
+  values and single-line single or double quotes. Unquoted inline comments need whitespace
+  before `#`; quoted `#` is literal. After closing quotes, only whitespace or a whitespace-led
+  comment is allowed. Escapes protect double quotes but are not decoded; there is no variable
+  expansion or command substitution. Repeated assignments use the last value. Unsupported
+  syntax makes the task undecidable with a file and line number, without printing source.
+  Missing or unreadable files also run undecidable and publish nothing. `proof lint` validates
+  checkout paths without requiring dotenv files to exist or be tracked.
+
+  `dotenv` provides identity only: it neither supplies task environment variables nor copies
+  the file into the sandbox. A task reading an ignored file adds `links: [.env.docker]`.
+  Gitignore local dotenv files: nonignored untracked files prevent publication under the
+  clean-tree rule. To read a tracked dotenv file, also list its ordinary path as an input;
+  this materializes it and keys its bytes. Links cannot reach tracked files.
 - **`run`** executes in a sandbox holding only the task's inputs, with the environment cleared to
   `PATH`, `HOME`, `TMPDIR` and the declared `env`. A missing input fails the task instead of
   passing by luck.
