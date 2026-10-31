@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.0
+
+- Root `unkeyed` excludes shared files from task keys while preserving exact sandbox bytes;
+  task `keyed` selects representatives. Declarations require a receiving representative for
+  every excluded file. Closure traversal and dirty-input rules stay unchanged. `why` lists
+  excluded files and explains policy changes. Existing keys stay unchanged without the policy.
+
 ## 0.11.2
 
 - `import(...)` and `require(...)` text in strings, templates and comments no longer reads as

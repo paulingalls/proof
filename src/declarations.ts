@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { dirtyPaths, type RefTree } from './git';
 import { scope } from './key';
+import { filePatterns, resolveUnkeyed } from './unkeyed';
 import { refuseDuplicateKeys } from './yaml-keys';
 
 export type Input =
@@ -16,6 +17,8 @@ export type Task = {
   run: string;
   inputs: Input[];
   env?: string[];
+  keyed?: string[];
+  unkeyed?: Set<string>;
   dimensions?: [string, string][];
   links?: string[];
   needs?: string[];
@@ -96,6 +99,7 @@ export function declarations(tree: RefTree, working = false) {
   const tasks = new Map<string, Task>();
   const contexts = new Map<string, string>();
   const requested = new Map<string, string[]>();
+  const unkeyed: unknown[] = [];
   function read(path: string, root: boolean) {
     const context = `ref '${tree.ref}' ${path}`;
     let parsed: unknown;
@@ -121,10 +125,12 @@ export function declarations(tree: RefTree, working = false) {
             'providers',
             'lanes',
             'dimensions',
+            'unkeyed',
           ]
-        : ['inputs', 'tasks'],
+        : ['inputs', 'tasks', 'unkeyed'],
       context,
     );
+    if ('unkeyed' in doc) unkeyed.push(...filePatterns(doc.unkeyed, `${context} unkeyed`));
     if (root) {
       if (doc.version !== 1) throw new Error(`${context}: version must be 1`);
       text(doc.project, `${context} project`);
@@ -144,7 +150,11 @@ export function declarations(tree: RefTree, working = false) {
       const label = `${context} task '${id}'`;
       if (tasks.has(id)) throw new Error(`${label}: duplicate task '${id}'`);
       const task = mapping(value, label);
-      fields(task, ['run', 'inputs', 'env', 'links', 'needs', 'sets', 'lane', 'dimensions'], label);
+      fields(
+        task,
+        ['run', 'inputs', 'env', 'links', 'needs', 'sets', 'lane', 'dimensions', 'keyed'],
+        label,
+      );
       if ('dimensions' in task) {
         if (!Array.isArray(task.dimensions)) throw new Error(`${label}: dimensions must be a list`);
         requested.set(
@@ -190,6 +200,7 @@ export function declarations(tree: RefTree, working = false) {
         run: text(task.run, `${label} run`),
         inputs: patterns(task.inputs, label),
         env,
+        keyed: 'keyed' in task ? filePatterns(task.keyed, `${label} keyed`) : undefined,
         links,
         needs,
         sets: membership,
@@ -265,6 +276,7 @@ export function declarations(tree: RefTree, working = false) {
     for (const name of task.needs ?? [])
       if (!providers.has(name)) throw new Error(`task '${id}': unknown provider '${name}'`);
   }
+  resolveUnkeyed(unkeyed, tasks, tree, working);
   const context = `ref '${tree.ref}' proof.yaml`;
   const coverage: string[] = [];
   if ('coverage' in root) {

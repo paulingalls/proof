@@ -184,6 +184,20 @@ Plan's dirty-input eligibility stays the same. Resolver-only manifests print
 A version-only edit reports `no inputs changed` in the comparison even when the dirty rule
 requires RUN; a resolution-member edit reports, for example, `changed member package.json name`.
 
+For the README's shared-file example, `proof why reader` includes these lines after a
+committed edit to `shared.txt`:
+
+```text
+unkeyed shared.txt
+no inputs changed
+```
+
+Each received unkeyed file appears once, sorted, instead of its file or member identity.
+The representative still prints `file shared.txt <mode> <hash>`. A policy change lists
+`now unkeyed shared.txt` when adopting the exclusion, or `now keyed shared.txt` when restoring
+its contribution, rather than claiming no inputs changed. These lines compare against the
+newest surviving proof, just like other differences.
+
 For example, after proving `text`, edit its input and explain it:
 
 ```sh

@@ -21,6 +21,7 @@ export async function why(args: string[]) {
     for (const [path, mode, blob] of parts.files) console.log(`file ${path} ${mode} ${blob}`);
     for (const [path, mode, member, hash] of parts.members)
       console.log(`member ${path} ${member} ${mode} ${hash}`);
+    for (const path of parts.unkeyed) console.log(`unkeyed ${path}`);
     for (const [name] of parts.env) console.log(`env ${name}`);
     console.log(`declaration ${parts.declarationHash}`);
     for (const reason of parts.reasons) console.log(`undecidable: ${reason}`);
@@ -61,6 +62,18 @@ export async function why(args: string[]) {
 type Parts = ReturnType<typeof keyParts>;
 function compareParts(before: Parts, after: Parts, compareEnv: boolean) {
   const differences: string[] = [];
+  for (const [old, current, label] of [
+    [before, after, 'unkeyed'],
+    [after, before, 'keyed'],
+  ] as const)
+    for (const path of current.unkeyed)
+      if (
+        !old.unkeyed.includes(path) &&
+        old.tree.files.has(path) &&
+        current.tree.files.has(path) &&
+        (old.files.some(([p]) => p === path) || old.members.some(([p]) => p === path))
+      )
+        differences.push(`now ${label} ${path}`);
   const oldFiles = new Map(before.files.map(([path, mode, hash]) => [path, [mode, hash]]));
   const newFiles = new Map(after.files.map(([path, mode, hash]) => [path, [mode, hash]]));
   for (const path of [...new Set([...oldFiles.keys(), ...newFiles.keys()])].sort()) {

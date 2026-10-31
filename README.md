@@ -32,7 +32,7 @@ The goal: run only what a change can actually affect, and nothing extra.
 tagged release from GitHub:
 
 ```sh
-bun add -d "git+https://github.com/paulingalls/proof.git#v0.11.2"
+bun add -d "git+https://github.com/paulingalls/proof.git#v0.12.0"
 bunx proof --version
 ```
 
@@ -125,6 +125,44 @@ exempt:
   alongside its closure input. Key scheme 4 requires fresh proof for all tasks, including
   tasks without closures. Accepted risk: a test hard-coding a version can retain proof after a
   committed version bump; the super run that executes every task fresh catches it.
+- **Shared files and representatives.** Root `unkeyed` removes matching files from every
+  task's key; task `keyed` opts representatives back in. For example, create `shared.txt`
+  containing `ready`, then use:
+
+  ```yaml
+  version: 1
+  project: shared-example
+  unkeyed: [shared.txt]
+  tasks:
+    reader:
+      run: cat shared.txt
+      inputs: [shared.txt]
+    smoke:
+      run: grep -q ready shared.txt
+      inputs: [shared.txt]
+      keyed: [shared.txt]
+  ```
+
+  Run `bunx proof run`, commit an edit to `shared.txt` that keeps `ready`, then run
+  `bunx proof plan`: `reader` stays PROVEN and `smoke` runs. A fresh
+  `bunx proof run --fresh --tasks reader` prints the new bytes. Choose representatives
+  that exercise the shared file's behavior; the super run executes every task fresh as the backstop.
+
+  Both fields are lists of nonempty paths or globs; empty lists are allowed, negation (`!`)
+  is refused, and every entry must match a file. Every matched `unkeyed` file needs at least
+  one task whose `keyed` matches it **and whose inputs actually receive it**. Every `keyed`
+  match must be inside `unkeyed`. Uncovered files, including new files under a broad glob
+  or files a representative stops importing, are declaration errors on every command.
+  `keyed` does not add inputs. Included tasks can be representatives, and an included file can
+  carry `unkeyed`, which adds to the root list, so a generated list can live in `proof.d`.
+
+  This applies to direct inputs, JSON and dotenv-name projections, resolver manifest members,
+  and files reached through `imports-of` or `maestro`. Traversal continues through an unkeyed
+  file, so its imports still key. Sandboxes keep exact bytes, and dirty inputs still RUN.
+  `{dotenv: path}` env values stay keyed: those values identify the stack and the sandbox
+  does not receive that file. The commit first adopting `unkeyed` moves affected keys once;
+  subsequent committed file edits retain proof for nonrepresentatives. Repos without
+  `unkeyed` keep their existing keys. `why` lists each received unkeyed path.
 - **Maestro inputs**, such as `{maestro: flows/journey.yaml}`, select the flow and its
   recursive `runFlow` and `runScript` references (strings or `{file: path}`), plus
   `addMedia` paths (a list or `{files: [...]}`). References resolve relative to the including

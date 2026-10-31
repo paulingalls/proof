@@ -89,6 +89,15 @@ The package has its own tests for its own behaviour, on synthetic repos it build
     resolver metadata retain their current failures. Sandboxes always hold exact original bytes.
     For plain `plan` and `run`, staged or unstaged version edits RUN, while `why` reports no inputs
     changed. Under `run --staged`, a version-only index retains the key its commit will have.
+  - Paul, 2026-10-31, relayed through app-a's lead: "If it's referenced by everything, then
+    you only need to test a couple things to verify it. If it works there, it works everywhere."
+    Root `unkeyed: [paths/globs]` excludes matching files from every task's key, including
+    projections and files reached through `imports-of` and `maestro`; task `keyed` restores
+    their existing contributions for representatives. Traversal continues through excluded
+    files, so their imports still key. Sandboxes retain exact bytes, extending the existing
+    key-versus-sandbox split. Env value tuples remain keyed. No key-scheme change; without
+    `unkeyed`, keys are unchanged. R8's dirty-input rule still applies, and R10's fresh super
+    run is the backstop.
 - **R4. Providers govern lifecycle, never keys.** Providers are the shared stack, a test database, the iOS app
   build and the web export. They start only when some RUN task needs them. A task's key holds the task's own
   inputs, never a provider's whole input set. A stack gate's inputs include a coarse named set `$stack` (the
@@ -123,6 +132,11 @@ The package has its own tests for its own behaviour, on synthetic repos it build
     misses `packages/shared`, which 485 files import.
   - **Shared-stack tasks** get script-side sandboxing plus the coarse `$stack` set.
   - **A missing input fails loudly.**
+  - Paul, 2026-10-31, relayed through app-a's lead: every file matched by root `unkeyed`
+    must be received by at least one task whose `keyed` matches it; a `keyed` match outside
+    `unkeyed` is a declaration error. Entries matching no file and negation entries are errors.
+    All commands reading declarations enforce this before task selection, including included
+    tasks. R10's fresh super run checks the representative assumption.
 - **R8. Fail safe, never silent.**
   - An undecidable task runs: a glob that matches nothing, an unknown adapter, a dirty tracked input. `plan`
     prints why for every task.
