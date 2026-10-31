@@ -66,7 +66,7 @@ test('unkeyed declarations validate all files and representatives before task se
   ] as const) {
     const head = r.git('rev-parse', 'HEAD');
     r.commit({
-      'proof.yaml': JSON.stringify({ ...doc, unkeyed }),
+      'proof.yaml': JSON.stringify({ ...doc, unkeyed, tasks: { control: task(['control']) } }),
       orphan: 'x',
       'proof.d/tasks.yaml': JSON.stringify({
         tasks: { bad: task(['control'], keyed ? [...keyed] : undefined) },
