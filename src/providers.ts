@@ -1,4 +1,5 @@
 import type { Provider } from './declarations';
+import { type LogResult, logSuffix } from './logs';
 
 type Attempt = {
   declaration: Provider;
@@ -11,7 +12,11 @@ export class Providers {
   private readonly attempts = new Map<string, Attempt>();
 
   constructor(
-    private readonly execute: (command: string, cleanup?: boolean) => Promise<boolean>,
+    private readonly execute: (
+      command: string,
+      cleanup: boolean,
+      name: string,
+    ) => Promise<LogResult & { ready: boolean }>,
     private readonly report: (message: string) => void,
   ) {}
 
@@ -33,9 +38,13 @@ export class Providers {
       starting: Promise.resolve(false),
     };
     this.attempts.set(name, attempt);
-    attempt.starting = this.execute(declaration.start).then((ready) => {
+    attempt.starting = this.execute(declaration.start, false, name).then((result) => {
+      const { ready } = result;
       attempt.ready = ready;
-      if (!ready) this.report(`provider '${name}' start failed`);
+      if (!ready || result.error)
+        this.report(
+          `provider '${name}' ${ready ? 'start ready' : 'start failed'}${logSuffix(result)}`,
+        );
       return ready;
     });
     return attempt.starting;
@@ -54,7 +63,7 @@ export class Providers {
       attempt.stopped = true;
       if (!attempt.declaration.stop) continue;
       try {
-        if (await this.execute(attempt.declaration.stop, true)) continue;
+        if ((await this.execute(attempt.declaration.stop, true, name)).ready) continue;
       } catch (error) {
         this.report(`provider '${name}' stop failed: ${error}`);
         continue;

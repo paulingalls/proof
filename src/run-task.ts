@@ -2,6 +2,7 @@ import { hostname } from 'node:os';
 import { declarationPaths } from './declarations';
 import { dirtyPaths, resolveRef } from './git';
 import { key, scope, selection } from './key';
+import { logSuffix } from './logs';
 import { currentTree, decide, inspectTaskLinks, renderDecision, STAGED_SUFFIX } from './plan';
 import { providerMismatch } from './provider-inputs';
 import type { Providers } from './providers';
@@ -12,7 +13,8 @@ import type { Store } from './store';
 type Context = {
   snapshot?: ReturnType<typeof currentTree>;
   fresh: boolean;
-  capture: boolean;
+  live: boolean;
+  logFailed: () => void;
   staged: boolean;
   parent?: string;
   ids: string[];
@@ -30,7 +32,8 @@ export async function runTask(
   {
     snapshot,
     fresh,
-    capture,
+    live,
+    logFailed,
     staged,
     parent,
     ids,
@@ -124,6 +127,7 @@ export async function runTask(
     let seconds: number | null = null;
     let outcome: 'incomplete' | 'green' | 'red' = 'incomplete';
     let unbuilt: string | undefined;
+    let log = '';
     try {
       sandbox?.materialize(selection(task, tree, dirty), tree, dirty, staged);
       sandbox?.link(task.links ?? [], inspection);
@@ -139,16 +143,18 @@ export async function runTask(
         if (value !== undefined) env[name] = value;
       }
       const started = performance.now();
-      const result = await processes.execute(
-        task.run,
-        sandbox.path,
-        env,
-        false,
-        capture ? id : undefined,
-      );
+      const result = await processes.execute(task.run, sandbox.path, env, false, {
+        project,
+        task: id,
+        key: current.key,
+        live,
+      });
       outcome =
         processes.cancelled || result.signal ? 'incomplete' : result.code === 0 ? 'green' : 'red';
       seconds = (performance.now() - started) / 1000;
+      const retained = result.capture?.finish(outcome) ?? {};
+      if (retained.error) logFailed();
+      log = logSuffix(retained);
     }
     if (outcome !== 'green') fail();
     let unpublished = baseline.dirty.length ? `dirty path '${baseline.dirty[0]}'` : undefined;
@@ -195,11 +201,11 @@ export async function runTask(
       if (deletedLocal) summary.push(`deleted proof local ${id} ${current.key}`);
       if (deletedShared) summary.push(`deleted proof shared ${id} ${current.key}`);
       summary.push(
-        `${outcome} ${id}${unbuilt ? `; sandbox failed: ${unbuilt}` : unpublished ? `; no proof published: ${unpublished}` : outcome === 'green' ? '; proof published' : ''}${sharing === 'local' ? '' : `; ${sharing}`}`,
+        `${outcome} ${id}${unbuilt ? `; sandbox failed: ${unbuilt}` : unpublished ? `; no proof published: ${unpublished}` : outcome === 'green' ? '; proof published' : ''}${sharing === 'local' ? '' : `; ${sharing}`}${log}`,
       );
     } else
       summary.push(
-        `${outcome} ${id}; not recorded: ${current.reason}${escapes.length ? `; ${escapes.join('; ')}` : ''}`,
+        `${outcome} ${id}; not recorded: ${current.reason}${escapes.length ? `; ${escapes.join('; ')}` : ''}${log}`,
       );
   } finally {
     sandbox?.close();

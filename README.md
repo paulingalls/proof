@@ -203,14 +203,30 @@ proof doctor                 which store is in use, and whether it's reachable
 ```
 
 `run` exits 0 when every task is proven or green, 1 when a task is red/incomplete or a provider fails, 130/143 when interrupted;
-any command exits 2 on a usage, declaration or store error.
+any command exits 2 on a usage, declaration, store or log error. Interrupt exits take precedence
+over log errors, and log errors take precedence over task failures without changing recorded outcomes.
 
 `proof run --jobs 2` runs up to two tasks concurrently. `--jobs` accepts a positive safe
 integer and belongs after `--fresh` or `--staged`, before the selector. It defaults to 1,
-which preserves streaming output and declared execution order. Above 1, each task's stdout
-and stderr appear together on stdout when it finishes, under `--- <task>`; summaries stay
-in declared order. Output is never saved in the proof store. Providers start once, all
-dependents await readiness, and teardown waits for their running and pending users.
+which streams each task's combined stdout and stderr live to proof's stdout in declared
+execution order. Task stdout and stderr see no TTY. Above 1, each task's stdout and stderr
+appear together on stdout when it finishes, under `--- <task>`; summaries stay in declared
+order. Both streams write to one capture file to preserve their write order.
+
+Red and incomplete tasks keep that file; their summary prints its absolute path under
+`<state directory>/logs/<project>/<task>/<UTC timestamp>-<first 8 of key>-<outcome>.log`.
+Keyless tasks and provider starts use `no-key`. Project and task names are encoded as single
+path segments (including `/`, `:`, `%`, `.` and `..`). Each task keeps its newest ten logs;
+a green deletes its capture and leaves earlier logs alone. The state directory is the same
+one as the local replica, outside checkouts by default. A `PROOF_STATE_DIR` override inside
+a checkout also puts logs there, so removing that checkout removes those logs. Logs stay
+local and never enter either store: they may contain private data.
+
+Providers start once, all dependents await readiness, and teardown waits for their running
+and pending users. Starts use the same capture and display rules, with `--- provider-<name>`
+blocks above one job. A failed start's summary names its retained log under `provider-<name>`;
+a ready start deletes its capture. Background processes left by provider starts no longer
+send output to the terminal after startup finishes. Provider stops keep their inherited streams.
 
 Resource lanes add a limit within `--jobs`. For example, after creating an `input` file:
 

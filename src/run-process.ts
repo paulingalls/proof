@@ -1,6 +1,4 @@
-import { closeSync, fstatSync, openSync, readSync, unlinkSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { Capture, type LogIdentity } from './logs';
 
 function signalGroup(pid: number, signal: NodeJS.Signals | 0) {
   try {
@@ -45,47 +43,35 @@ export class RunProcesses {
     process.off('SIGINT', this.onInt);
     process.off('SIGTERM', this.onTerm);
   }
-  async execute(command: string, cwd: string, env = process.env, stopping = false, task?: string) {
+  async execute(
+    command: string,
+    cwd: string,
+    env = process.env,
+    stopping = false,
+    identity?: LogIdentity,
+  ) {
     if (this.cancelled && !stopping) return { code: 1, signal: 'SIGKILL' as const };
-    let fd: number | undefined;
+    const capture = identity ? new Capture(identity) : undefined;
     let child: ReturnType<typeof Bun.spawn> | undefined;
-    if (task !== undefined) {
-      const path = join(tmpdir(), `proof-output-${crypto.randomUUID()}`);
-      fd = openSync(path, 'wx+', 0o600);
-      unlinkSync(path);
-    }
+    let completed = false;
     try {
       child = Bun.spawn(['sh', '-c', command], {
         detached: true,
         cwd,
         env,
-        stdout: fd ?? 'inherit',
-        stderr: fd ?? 'inherit',
+        stdout: capture?.fd ?? 'inherit',
+        stderr: capture?.fd ?? 'inherit',
       });
       this.active.set(child, stopping);
       const code = await child.exited;
       // A shell may exit before its foreground child has finished handling the signal.
       if (this.cancelled && !stopping) while (signalGroup(child.pid, 0)) await Bun.sleep(10);
-      return { code, signal: child.signalCode };
+      completed = true;
+      return { code, signal: child.signalCode, capture };
     } finally {
       if (child) this.active.delete(child);
-      if (fd !== undefined) {
-        try {
-          if (child) {
-            // An unlinked fd preserves stream write order without waiting for descendant pipe EOF.
-            const bytes = Buffer.alloc(fstatSync(fd).size);
-            let offset = 0;
-            while (offset < bytes.length) {
-              const count = readSync(fd, bytes, offset, bytes.length - offset, offset);
-              if (!count) break;
-              offset += count;
-            }
-            console.log(`--- ${task}\n${bytes.subarray(0, offset).toString().replace(/\n$/, '')}`);
-          }
-        } finally {
-          closeSync(fd);
-        }
-      }
+      capture?.display();
+      if (!completed) capture?.finish(child ? 'incomplete' : 'green');
     }
   }
 }

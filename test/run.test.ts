@@ -7,6 +7,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -70,7 +71,7 @@ test('runs sequentially, streams without storing output, records captured keys a
   expect(result.out).toContain('green after');
   expect(result.out.indexOf('green ok')).toBeLessThan(result.out.indexOf('red bad'));
   expect(result.out).toContain('private-out-token');
-  expect(result.err).toContain('private-err-token');
+  expect(result.out).toContain('private-err-token');
   const results = rows(env, 'results');
   expect(results.map((r) => [r.task, r.outcome, r.commit, r.dirty])).toEqual([
     ['ok', 'green', commit, 0],
@@ -86,6 +87,7 @@ test('runs sequentially, streams without storing output, records captured keys a
   for (const path of result.out.split('\n').filter((s) => s.startsWith(env.TMPDIR)))
     expect(existsSync(path)).toBe(false);
   for (const file of readdirSync(env.PROOF_STATE_DIR)) {
+    if (!statSync(join(env.PROOF_STATE_DIR, file)).isFile()) continue;
     const contents = readFileSync(join(env.PROOF_STATE_DIR, file)).toString();
     expect(contents).not.toContain('private-out-token');
     expect(contents).not.toContain('private-err-token');
@@ -297,7 +299,7 @@ test('sandbox exposes only declared paths and environment names', () => {
   repo.commit({ 'docs/guide.md': 'guide' });
   const result = repo.cli(['run'], { ...env, MODE: 'selected', OTHER: 'hidden' });
   expect(result.code).toBe(1);
-  expect(result.err).toMatch(/docs\/guide.md.*(No such file|no such file)/);
+  expect(result.out).toMatch(/docs\/guide.md.*(No such file|no such file)/);
   const doc = JSON.parse(repo.git('show', 'HEAD:proof.yaml'));
   doc.tasks.read.inputs.push('docs/guide.md');
   repo.commit({ 'proof.yaml': JSON.stringify(doc) });

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fixture, spawn, stop, task, until, wait } from './support/jobs';
 
@@ -10,14 +10,16 @@ test('default and explicit jobs=1 preserve the serial transcript', () => {
   });
   const expected = {
     code: 1,
-    out: 'RUN a: no proof for key; trusted links: scratch\nRUN b: no proof for key; trusted links: scratch\na-out\nb-out\nred a\ngreen b; proof published\n',
-    err: 'a-err\nb-err\n',
+    out: 'RUN a: no proof for key; trusted links: scratch\nRUN b: no proof for key; trusted links: scratch\na-out\na-err\nb-out\nb-err\nred a; log: <log>\ngreen b; proof published\n',
+    err: '',
   };
-  const first = f.run();
-  expect(first).toEqual(expected);
-  expect(f.repo.cli(['run', '--jobs', '1'], { ...f.env, PROOF_STATE_DIR: f.directory() })).toEqual(
-    expected,
-  );
+  for (const args of [[], ['--jobs', '1']]) {
+    const result = f.repo.cli(['run', ...args], { ...f.env, PROOF_STATE_DIR: f.directory() });
+    const path = result.out.match(/red a; log: (.*)\n/)?.[1];
+    expect(path).toMatch(/\/logs\/jobs\/a\/\d{8}T\d{9}Z-[a-f0-9]{8}-red\.log$/);
+    expect(readFileSync(path as string, 'utf8')).toBe('a-out\na-err\n');
+    expect({ ...result, out: result.out.replace(path as string, '<log>') }).toEqual(expected);
+  }
 }, 15000);
 
 test('jobs requires one positive safe integer before the selector', () => {
@@ -236,6 +238,7 @@ test('completed task blocks combine streams without interleaving or storing outp
       '--- b\nb-private-outb-private-errb-private-end\n--- a\na-private-outa-private-erra-private-end\ngreen a; proof published\ngreen b; proof published\n',
     );
     for (const path of readdirSync(f.env.PROOF_STATE_DIR)) {
+      if (!statSync(join(f.env.PROOF_STATE_DIR, path)).isFile()) continue;
       const bytes = readFileSync(join(f.env.PROOF_STATE_DIR, path)).toString();
       expect(bytes).not.toContain('a-private');
       expect(bytes).not.toContain('b-private');

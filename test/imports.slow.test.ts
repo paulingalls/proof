@@ -235,7 +235,7 @@ test('file URL imports run undecidable and never publish or reuse proof', () => 
   expect(plan(r, env)[0]?.state).toBe('RUN');
   const red = r.cli(['run'], env);
   expect(red.code).toBe(1);
-  expect(red.err).toContain('bad value');
+  expect(red.out).toContain('bad value');
   expect(red.out).toContain('red a; not recorded:');
 });
 

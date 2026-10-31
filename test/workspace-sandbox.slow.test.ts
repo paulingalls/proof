@@ -90,8 +90,8 @@ for (const [name, scopeLink] of [
     const { cli, plan } = fixture(name, scopeLink, true);
     const result = cli('run');
     expect(result.code, result.out + result.err).toBe(1);
-    expect(result.err.toLowerCase()).toContain('no such file');
-    expect(result.err).toContain('hidden.txt');
+    expect(result.out.toLowerCase()).toContain('no such file');
+    expect(result.out).toContain('hidden.txt');
     expect(result.out).toContain('red linked');
     expect(result.out).not.toContain('; proof published');
     expect(plan().state).toBe('RUN');
