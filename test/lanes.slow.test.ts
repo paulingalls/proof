@@ -53,6 +53,7 @@ test('included lanes and solo parse; scheduling metadata preserves existing proo
     ['ios', { ios: 2 }],
     ['solo', {}],
     ['ios', { ios: 1 }],
+    ['ios', { ios: 3 }],
   ] as const) {
     f.repo.commit({
       'proof.yaml': declaration({}, { lanes, include: 'proof.d/*.yaml' }),
