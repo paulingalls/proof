@@ -323,3 +323,35 @@ test('shared globs keep dirty selection and negation task-local in either order'
     expect(result.code, result.err + result.out).toBe(0);
   }
 });
+
+test('an ignored path negated by its only task never blocks publication', () => {
+  const repo = fixture('prefilter-negated');
+  repo.commit({
+    '.gitignore': 'src/gen/new.ts\n',
+    'src/gen/tracked.ts': 'tracked',
+    'proof.yaml': JSON.stringify({
+      version: 1,
+      project: 'prefilter-negated',
+      tasks: { gate: { run: 'true', inputs: ['src/**', '!src/gen/**'] } },
+    }),
+  });
+  repo.write('src/gen/new.ts', 'ignored');
+  const env = state();
+  expect(repo.cli(['run', '--tasks', 'gate'], env).code).toBe(0);
+  expect(repo.cli(['plan'], env).out).toStartWith('PROVEN gate');
+});
+
+test('an ignored projection stays a dirty input', () => {
+  const repo = fixture('prefilter-projection');
+  repo.commit({
+    '.gitignore': 'config.json\n',
+    'proof.yaml': JSON.stringify({
+      version: 1,
+      project: 'prefilter-projection',
+      tasks: { gate: { run: 'true', inputs: [{ path: 'config.json', json: ['key'] }] } },
+    }),
+  });
+  repo.write('config.json', '{"key":1}');
+  const [row] = JSON.parse(repo.cli(['plan', '--json'], state()).out);
+  expect(row.reason).toBe("undecidable: dirty input 'config.json'");
+});
