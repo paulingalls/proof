@@ -21,11 +21,13 @@ function signalGroup(pid: number, signal: NodeJS.Signals | 0) {
 }
 
 export async function run(args: string[]) {
+  const fresh = args[0] === '--fresh';
+  if (fresh) args = args.slice(1);
   if (
     args.length &&
     (args[0] !== '--tasks' || args.length < 2 || args.slice(1).some((id) => id.startsWith('--')))
   )
-    throw new Error('usage: proof run [--tasks <id> ...]');
+    throw new Error('usage: proof run [--fresh] [--tasks <id> ...]');
   const roster = currentTree().tasks;
   for (const id of args.slice(1)) if (!roster.has(id)) throw new Error(`undeclared task '${id}'`);
   const ids = [...roster.keys()].filter((id) => !args.length || args.slice(1).includes(id));
@@ -92,6 +94,8 @@ export async function run(args: string[]) {
         initial.declaration,
         initial.project,
         store,
+        undefined,
+        fresh,
       );
       preview.set(id, renderDecision(row));
       console.log(renderDecision(row));
@@ -113,6 +117,7 @@ export async function run(args: string[]) {
         view.project,
         store,
         inspection,
+        fresh,
       );
       if (interrupted && !providers.attempted(task.needs ?? [])) continue;
       const printRevision = () => {
@@ -145,6 +150,7 @@ export async function run(args: string[]) {
           view.project,
           store,
           inspection,
+          fresh,
         );
         printRevision();
       }
@@ -164,6 +170,7 @@ export async function run(args: string[]) {
       const current = declaration
         ? { reason: `dirty declaration '${declaration}'`, key: undefined }
         : key(id, task, tree);
+      const dirtyInputs = fresh && key(id, task, tree, dirty).key === undefined;
       const sandbox = blocked ? undefined : new Sandbox();
       try {
         let seconds: number | null = null;
@@ -205,7 +212,7 @@ export async function run(args: string[]) {
         ];
         if (escapes.length) unpublished = [unpublished, ...escapes].filter(Boolean).join('; ');
         if (current.key !== undefined) {
-          const sharing = await store.record(
+          const { sharing, deletedLocal, deletedShared } = await store.record(
             project,
             id,
             current.key,
@@ -214,9 +221,12 @@ export async function run(args: string[]) {
             hostname(),
             tree.commit,
             unpublished !== undefined,
-            key(id, task, tree, afterDirty).key === undefined,
+            dirtyInputs || key(id, task, tree, afterDirty).key === undefined,
             current.env,
+            fresh ? 'super' : 'ordinary',
           );
+          if (deletedLocal) summary.push(`deleted proof local ${id} ${current.key}`);
+          if (deletedShared) summary.push(`deleted proof shared ${id} ${current.key}`);
           summary.push(
             `${outcome} ${id}${unpublished ? `; no proof published: ${unpublished}` : outcome === 'green' ? '; proof published' : ''}${sharing === 'local' ? '' : `; ${sharing}`}`,
           );

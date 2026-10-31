@@ -443,3 +443,41 @@ writeFileSync(process.env.CONTROL + '/stopped', 'yes');`,
     await output;
   }
 }, 15000);
+
+for (const blocked of [false, true]) {
+  test(`fresh selects proven dependents and preserves provider lifecycle; blocked=${blocked}`, () => {
+    const f = fixture();
+    f.commit(
+      {
+        first: f.task(`test ! -e .git && test -f input && ${f.mark('first')}`),
+        second: f.task(f.mark('second')),
+        omitted: f.task(f.mark('omitted')),
+      },
+      {
+        stack: {
+          start: `test -d .git && ${f.mark('start')}${blocked ? '; exit 1' : ''}`,
+          stop: f.mark('stop'),
+        },
+      },
+    );
+    for (const id of ['first', 'second', 'omitted']) f.seed(id);
+    const proofs = f.rows('proofs');
+    const result = f.cli('run', '--fresh', '--tasks', 'first', 'second');
+    expect(result.code).toBe(blocked ? 1 : 0);
+    expect(result.out).toContain('RUN first: fresh execution requested; providers: stack');
+    expect(result.out).not.toContain('PROVEN');
+    expect(result.out).not.toContain('deleted proof');
+    expect(f.log()).toEqual(blocked ? ['start', 'stop'] : ['start', 'first', 'second', 'stop']);
+    expect(
+      f
+        .rows()
+        .slice(3)
+        .map((r) => [r.task, r.outcome]),
+    ).toEqual([
+      ['first', blocked ? 'incomplete' : 'green'],
+      ['second', blocked ? 'incomplete' : 'green'],
+    ]);
+    if (blocked) expect(f.rows('proofs')).toEqual(proofs);
+    expect(f.rows('contradictions')).toEqual([]);
+  });
+}

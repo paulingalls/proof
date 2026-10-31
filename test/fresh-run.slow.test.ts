@@ -88,7 +88,7 @@ for (const remote of [false, true]) {
     const check = (proofs: Row[], contradictions: Row[], results: Row[]) => {
       expect(proofs.map((r) => r.task)).toEqual(['second']);
       expect(proofs[0]?.result_id).toBe(results[3]?.id);
-      expect(contradictions).toMatchObject([
+      expect([...contradictions]).toMatchObject([
         {
           task: 'first',
           kind: 'super',
@@ -128,6 +128,10 @@ for (const remote of [false, true]) {
     expect(dirty.out).not.toContain('deleted proof');
     expect(f.rows('proofs')).toEqual(proofs);
     expect(f.rows('contradictions')).toEqual([]);
+    if (database) {
+      expect(await database.sql`SELECT * FROM proofs`).toHaveLength(1);
+      expect(await database.sql`SELECT * FROM contradictions`).toHaveLength(0);
+    }
     f.repo.git('restore', 'input');
     expect(f.cli('plan').out).toContain('PROVEN task');
     f.repo.write('unrelated', 'dirty');
@@ -173,3 +177,173 @@ test('fresh captures dirty closure eligibility before a command removes its shad
   expect(f.rows('contradictions')).toEqual([]);
   expect(f.cli('plan').out).toContain('PROVEN task');
 });
+
+test('fresh green resolves a remote contest without removing its history', async () => {
+  const database = await postgres.database();
+  const f = fixture(database.PROOF_STORE);
+  f.commit({ task: { run: 'true', inputs: ['input'] } });
+  const clone = new Repo(f.repo);
+  repos.push(clone);
+  const other = { PROOF_STORE: database.PROOF_STORE, PROOF_STATE_DIR: directory() };
+  f.seed('task');
+  expect(clone.cli(['record', 'task', '--outcome', 'red'], other).code).toBe(0);
+  expect(f.cli('plan').out).toContain('RUN task: contested');
+  const green = f.cli('run', '--fresh', '--tasks', 'task');
+  expect(green.code).toBe(0);
+  expect(green.out).toContain('green task; proof published; shared');
+  expect(green.out).not.toContain('deleted proof');
+  for (const result of [f.cli('plan'), clone.cli(['plan'], other)])
+    expect(result.out).toContain('PROVEN task');
+  expect(await database.sql`SELECT kind, deleted_proof FROM contradictions`).toEqual([
+    { kind: 'ordinary', deleted_proof: 0 },
+  ]);
+}, 30_000);
+
+test('store owns deletion when a second clone publishes after fresh preview', async () => {
+  const database = await postgres.database();
+  const f = fixture(database.PROOF_STORE);
+  const ready = join(f.control, 'ready');
+  const release = join(f.control, 'release');
+  f.commit({
+    task: {
+      run: `touch '${ready}'; while ! test -e '${release}'; do sleep 0.02; done; exit 1`,
+      inputs: ['input'],
+    },
+  });
+  const clone = new Repo(f.repo);
+  repos.push(clone);
+  const other = { PROOF_STORE: database.PROOF_STORE, PROOF_STATE_DIR: directory() };
+  const child = f.repo.spawnCli(['run', '--fresh'], f.env);
+  const done = output(child);
+  const timeout = setTimeout(() => child.kill('SIGKILL'), 15_000);
+  try {
+    await waitFor(async () => existsSync(ready));
+    expect(clone.cli(['record', 'task', '--outcome', 'green'], other).code).toBe(0);
+    const [proof] = await database.sql`SELECT key FROM proofs`;
+    writeFileSync(release, 'go');
+    const red = await done;
+    expect(red.code).toBe(1);
+    expect(red.out).toContain(`deleted proof shared task ${proof.key}`);
+    expect(red.out).not.toContain('deleted proof local');
+    expect(f.rows('contradictions')).toEqual([]);
+    expect(await database.sql`SELECT kind, deleted_proof FROM contradictions`).toEqual([
+      { kind: 'super', deleted_proof: 1 },
+    ]);
+    expect(await database.sql`SELECT * FROM proofs`).toEqual([]);
+  } finally {
+    clearTimeout(timeout);
+    child.kill('SIGKILL');
+    await child.exited;
+    await done;
+  }
+}, 30_000);
+
+test('another clone observes a super deletion and remembers it offline', async () => {
+  const database = await postgres.database();
+  const f = fixture(database.PROOF_STORE);
+  f.commit({ task: { run: 'exit 1', inputs: ['input'] } });
+  const clone = new Repo(f.repo);
+  repos.push(clone);
+  const other = { PROOF_STORE: database.PROOF_STORE, PROOF_STATE_DIR: directory() };
+  f.seed('task');
+  const red = clone.cli(['run', '--fresh'], other);
+  expect(red.code).toBe(1);
+  expect(red.out).toContain('deleted proof shared task');
+  expect(red.out).not.toContain('deleted proof local');
+  expect(f.cli('plan').out).toContain('RUN task');
+  expect(f.rows('results')).toHaveLength(1);
+  expect(f.rows('proofs')).toHaveLength(1);
+  expect(await database.sql`SELECT * FROM proofs`).toHaveLength(0);
+  postgres.stop();
+  try {
+    const offline = f.cli('plan');
+    expect(offline.out).toContain('RUN task: contested');
+    expect(offline.err.match(/using this machine/g)).toHaveLength(1);
+    expect(f.rows('results')).toHaveLength(1);
+  } finally {
+    await postgres.restart();
+  }
+}, 30_000);
+
+test('offline fresh red deletes locally and vetoes a still-green remote until clean fresh green', async () => {
+  const database = await postgres.database();
+  const f = fixture(database.PROOF_STORE);
+  f.commit({ task: { run: `test ! -e '${f.control}/red'`, inputs: ['input'] } });
+  f.seed('task');
+  writeFileSync(join(f.control, 'red'), 'red');
+  postgres.stop();
+  try {
+    const red = f.cli('run', '--fresh');
+    expect(red.code).toBe(1);
+    expect(red.out).toContain('red task; not shared');
+    expect(red.out).toContain('deleted proof local task');
+    expect(red.out).not.toContain('deleted proof shared');
+    expect(red.err.match(/using this machine/g)).toHaveLength(1);
+    expect(f.rows('proofs')).toEqual([]);
+    expect(f.rows('contradictions')).toMatchObject([{ kind: 'super', deleted_proof: 1 }]);
+    expect(f.cli('plan').out).toContain('RUN task');
+  } finally {
+    await postgres.restart();
+  }
+  const blocked = () => expect(f.cli('plan').out).toContain('RUN task: contested');
+  blocked();
+  const other = { PROOF_STORE: database.PROOF_STORE, PROOF_STATE_DIR: directory() };
+  expect(f.repo.cli(['plan'], other).out).toContain('PROVEN task');
+  expect(await database.sql`SELECT * FROM results`).toHaveLength(1);
+  f.seed('task', 'incomplete');
+  blocked();
+  rmSync(join(f.control, 'red'));
+  f.repo.write('unrelated', 'dirty');
+  const dirty = f.cli('run', '--fresh');
+  expect(dirty.code).toBe(0);
+  expect(dirty.out).toContain('no proof published: dirty path');
+  expect(f.rows('proofs')).toEqual([]);
+  blocked();
+  rmSync(join(f.repo.path, 'unrelated'));
+  expect(f.cli('run', '--fresh').code).toBe(0);
+  expect(f.cli('plan').out).toContain('PROVEN task');
+  expect(f.rows('unshared_reds')).toEqual([]);
+}, 30_000);
+
+test('lost shared commit reports local deletion only and preserves its veto', async () => {
+  const database = await postgres.database();
+  const f = fixture(database.PROOF_STORE);
+  f.commit({ task: { run: 'exit 1', inputs: ['input'] } });
+  f.seed('task');
+  await database.sql.unsafe(`CREATE FUNCTION block_commit() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN PERFORM pg_advisory_xact_lock(123456); RETURN NEW; END $$;
+    CREATE CONSTRAINT TRIGGER block_commit AFTER INSERT ON results
+    DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION block_commit()`);
+  const locker = postgres.connect(database.PROOF_STORE);
+  await locker`SELECT pg_advisory_lock(123456)`;
+  const child = f.repo.spawnCli(['run', '--fresh'], f.env);
+  const done = output(child);
+  const timeout = setTimeout(() => child.kill('SIGKILL'), 15_000);
+  try {
+    await waitFor(
+      async () =>
+        (
+          await database.sql`SELECT 1 FROM pg_locks
+      WHERE locktype = 'advisory' AND NOT granted`
+        ).length === 1,
+    );
+    expect(f.rows('proofs')).toHaveLength(0);
+    const [waiting] = await database.sql`SELECT pid FROM pg_locks
+      WHERE locktype = 'advisory' AND NOT granted`;
+    await database.sql`SELECT pg_terminate_backend(${waiting.pid})`;
+    const red = await done;
+    expect(red.code).toBe(1);
+    expect(red.out).toContain('sharing uncertain');
+    expect(red.out).toContain('deleted proof local task');
+    expect(red.out).not.toContain('deleted proof shared');
+    expect(await database.sql`SELECT * FROM proofs`).toHaveLength(1);
+    expect(await database.sql`SELECT * FROM contradictions`).toHaveLength(0);
+    expect(f.cli('plan').out).toContain('RUN task: contested');
+  } finally {
+    clearTimeout(timeout);
+    await locker`SELECT pg_advisory_unlock(123456)`;
+    child.kill('SIGKILL');
+    await child.exited;
+    await done;
+  }
+}, 30_000);

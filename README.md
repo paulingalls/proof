@@ -192,7 +192,7 @@ provider-free tasks have no `providers` field. Neither plan form starts resource
 proof plan [--json]          what must run, and why
 proof why <task>            current key parts and changes since the newest proof
 proof status --ref <ref> [--json]  proof state of every task at a committed ref
-proof run [--tasks <id>...]  run what must run, and record the results
+proof run [--fresh] [--tasks <id>...]  run tasks and record each result
 proof record <task> --outcome green|red|incomplete [--seconds N]
 proof lint                   check declarations against the staged tree
 proof check <cases.yaml>     run a requirement suite
@@ -201,6 +201,24 @@ proof doctor                 which store is in use, and whether it's reachable
 
 `run` exits 0 when every task is proven or green, 1 when a task is red/incomplete or a provider fails, 130/143 when interrupted;
 any command exits 2 on a usage, declaration or store error.
+
+`proof run --fresh` executes every task even when its key is already proven, in the same
+sandboxes and with the same providers as an ordinary run. Select a subset with
+`proof run --fresh --tasks first second`. Providers start once for selected dependents,
+including proven ones. A red does not stop later tasks; each result is recorded independently.
+
+A fresh red over unchanged selected inputs immediately deletes that key's stored green and
+records a `super` contradiction. The summary lists every red and each confirmed deletion as
+`deleted proof local <task> <key>` or `deleted proof shared <task> <key>`. Ordinary runs still
+contest a green on the first red and delete it on the second. A clean fresh green publishes
+proof, including for a contested key. Incomplete results and interrupts delete nothing.
+
+A dirty tree still executes and records results, but says `no proof published` with a reason.
+A red over dirty selected inputs cannot delete proof of the committed bytes; unrelated dirt
+does not prevent deletion. Offline deletions apply locally and say `not shared`; an attempted
+share whose commit is uncertain says `sharing uncertain` and claims no shared deletion.
+Reconnection does not replay results. Schedule fresh runs in the repository using cron or
+launchd; proof provides no scheduler.
 
 `proof why <task>` starts with the task's `plan` decision, then prints its current key
 parts: selected paths with file identities and modes, JSON member identities, declared env names

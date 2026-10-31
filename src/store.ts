@@ -276,7 +276,8 @@ export class Store {
     dirty: boolean,
     dirtyInputs: boolean,
     envHashes: [string, string][],
-  ): Promise<Sharing> {
+    mode: 'ordinary' | 'super' = 'ordinary',
+  ): Promise<{ sharing: Sharing; deletedLocal: boolean; deletedShared: boolean }> {
     const finishedAt = new Date().toISOString();
     const write = async (backend: Backend) =>
       backend.transaction(JSON.stringify([project, task, key]), async (query) => {
@@ -309,24 +310,27 @@ export class Store {
             result.id,
             JSON.stringify(envHashes),
           );
+        let deleted = false;
         if (outcome === 'red' && !dirtyInputs) {
           const proof = await this.lookup(project, task, key, query, !backend.remote);
           if (proof) {
+            deleted = mode === 'super' || proof.red_commit !== null;
             await query(
               `
           INSERT INTO contradictions
             (project, task, key, green_result, red_result, kind, deleted_proof, recorded_at)
-          VALUES (?, ?, ?, ?, ?, 'ordinary', ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `,
               project,
               task,
               key,
               proof.result_id,
               result.id,
-              Number(proof.red_commit !== null),
+              mode,
+              Number(deleted),
               finishedAt,
             );
-            if (proof.red_commit !== null)
+            if (deleted)
               await query(
                 `DELETE FROM proofs WHERE project = ? AND task = ? AND key = ? AND result_id = ?`,
                 project,
@@ -358,18 +362,19 @@ export class Store {
           const proof = await this.lookup(project, task, key, query, false);
           await this.observe(project, task, key, query, proof);
         }
-        return result.id;
+        return { id: result.id, deleted };
       });
-    const localId = await write(this.local);
-    if (!this.remote) return 'local';
-    if (this.offline) return 'not shared';
+    const local = await write(this.local);
+    const result = { deletedLocal: local.deleted, deletedShared: false };
+    if (!this.remote) return { ...result, sharing: 'local' };
+    if (this.offline) return { ...result, sharing: 'not shared' };
     try {
-      await write(this.remote);
-      await this.local.query('DELETE FROM unshared_reds WHERE result_id = ?', localId);
-      return 'shared';
+      const remote = await write(this.remote);
+      await this.local.query('DELETE FROM unshared_reds WHERE result_id = ?', local.id);
+      return { ...result, deletedShared: remote.deleted, sharing: 'shared' };
     } catch (error) {
       this.fallback(error);
-      return 'sharing uncertain';
+      return { ...result, sharing: 'sharing uncertain' };
     }
   }
 

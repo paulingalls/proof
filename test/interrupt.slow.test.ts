@@ -73,12 +73,14 @@ async function until(check: () => boolean) {
   }
 }
 
-for (const [signal, child] of [
-  ['SIGTERM', false],
-  ['SIGINT', false],
-  ['SIGTERM', true],
+for (const [signal, child, fresh] of [
+  ['SIGTERM', false, false],
+  ['SIGINT', false, false],
+  ['SIGTERM', true, false],
+  ['SIGINT', false, true],
+  ['SIGTERM', false, true],
 ] as const) {
-  test(`${signal}, child=${child}: records incomplete and cleans up before exit`, async () => {
+  test(`${signal}, child=${child}, fresh=${fresh}: records incomplete and cleans up before exit`, async () => {
     const repo = new Repo();
     const control = mkdtempSync(join(tmpdir(), 'proof-interrupt-'));
     const state = mkdtempSync(join(tmpdir(), 'proof-state-'));
@@ -110,7 +112,7 @@ process.on('${signal}', async () => {
     await Bun.sleep(300);
     writeFileSync(control + '/exited', 'yes');
   }
-  process.exit(0);
+  process.exit(${fresh ? 1 : 0});
 });
 setInterval(() => {}, 1000);
 writeFileSync(control + '/pending', JSON.stringify({ pid: process.pid, cwd: process.cwd() }));
@@ -121,10 +123,12 @@ renameSync(control + '/pending', control + '/ready');`,
     let db: Database | undefined;
     let task: { pid: number; cwd: string } | undefined;
     try {
-      if (signal === 'SIGINT') {
-        for (const outcome of ['green', 'red'])
+      if (fresh || signal === 'SIGINT') {
+        for (const outcome of fresh ? ['green'] : ['green', 'red'])
           expect(repo.cli(['record', 'first', '--outcome', outcome], env).code).toBe(0);
-        expect(repo.cli(['plan'], env).out).toContain('RUN first: contested:');
+        expect(repo.cli(['plan'], env).out).toContain(
+          fresh ? 'PROVEN first:' : 'RUN first: contested:',
+        );
       }
       const planned = repo.cli(['plan'], env);
       expect(planned.err).toBe('');
@@ -134,7 +138,7 @@ renameSync(control + '/pending', control + '/ready');`,
       const proofs = rows('proofs');
       const contests = rows('contradictions');
       const before = rows('results') as { key: string }[];
-      cli = repo.spawnCli(['run'], env);
+      cli = repo.spawnCli(['run', ...(fresh ? ['--fresh'] : [])], env);
       output = Promise.all([new Response(cli.stdout).text(), new Response(cli.stderr).text()]);
       await until(() => existsSync(ready));
       const running: { pid: number; cwd: string } = JSON.parse(readFileSync(ready, 'utf8'));
@@ -151,6 +155,7 @@ renameSync(control + '/pending', control + '/ready');`,
       const [out, err] = await output;
       expect(err).toBe('');
       expect(out).toContain('incomplete first');
+      expect(out).not.toContain('deleted proof');
       expect(readFileSync(join(control, 'received'), 'utf8')).toBe(signal);
       const results = rows('results') as {
         outcome: string;
@@ -171,7 +176,11 @@ renameSync(control + '/pending', control + '/ready');`,
       expect(rows('proofs')).toEqual(proofs);
       expect(rows('contradictions')).toEqual(contests);
       expect(repo.cli(['plan'], env).out).toContain(
-        signal === 'SIGINT' ? 'RUN first: contested:' : 'RUN first: no proof for key',
+        fresh
+          ? 'PROVEN first:'
+          : signal === 'SIGINT'
+            ? 'RUN first: contested:'
+            : 'RUN first: no proof for key',
       );
       expect(existsSync(join(control, 'later'))).toBe(false);
       expect(alive(running.pid)).toBe(false);
