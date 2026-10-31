@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.0
+
+- `proof status --ref <ref> [--json]`: proof state at any commit or tag, from its committed files
+  and your declared env, with no checkout. Exits 0 when every task is proven, 1 otherwise.
+- `proof why <task>`: the task's key parts, and exactly what changed since its newest proof, against
+  the working tree as it is on disk.
+- New proofs store one hash per declared env name, never a value, so `why` can name the variable
+  that changed. Stores migrate on first use; older proofs say `env comparison unavailable`.
+
 ## 0.7.0
 
 - Providers: `providers: {<name>: {start, stop?}}` and a task's `needs:`. `proof run` starts each
