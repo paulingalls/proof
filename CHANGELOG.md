@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.1
+
+- A `package.json` reached only as resolver metadata keys just the members resolution reads, so a
+  version bump no longer re-runs every `imports-of` task. One a source file imports, or a task
+  selects by path or glob, still keys whole. Keys change (scheme 3), so existing proofs re-prove once.
+- A comment such as `import (x)` no longer counts as a computed import.
+
 ## 0.8.0
 
 - `proof status --ref <ref> [--json]`: proof state at any commit or tag, from its committed files
