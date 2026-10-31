@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.12.0
 
 - Root `unkeyed` excludes shared files from task keys while preserving exact sandbox bytes;
   task `keyed` selects representatives. Declarations require a receiving representative for
