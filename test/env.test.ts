@@ -103,7 +103,10 @@ test('missing and empty env preserve the pinned version-4 key', () => {
   } finally {
     db.close();
   }
-  repo.commit({ 'proof.yaml': declaration([]) });
+  const empty = JSON.parse(declaration([]));
+  empty.dimensions = { unused: 'exit 99' };
+  empty.tasks.lint.dimensions = [];
+  repo.commit({ 'proof.yaml': JSON.stringify(empty) });
   expect(success(repo.cli(['plan'], state))).toContain('PROVEN lint');
 });
 
@@ -143,6 +146,11 @@ test('nonempty env preserves the released version-4 key', () => {
   try {
     const releasedHash = 'fb7dd85b03e39fac3c9ea4c73dc1f92bf819eabeae8c536ddc145498f1f5e1cf';
     expect(db.query('SELECT key FROM proofs').all()).toEqual([{ key: releasedHash }]);
+    const unchanged = JSON.parse(declaration(['MODE']));
+    unchanged.dimensions = { unused: 'exit 99' };
+    unchanged.tasks.lint.dimensions = [];
+    repo.commit({ 'proof.yaml': JSON.stringify(unchanged) });
+    expect(success(repo.cli(['plan'], { ...state, MODE: 'a' }))).toContain('PROVEN lint');
   } finally {
     db.close();
   }

@@ -1,6 +1,5 @@
 import { Database } from 'bun:sqlite';
 import { afterEach, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Repo } from './support/repo';
 
@@ -50,7 +49,7 @@ test('dimension declarations validate every reader and included, unselected task
     'check .git/cases.yaml',
     'stats',
     'flakes',
-    'invalidate plain',
+    'invalidate --task plain',
   ])
     expect(f.cli(command.split(' '), 2)).toContain("task 'native': unknown dimension 'missing'");
   for (const [dimensions, names, diagnostic] of [
