@@ -1,6 +1,7 @@
 import type { Task } from './declarations';
 import type { RefTree } from './git';
 import { select } from './key';
+import { manifestMembers } from './workspaces';
 
 const contents = new WeakMap<RefTree, Map<string, string>>();
 
@@ -41,11 +42,15 @@ export function keyParts(task: Task, tree: RefTree, historical = false) {
   const projections = new Set<string>();
   const members = new Map<string, [string, string, string, string]>();
   for (const path of [...selection.paths].sort()) {
+    if (selection.manifests.includes(path)) continue;
     const { mode, blob } = tree.entry(path);
     if (mode && blob) files.push([path, mode, blob]);
     else reasons.push(`unavailable input '${path}'`);
   }
-  for (const input of task.inputs) {
+  for (const input of [
+    ...task.inputs,
+    ...selection.manifests.map((path) => ({ path, json: manifestMembers })),
+  ]) {
     if (typeof input === 'string' || !('path' in input)) continue;
     const { path, json } = input;
     for (const member of json) projections.add(JSON.stringify([path, member]));

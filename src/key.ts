@@ -47,12 +47,14 @@ export function select(
 ) {
   const view = source(tree, working ? dirty : undefined);
   const paths = new Set<string>();
+  const manifests = new Set<string>();
   let reason: string | undefined;
   for (const pattern of task.inputs) {
     if (typeof pattern !== 'string') {
       if ('imports-of' in pattern) {
         const found = closure(pattern['imports-of'], view);
         for (const path of found.paths) paths.add(path);
+        for (const path of found.manifests) manifests.add(path);
         reason ??= found.reason;
       }
       if ('maestro' in pattern) {
@@ -75,7 +77,7 @@ export function select(
     }
     if (!matched) reason ??= `unmatched input '${pattern}'`;
   }
-  return { paths, reason };
+  return { paths, manifests: [...manifests].filter((path) => paths.has(path)), reason };
 }
 
 export function selection(task: Task, tree: RefTree, dirty: string[] = []) {

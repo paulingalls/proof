@@ -54,3 +54,33 @@ test('design case 3: committed root and workspace version bumps retain proof', (
     expect(cli(['plan'])).toContain('PROVEN a');
   }
 });
+
+test('whole-file reads dominate metadata in either input and traversal order', () => {
+  const direct = { 'imports-of': 'direct.ts' };
+  const { r } = fixture({
+    a: [closure],
+    first: [{ 'imports-of': 'first.ts' }],
+    last: [{ 'imports-of': 'last.ts' }],
+    pathFirst: ['package.json', closure],
+    pathLast: [closure, 'package.json'],
+    globFirst: ['**/package.json', closure],
+    globLast: [closure, '**/package.json'],
+    two: [closure, direct],
+    excluded: [closure, '!package.json'],
+    readded: [closure, '!package.json', '*.json'],
+  });
+  const from = r.commit({
+    'first.ts': "import 'pkg'; import './package.json';",
+    'last.ts': "import './package.json'; import 'pkg';",
+  });
+  const to = r.commit({ 'package.json': JSON.stringify({ ...root, version: '2' }) });
+  const result = r.check([
+    {
+      name: 'whole reads',
+      from,
+      to,
+      expect: ['first', 'last', 'pathFirst', 'pathLast', 'globFirst', 'globLast', 'two', 'readded'],
+    },
+  ]);
+  expect(result.code, result.err + result.out).toBe(0);
+});
