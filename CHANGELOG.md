@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.1
+
+- `plan` and `lint` cost about a third at 413 tasks: glob matches, selectors, resolved imports and
+  Maestro flow reads are shared within one process. No key, decision or reason changes.
+
 ## 0.12.0
 
 - Root `unkeyed` excludes shared files from task keys while preserving exact sandbox bytes;

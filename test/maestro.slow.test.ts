@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Repo } from './support/repo';
@@ -29,7 +29,7 @@ function state() {
   states.push(path);
   return { PROOF_STATE_DIR: path };
 }
-function plan(r: Repo, env = state()) {
+function plan(r: Repo, env: Record<string, string> = state()) {
   const result = r.cli(['plan', '--json'], env);
   expect(result.code, result.err).toBe(0);
   return JSON.parse(result.out) as { task: string; state: string; reason: string }[];
@@ -209,4 +209,23 @@ test('sandbox reads working closure bytes and only clean runs publish', () => {
   execute('proof published', 'old', extended, true);
   expect(plan(r, env)[0]?.state).toBe('PROVEN');
   expect(r.cli(['lint']).code).toBe(0);
+});
+
+test('flow blobs are prefetched in one git batch', () => {
+  const r = fixture(
+    { a: task('flows/a.yaml'), b: task('flows/shared.yml') },
+    {
+      'flows/a.yaml': flow('- runFlow: shared.yml'),
+      'flows/shared.yml': flow('- launchApp'),
+    },
+  );
+  const ids = ['flows/a.yaml', 'flows/shared.yml'].map((path) =>
+    r.git('rev-parse', `HEAD:${path}`),
+  );
+  const trace = join(r.path, '.git/trace');
+  const rows = plan(r, { ...state(), GIT_TRACE: trace });
+  expect(rows.map((row) => row.reason)).toEqual(['no proof for key', 'no proof for key']);
+  const text = readFileSync(trace, 'utf8');
+  expect(text.match(/git cat-file --batch/g) ?? []).toHaveLength(1);
+  for (const id of ids) expect(text).not.toContain(`git cat-file blob ${id}`);
 });

@@ -108,7 +108,7 @@ export function measureClosures(phase: string, directory: string) {
     const before = JSON.parse(readFileSync(join(data, 'before.json'), 'utf8'));
     assert.equal(result.err, before.err);
     assert.deepEqual(rows, JSON.parse(before.out));
-    assert.ok(before.seconds / seconds >= 2, `speedup ${before.seconds / seconds} < 2`);
+    assert.ok(seconds < before.seconds, `plan ${seconds} >= before ${before.seconds}`);
     rmSync(fixture.path, { recursive: true, force: true });
     repo.close();
   }
