@@ -226,6 +226,28 @@ test('refreshes a dirty closure when its entry changes without changing dirty pa
   expect(rows(env, 'proofs')).toEqual([]);
 });
 
+test('a red contests the head proof when the command removed the dirty input', () => {
+  const { repo, env, run } = fixture({});
+  repo.commit({
+    'proof.yaml': JSON.stringify({
+      version: 1,
+      project: 'run',
+      tasks: {
+        shadowed: {
+          run: `rm '${repo.path}/resolved.tsx'; exit 1`,
+          inputs: [{ 'imports-of': 'entry.ts' }],
+        },
+      },
+    }),
+    'entry.ts': "import './resolved';",
+    'resolved.js': 'export const value = 1;',
+  });
+  expect(repo.cli(['record', 'shadowed', '--outcome', 'green'], env).code).toBe(0);
+  repo.write('resolved.tsx', 'export const value = 2;');
+  expect(run().code).toBe(1);
+  expect(repo.cli(['plan'], env).out).toContain('RUN shadowed: contested');
+});
+
 test('dirty red retains the HEAD proof without a contradiction', () => {
   const { repo, env, run } = fixture({ ok: task('test "$(cat src/a.ts)" = original') });
   expect(repo.cli(['record', 'ok', '--outcome', 'green'], env).code).toBe(0);

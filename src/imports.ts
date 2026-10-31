@@ -1,5 +1,5 @@
 import { posix } from 'node:path';
-import { type RefTree, readBlobs } from './git';
+import { type RefTree, readBlobs, WorkingTree } from './git';
 import { workingFile } from './sandbox';
 import { type Edge, workspaces } from './workspaces';
 
@@ -14,7 +14,8 @@ const blobs = new Map<string, string>();
 const prefetched = new WeakSet<RefTree>();
 function committed(tree: RefTree, path: string) {
   const blob = tree.files.get(path) as string;
-  if (!blobs.has(blob) && !prefetched.has(tree)) {
+  // A working tree's entries name hashes of working bytes, which have no object to batch.
+  if (!blobs.has(blob) && !prefetched.has(tree) && !(tree instanceof WorkingTree)) {
     const ids = new Set<string>();
     for (const [path, id] of tree.files) {
       if (
