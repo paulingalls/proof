@@ -13,9 +13,9 @@ function git(...args: string[]) {
   return gitBytes(...args).toString();
 }
 
-export function resolveRef(ref: string, type: 'commit' | 'tree' = 'commit') {
+export function resolveRef(ref: string) {
   try {
-    return git('rev-parse', '--verify', '--end-of-options', `${ref}^{${type}}`).trim();
+    return git('rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`).trim();
   } catch (error) {
     throw new Error(`ref '${ref}': ${error}`);
   }

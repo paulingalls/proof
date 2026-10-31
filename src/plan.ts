@@ -111,15 +111,12 @@ export async function decide(
   }
 }
 
-let committed:
-  | { cwd: string; tree: RefTree; document: ReturnType<typeof declarations> }
-  | undefined;
+let committed: { tree: RefTree; document: ReturnType<typeof declarations> } | undefined;
 
 export function currentTree() {
-  const commit = resolveRef('HEAD');
-  if (committed?.cwd !== process.cwd() || committed.tree.commit !== commit) {
+  if (committed?.tree.commit !== resolveRef('HEAD')) {
     const tree = new RefTree('HEAD');
-    committed = { cwd: process.cwd(), tree, document: declarations(tree) };
+    committed = { tree, document: declarations(tree) };
   }
   const { tree } = committed;
   let document = committed.document;

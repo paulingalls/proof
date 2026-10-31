@@ -38,13 +38,8 @@ function* candidates(available: string[], pattern: string, dirty: string[]) {
   yield* dirty;
 }
 
-export function select(
-  task: Task,
-  tree: RefTree,
-  dirty: string[] = [],
-  working = false,
-  available = inventory(tree),
-) {
+export function select(task: Task, tree: RefTree, dirty: string[] = [], working = false) {
+  const available = inventory(tree);
   const view = source(tree, working ? dirty : undefined);
   const paths = new Set<string>();
   const manifests = new Set<string>();
