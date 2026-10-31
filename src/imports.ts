@@ -20,7 +20,7 @@ function committed(tree: RefTree, path: string) {
     for (const [path, id] of tree.files) {
       if (
         ['100644', '100755'].includes(tree.modes.get(path) ?? '') &&
-        (/\.(?:[cm]?[jt]s|[jt]sx)$/.test(path) ||
+        (/\.(?:[cm]?[jt]s|[jt]sx|ya?ml)$/.test(path) ||
           ['package.json', 'tsconfig.json', 'jsconfig.json'].includes(posix.basename(path))) &&
         !blobs.has(id)
       )
