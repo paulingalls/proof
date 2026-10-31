@@ -48,17 +48,20 @@ export function select(
   const view = source(tree, working ? dirty : undefined);
   const paths = new Set<string>();
   const manifests = new Set<string>();
+  const whole = new Set<string>();
   let reason: string | undefined;
   for (const pattern of task.inputs) {
     if (typeof pattern !== 'string') {
       if ('imports-of' in pattern) {
         const found = closure(pattern['imports-of'], view);
         for (const path of found.paths) paths.add(path);
+        for (const path of found.whole) whole.add(path);
         for (const path of found.manifests) manifests.add(path);
         reason ??= found.reason;
       }
       if ('maestro' in pattern) {
         const found = maestro(pattern.maestro, view);
+        for (const path of found.paths) whole.add(path);
         for (const path of found.paths) paths.add(path);
         reason ??= found.reason;
       }
@@ -71,13 +74,22 @@ export function select(
     for (const path of candidates(available, positive, negative ? [...dirty, ...paths] : dirty)) {
       if (glob.match(path)) {
         matched = true;
-        if (negative) paths.delete(path);
-        else paths.add(path);
+        if (negative) {
+          paths.delete(path);
+          whole.delete(path);
+        } else {
+          paths.add(path);
+          whole.add(path);
+        }
       }
     }
     if (!matched) reason ??= `unmatched input '${pattern}'`;
   }
-  return { paths, manifests: [...manifests].filter((path) => paths.has(path)), reason };
+  return {
+    paths,
+    manifests: [...manifests].filter((path) => paths.has(path) && !whole.has(path)),
+    reason,
+  };
 }
 
 export function selection(task: Task, tree: RefTree, dirty: string[] = []) {

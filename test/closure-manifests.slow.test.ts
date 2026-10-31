@@ -84,3 +84,37 @@ test('whole-file reads dominate metadata in either input and traversal order', (
   ]);
   expect(result.code, result.err + result.out).toBe(0);
 });
+
+test('resolution members invalidate even when the source set stays unchanged', () => {
+  const { r } = fixture();
+  let from = r.git('rev-parse', 'HEAD');
+  const cases = [];
+  for (const [path, value] of [
+    [manifest, { ...pkg, exports: { '.': './a.ts', './unused': './b.ts' } }],
+    [manifest, { ...pkg, main: './b.ts' }],
+    [manifest, pkg],
+    [manifest, { ...pkg, module: './b.ts' }],
+    [manifest, pkg],
+    ['package.json', { ...root, name: 'renamed' }],
+    ['package.json', { ...root, workspaces: { packages: ['packages/*'] } }],
+  ] as const) {
+    const to = r.commit({ [path]: JSON.stringify(value) });
+    cases.push({ name: `${cases.length}`, from, to, expect: ['a'] });
+    from = to;
+  }
+  const result = r.check(cases);
+  expect(result.code, result.err + result.out).toBe(0);
+});
+
+test('export condition order is significant with an unchanged closure file set', () => {
+  const { r } = fixture();
+  const from = r.commit({
+    'entry.ts': "import 'pkg'; import './packages/p/a'; import './packages/p/b';",
+    [manifest]: JSON.stringify({ ...pkg, exports: { default: './a.ts', bun: './b.ts' } }),
+  });
+  const to = r.commit({
+    [manifest]: JSON.stringify({ ...pkg, exports: { bun: './b.ts', default: './a.ts' } }),
+  });
+  const result = r.check([{ name: 'condition order', from, to, expect: ['a'] }]);
+  expect(result.code, result.err + result.out).toBe(0);
+});

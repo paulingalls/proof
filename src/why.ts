@@ -92,9 +92,15 @@ function compareParts(before: Parts, after: Parts, compareEnv: boolean) {
     const [path, member] = JSON.parse(id) as [string, string];
     const old = oldMembers.get(id);
     const current = newMembers.get(id);
-    if (!old && (!before.projections.has(id) || !before.tree.files.has(path)))
+    if (
+      !old &&
+      ((!before.selection.reason && !before.projections.has(id)) || !before.tree.files.has(path))
+    )
       differences.push(`added member ${path} ${member}`);
-    else if (!current && (!after.projections.has(id) || !after.tree.files.has(path)))
+    else if (
+      !current &&
+      ((!after.selection.reason && !after.projections.has(id)) || !after.tree.files.has(path))
+    )
       differences.push(`removed member ${path} ${member}`);
     else if (old && current && JSON.stringify(old) !== JSON.stringify(current))
       differences.push(`changed member ${path} ${member}`);
