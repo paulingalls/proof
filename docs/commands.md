@@ -6,6 +6,8 @@ proof why <task>            current key parts and changes since the newest proof
 proof status --ref <ref> [--set <name>] [--json]  proof state at a committed ref
 proof run [--fresh | --staged] [--jobs N] [--tasks <id> ... | --set <name>]  run tasks and record each result
 proof record <task> --outcome green|red|incomplete [--seconds N]
+proof invalidate --task <t> [--key k | --all]  delete proofs with a manual audit
+proof flakes [--since Nd]    tasks ranked by ordinary contradictions
 proof lint                   check declarations against the staged tree
 proof check <cases.yaml>     run a requirement suite
 proof doctor                 which store is in use, and whether it's reachable
@@ -211,8 +213,8 @@ its declared order. `--set` scopes every task, count, estimate and total to that
 an unknown set exits 2 as in `plan`. Removed or renamed tasks leave all figures.
 Each task's median uses every timed green result across keys, hosts and dates,
 including dirty results. An even sample averages its middle two values; untimed
-and non-green results do not price skips. Run counts include every result outcome,
-timed or untimed, in the current window.
+and non-green results do not price skips. Run counts include green, red and incomplete results,
+timed or untimed, in the current window; manual invalidation records are excluded.
 
 `--since` defaults to `30d` and accepts positive whole days with representable calendar
 boundaries. The current window includes today and the preceding N−1 local calendar days;
@@ -267,9 +269,42 @@ A case assumes every task is proven at `from`, so a task proof can't decide ther
 (`from <ref>: <task> undecidable: <reason>`). One undecidable at `to` must run: it prints a `RUN`
 diagnostic and counts as selected.
 
-Planned, specified in [R16](2026-10-30-proof-requirements.md) and design §4.6:
+`proof flakes [--since Nd]` reports the committed project's contradiction history,
+including removed tasks. It prints `ordinary task super` followed by rows ranked by
+ordinary count descending, then task name ascending. Super counts are separate;
+a super-only task appears with ordinary count 0. Manual deletions never count.
+With no rows it prints `no contradictions in 30d` (or the selected window) and exits 0.
+The default is `30d`; positive whole days select the last N local calendar days including
+today, starting at local midnight, as in `stats`. Missing, repeated, malformed or
+unrepresentable windows and unknown flags exit 2 with usage. History comes from one
+backend: shared when online, otherwise local with the fallback diagnostic.
 
+```sh
+proof flakes
+proof flakes --since 7d
 ```
-proof invalidate --task <t> [--key k|--all] delete proofs (recorded as a manual contradiction)
-proof flakes [--since 30d]                tasks ranked by contradictions
+
+`proof invalidate --task <t> [--key k | --all]` deletes the task's proof for its key at
+committed HEAD by default. Checkout dirt does not change that key. An undeclared task
+or undecidable HEAD key exits 2. Explicit `--key` deletes only that key; `--all` enumerates
+the task's existing keys independently in each backend. Both explicit forms support
+removed tasks and bypass input evaluation, but still require a committed project declaration.
+They do not exclude future concurrent proof publications.
+
+```sh
+proof invalidate --task b
+proof invalidate --task b --key "$key"
+proof invalidate --task b --all
 ```
+
+Here `$key` is the stored proof key to clear. Local-only output is `deleted N proof(s)`;
+a configured store reports local and shared counts separately. No proof prints `deleted 0`
+and exits 0. A deletion inserts an untimed `manual` result and a `manual` contradiction in
+the same per-key transaction. A later clean green restores PROVEN without a contest.
+Missing task or values, duplicate or unknown flags, and `--key` with `--all` exit 2.
+
+An unreachable shared store leaves the local deletion committed but exits 2 with
+`shared proof may survive`; a green exit confirms both backends completed. There is no
+manual veto or replay on reconnect. Another clone learns the deletion when planning online;
+a locally retained proof then runs offline with `contested: red at <commit>`, using the
+existing contest representation for the manual deletion. See [store operations](store.md).

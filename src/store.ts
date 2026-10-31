@@ -325,10 +325,111 @@ export class Store {
     }
   }
 
+  async invalidate(
+    project: string,
+    task: string,
+    selected: string | undefined,
+    host: string,
+    commit: string,
+  ) {
+    const finishedAt = new Date().toISOString();
+    const write = async (backend: Backend) => {
+      const keys =
+        selected === undefined
+          ? await backend.query<{ key: string }>(
+              'SELECT key FROM proofs WHERE project = ? AND task = ?',
+              project,
+              task,
+            )
+          : [{ key: selected }];
+      let deleted = 0;
+      for (const { key } of keys) {
+        deleted += await backend.transaction(
+          JSON.stringify([project, task, key]),
+          async (query) => {
+            const proof = await this.lookup(project, task, key, query, !backend.remote);
+            if (!proof) return 0;
+            const [result] = await query<{ id: number | string }>(
+              `INSERT INTO results (project, task, key, outcome, seconds, host, "commit", dirty, finished_at)
+            VALUES (?, ?, ?, 'manual', NULL, ?, ?, 0, ?) RETURNING id`,
+              project,
+              task,
+              key,
+              host,
+              commit,
+              finishedAt,
+            );
+            if (!result) throw new Error('store did not return the inserted result');
+            await query(
+              `INSERT INTO contradictions
+            (project, task, key, green_result, red_result, kind, deleted_proof, recorded_at)
+            VALUES (?, ?, ?, ?, ?, 'manual', 1, ?)`,
+              project,
+              task,
+              key,
+              proof.result_id,
+              result.id,
+              finishedAt,
+            );
+            await query(
+              'DELETE FROM proofs WHERE project = ? AND task = ? AND key = ?',
+              project,
+              task,
+              key,
+            );
+            return 1;
+          },
+        );
+      }
+      return deleted;
+    };
+    const local = await write(this.local);
+    if (!this.remote) return { local };
+    if (!this.offline) {
+      try {
+        return { local, shared: await write(this.remote) };
+      } catch (error) {
+        this.fallback(error);
+      }
+    }
+    throw new Error(`deleted ${local} local proof(s); shared proof may survive`);
+  }
+
+  async flakes(project: string, start: string) {
+    const read = async (query: Query) =>
+      (
+        await query<{
+          task: string;
+          ordinary: number | string;
+          super: number | string;
+        }>(
+          `SELECT task,
+      SUM(CASE WHEN kind = 'ordinary' THEN 1 ELSE 0 END) AS ordinary,
+      SUM(CASE WHEN kind = 'super' THEN 1 ELSE 0 END) AS super
+      FROM contradictions WHERE project = ? AND recorded_at >= ?
+      AND kind IN ('ordinary', 'super') GROUP BY task ORDER BY ordinary DESC, task ASC`,
+          project,
+          start,
+        )
+      ).map((row) => ({
+        task: row.task,
+        ordinary: Number(row.ordinary),
+        super: Number(row.super),
+      }));
+    if (this.remote && !this.offline) {
+      try {
+        return await read(this.remote.query);
+      } catch (error) {
+        this.fallback(error);
+      }
+    }
+    return read(this.local.query);
+  }
+
   async history(project: string, start: string, end: string) {
     const read = async (query: Query) => ({
       results: await query<HistoryResult>(
-        'SELECT task, outcome, seconds, finished_at FROM results WHERE project = ?',
+        `SELECT task, outcome, seconds, finished_at FROM results WHERE project = ? AND outcome <> 'manual'`,
         project,
       ),
       skips: await query<Skip>(
