@@ -86,7 +86,9 @@ export function keyParts(task: Task, tree: RefTree, historical = false) {
         path,
         mode,
         member,
-        Object.hasOwn(object, member) ? hash(canonical(object[member])) : 'absent',
+        Object.hasOwn(object, member)
+          ? hash(member === 'exports' ? JSON.stringify(object[member]) : canonical(object[member]))
+          : 'absent',
       ]);
   }
   const declaration = { run: task.run, ...(task.links?.length ? { links: task.links } : {}) };

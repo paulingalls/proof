@@ -99,6 +99,19 @@ exempt:
   closure from that entry, following workspace packages and tsconfig `paths`, `baseUrl` and
   `extends` the way Bun does. An import proof can't follow, such as a computed `import()`, makes
   the task undecidable, so it always runs and says why.
+- **Closure manifests**: a `package.json` reached only as import resolver metadata keys
+  `name`, `main`, `module`, `type`, `exports`, `imports` and `workspaces`. A committed
+  `version` bump or changelog edit therefore preserves the closure proof. `exports` retains
+  JSON object order because the resolver takes the first matching condition; other projected
+  members use canonical object order. A manifest imported directly by source, or selected by
+  a path or glob, keys the whole file regardless of input order. Sandboxes always hold exact
+  file bytes, including unprojected members. A dirty consulted manifest still runs with
+  `undecidable: dirty input '<path>'` and publishes no proof.
+  Closures no longer key `dependencies`, `devDependencies`, `scripts`, `patchedDependencies`
+  or `packageManager` implicitly. Declare the members your command needs, for example
+  `{path: package.json, json: [dependencies, devDependencies, patchedDependencies, packageManager, scripts]}`
+  alongside its closure input. Key scheme 3 requires fresh proof for all tasks, including
+  tasks without closures.
 - **Maestro inputs**, such as `{maestro: flows/journey.yaml}`, select the flow and its
   recursive `runFlow` and `runScript` references (strings or `{file: path}`), plus
   `addMedia` paths (a list or `{files: [...]}`). References resolve relative to the including
@@ -186,7 +199,10 @@ parts: selected paths with Git blob ids and modes, JSON member identities, decla
 (without values), and the declaration hash. These parts use the files on disk, including staged
 and unstaged edits, additions, deletions and selected ignored files. Git decides whether a
 tracked path is clean, so a line-ending or LFS filter never reads as a change; blob ids of
-dirty paths hash their raw bytes. Plan's dirty-input eligibility stays the same.
+dirty paths hash their raw bytes. Plan's dirty-input eligibility stays the same. Resolver-only manifests print
+`member package.json <member> <mode> <hash>` lines instead of a `file package.json` line.
+A version-only edit reports `no inputs changed` in the comparison even when the dirty rule
+requires RUN; a resolution-member edit reports, for example, `changed member package.json name`.
 
 For example, after proving `text`, edit its input and explain it:
 

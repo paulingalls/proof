@@ -14,6 +14,10 @@ const closure = { 'imports-of': 'entry.ts' };
 const root = { name: 'root', version: '1', workspaces: ['packages/*'], scripts: { test: 'true' } };
 const pkg = { name: 'pkg', version: '1', exports: './a.ts' };
 const manifest = 'packages/p/package.json';
+const manifests = [
+  ['package.json', root],
+  [manifest, pkg],
+] as const;
 function fixture(inputs: Record<string, unknown[]> = { a: [closure] }, run = 'true') {
   const r = new Repo();
   repos.push(r);
@@ -22,42 +26,41 @@ function fixture(inputs: Record<string, unknown[]> = { a: [closure] }, run = 'tr
       version: 1,
       project: 'manifests',
       tasks: Object.fromEntries(
-        Object.entries(inputs).map(([id, inputs]) => [id, { run, inputs }]),
+        Object.entries(inputs).map(([id, inputs]) => [id, { run, inputs, env: ['EXPECTED'] }]),
       ),
     }),
     'package.json': JSON.stringify(root),
     [manifest]: JSON.stringify(pkg),
-    'entry.ts': "import 'pkg';",
+    'entry.ts': "import 'pkg'; import './packages/p/a'; import './packages/p/b';",
     'packages/p/a.ts': 'export {};',
     'packages/p/b.ts': 'export {};',
     'direct.ts': "import './package.json';",
   });
   const path = mkdtempSync(join(tmpdir(), 'proof-manifests-'));
   states.push(path);
-  const cli = (args: string[]) => {
-    const result = r.cli(args, { PROOF_STATE_DIR: path });
+  const cli = (args: string[], EXPECTED?: string) => {
+    const result = r.cli(args, { PROOF_STATE_DIR: path, EXPECTED });
     expect(result.code, result.err + result.out).toBe(0);
     return result.out;
   };
   return { r, cli };
 }
-
 test('design case 3: committed root and workspace version bumps retain proof', () => {
   const { r, cli } = fixture();
   cli(['record', 'a', '--outcome', 'green']);
   expect(cli(['plan'])).toContain('PROVEN a');
-  for (const [path, value] of [
-    ['package.json', root],
-    [manifest, pkg],
-  ] as const) {
+  for (const [path, value] of manifests) {
     r.commit({ [path]: JSON.stringify({ ...value, version: '2' }), CHANGELOG: 'release' });
     expect(cli(['plan'])).toContain('PROVEN a');
+    expect(cli(['why', 'a'])).toContain('no inputs changed');
   }
+  r.commit({ [manifest]: JSON.stringify({ ...pkg, main: './b.ts' }) });
+  expect(cli(['why', 'a'])).toContain(`changed member ${manifest} main`);
 });
 
 test('whole-file reads dominate metadata in either input and traversal order', () => {
   const direct = { 'imports-of': 'direct.ts' };
-  const { r } = fixture({
+  const { r, cli } = fixture({
     a: [closure],
     first: [{ 'imports-of': 'first.ts' }],
     last: [{ 'imports-of': 'last.ts' }],
@@ -73,15 +76,10 @@ test('whole-file reads dominate metadata in either input and traversal order', (
     'first.ts': "import 'pkg'; import './package.json';",
     'last.ts': "import './package.json'; import 'pkg';",
   });
+  expect(cli(['why', 'first'])).toContain('file package.json ');
   const to = r.commit({ 'package.json': JSON.stringify({ ...root, version: '2' }) });
-  const result = r.check([
-    {
-      name: 'whole reads',
-      from,
-      to,
-      expect: ['first', 'last', 'pathFirst', 'pathLast', 'globFirst', 'globLast', 'two', 'readded'],
-    },
-  ]);
+  const readers = 'first last pathFirst pathLast globFirst globLast two readded'.split(' ');
+  const result = r.check([{ name: 'whole reads', from, to, expect: readers }]);
   expect(result.code, result.err + result.out).toBe(0);
 });
 
@@ -90,6 +88,8 @@ test('resolution members invalidate even when the source set stays unchanged', (
   let from = r.git('rev-parse', 'HEAD');
   const cases = [];
   for (const [path, value] of [
+    [manifest, { ...pkg, exports: { default: './a.ts', bun: './b.ts' } }],
+    [manifest, { ...pkg, exports: { bun: './b.ts', default: './a.ts' } }],
     [manifest, { ...pkg, exports: { '.': './a.ts', './unused': './b.ts' } }],
     [manifest, { ...pkg, main: './b.ts' }],
     [manifest, pkg],
@@ -106,15 +106,25 @@ test('resolution members invalidate even when the source set stays unchanged', (
   expect(result.code, result.err + result.out).toBe(0);
 });
 
-test('export condition order is significant with an unchanged closure file set', () => {
-  const { r } = fixture();
-  const from = r.commit({
-    'entry.ts': "import 'pkg'; import './packages/p/a'; import './packages/p/b';",
-    [manifest]: JSON.stringify({ ...pkg, exports: { default: './a.ts', bun: './b.ts' } }),
-  });
-  const to = r.commit({
-    [manifest]: JSON.stringify({ ...pkg, exports: { bun: './b.ts', default: './a.ts' } }),
-  });
-  const result = r.check([{ name: 'condition order', from, to, expect: ['a'] }]);
-  expect(result.code, result.err + result.out).toBe(0);
+test('sandbox keeps exact clean and dirty manifest bytes, with dirty reasons', () => {
+  for (const [path, value] of manifests) {
+    const bytes = `${JSON.stringify(value, null, 2)}\n`;
+    const changed = `${JSON.stringify({ ...value, version: '2' }, null, 2)}\n`;
+    const { r, cli } = fixture(undefined, `printf '%s' "$EXPECTED" | cmp - ${path}`);
+    r.commit({ [path]: bytes });
+    expect(cli(['run'], bytes)).toContain('proof published');
+    for (const staged of [false, true]) {
+      r.write(path, changed);
+      if (staged) r.git('add', path);
+      const why = cli(['why', 'a'], bytes);
+      expect(why).toContain(`RUN a: undecidable: dirty input '${path}'`);
+      expect(why).toContain('no inputs changed');
+      for (const member of ['name', 'main', 'module', 'type', 'exports', 'imports', 'workspaces'])
+        expect(why).toContain(`member ${path} ${member} `);
+      expect(why).not.toContain(`file ${path} `);
+      expect(cli(['run'], changed)).toContain('green a; no proof published');
+      r.git('reset', '--hard', 'HEAD');
+      expect(cli(['plan'], bytes)).toContain('PROVEN a');
+    }
+  }
 });

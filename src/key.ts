@@ -174,7 +174,7 @@ export function key(id: string, task: Task, tree: RefTree, dirty: string[] = [])
   }
   const parts = keyParts(task, tree);
   if (parts.reasons.length) return { reason: parts.reasons[0] as string };
-  const tuple: unknown[] = [2, id, parts.declaration, [...parts.files, ...parts.members]];
+  const tuple: unknown[] = [3, id, parts.declaration, [...parts.files, ...parts.members]];
   if (task.env?.length) tuple.push(parts.env.map(([name, hash]) => ['env', name, hash]));
   const hash = new Bun.CryptoHasher('sha256').update(JSON.stringify(tuple)).digest('hex');
   return { key: hash, env: parts.env };
