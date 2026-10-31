@@ -78,6 +78,15 @@ The package has its own tests for its own behaviour, on synthetic repos it build
   - a small environment class
 
   Nothing else goes into the key.
+  - Paul, 2026-10-30: `package.json#version` is excluded at every depth and through every selection
+    route, including direct imports, paths and globs. An explicit `{path: package.json, json: [version]}`
+    opts in. For a whole-selected valid JSON object, key exact bytes with only the first
+    `"version": <parsed version>` value blanked; retain layout and every other member. Adding or
+    removing the member changes those bytes. No depth scanner: an earlier nested version with the
+    same value is an accepted rare corner under the 99% rule. Invalid JSON and valid non-object JSON
+    keep whole-byte identity only where the file already keys whole; explicit projections and
+    resolver metadata retain their current failures. Sandboxes always hold exact original bytes.
+    R8 is unchanged: staged or unstaged version edits RUN, while `why` reports no inputs changed.
 - **R4. Providers govern lifecycle, never keys.** Providers are the shared stack, a test database, the iOS app
   build and the web export. They start only when some RUN task needs them. A task's key holds the task's own
   inputs, never a provider's whole input set. A stack gate's inputs include a coarse named set `$stack` (the

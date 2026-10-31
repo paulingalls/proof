@@ -50,7 +50,7 @@ test('projects members alongside ordinary inputs without hashing unrelated membe
   const c = r.commit({ 'package.json': manifest(2, { a: 1, b: 3 }) });
   const d = r.commit({ 'src/a.ts': 'changed' });
   check(r, [
-    ['version', a, b, ['whole']],
+    ['version', a, b, []],
     ['dependency', b, c, ['deps', 'whole']],
     ['source', c, d, ['deps']],
   ]);

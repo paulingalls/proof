@@ -9,21 +9,22 @@ for (const dir of ['', 'packages/group/deep/']) {
     const r = new Repo();
     const state = mkdtempSync(join(tmpdir(), 'proof-version-'));
     const path = `${dir}package.json`;
-    const base = { name: 'pkg', version: '1', scripts: { test: 'true' } };
+    const base = {
+      name: 'pkg',
+      version: '1',
+      scripts: { test: 'true' },
+      exports: { default: './entry', bun: './entry' },
+    };
     const bytes = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
     const original = bytes(base);
     const readers = ['direct', 'glob', 'path'];
-    const inputs = [{ 'imports-of': `${dir}entry.ts` }, `${dir}*.json`, path];
-    const tasks = Object.fromEntries(
-      readers.map((id, i) => [
-        id,
-        {
-          run: `printf '%s' "$EXPECTED" | cmp - ${path}`,
-          inputs: [inputs[i]],
-          env: ['EXPECTED'],
-        },
-      ]),
-    );
+    const inputs = [{ 'imports-of': `${dir}entry.ts` }, `${dir}*package.json`, path];
+    const task = (inputs: unknown[]) => ({
+      run: `printf '%s' "$EXPECTED" | cmp - ${path}`,
+      inputs,
+      env: ['EXPECTED'],
+    });
+    const tasks = Object.fromEntries(readers.map((id, i) => [id, task([inputs[i]])]));
     Object.assign(tasks, {
       version: { run: 'true', inputs: [{ path, json: ['version'] }] },
       both: { run: 'true', inputs: [path, { path, json: ['version'] }] },
@@ -61,7 +62,9 @@ for (const dir of ['', 'packages/group/deep/']) {
         const why = cli(['why', 'path']);
         expect(why).toContain(`dirty input '${path}'`);
         expect(why).toContain('no inputs changed');
-        expect(cli(['run', 'path'], changed)).toContain('green path; no proof published');
+        expect(cli(['run', '--tasks', 'path'], changed)).toContain(
+          'green path; no proof published',
+        );
         r.git('reset', '--hard', from);
         expect(cli(['plan'])).toContain('PROVEN path');
       }
@@ -71,13 +74,8 @@ for (const dir of ['', 'packages/group/deep/']) {
         ['custom', bytes({ ...base, custom: true }), readers],
         ['nested', bytes({ ...base, custom: { version: '2' } }), readers],
         ['layout', JSON.stringify(base), readers],
-        [
-          'exports order',
-          '{"name":"pkg","version":"1","exports":{"bun":"./a","default":"./a"}}',
-          readers,
-        ],
+        ['order', bytes({ ...base, exports: { bun: './entry', default: './entry' } }), readers],
         ['invalid', '{"version":', [...readers, 'version', 'both']],
-        ['invalid again', '{"version":2', [...readers, 'version', 'both']],
         ['non-object', '[]', [...readers, 'version', 'both']],
       ] as const) {
         const to = r.commit({ [path]: content });
@@ -87,6 +85,12 @@ for (const dir of ['', 'packages/group/deep/']) {
       cases.push({ name: 'other JSON', from, to: other, expect: ['other'] });
       const result = r.check(cases);
       expect(result.code, result.err + result.out).toBe(0);
+      r.commit({ [path]: '{"version":' });
+      for (const id of readers) cli(['record', id, '--outcome', 'green']);
+      r.commit({ [path]: '{"version":2' });
+      for (const id of readers) expect(cli(['why', id])).toContain(`changed file ${path}`);
+      r.commit({ [`${dir}entry.ts`]: "import 'pkg';" });
+      expect(cli(['why', 'direct'])).toMatch(/undecidable:.*SyntaxError/);
     } finally {
       r.close();
       rmSync(state, { recursive: true, force: true });
