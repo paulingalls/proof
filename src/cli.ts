@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import pkg from '../package.json';
 import { check } from './check';
 import { doctor } from './doctor';
+import { flakes } from './flakes';
 import { lint } from './lint';
 import { plan, renderDecision } from './plan';
 import { record } from './record';
@@ -16,7 +17,7 @@ const [command, ...args] = Bun.argv.slice(2);
 if (command === '--version') {
   console.log(pkg.version);
 } else if (
-  ['check', 'plan', 'record', 'lint', 'run', 'doctor', 'status', 'why', 'stats'].includes(
+  ['check', 'plan', 'record', 'lint', 'run', 'doctor', 'status', 'why', 'stats', 'flakes'].includes(
     command ?? '',
   )
 ) {
@@ -26,7 +27,9 @@ if (command === '--version') {
     const top = Bun.spawnSync(['git', 'rev-parse', '--show-toplevel']);
     if (top.exitCode !== 0) throw new Error(top.stderr.toString().trim());
     process.chdir(top.stdout.toString().trim());
-    if (command === 'stats') {
+    if (command === 'flakes') {
+      await flakes(args);
+    } else if (command === 'stats') {
       await stats(args);
     } else if (command === 'why') {
       await why(args);

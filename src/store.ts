@@ -325,6 +325,37 @@ export class Store {
     }
   }
 
+  async flakes(project: string, start: string) {
+    const read = async (query: Query) =>
+      (
+        await query<{
+          task: string;
+          ordinary: number | string;
+          super: number | string;
+        }>(
+          `SELECT task,
+      SUM(CASE WHEN kind = 'ordinary' THEN 1 ELSE 0 END) AS ordinary,
+      SUM(CASE WHEN kind = 'super' THEN 1 ELSE 0 END) AS super
+      FROM contradictions WHERE project = ? AND recorded_at >= ?
+      AND kind IN ('ordinary', 'super') GROUP BY task ORDER BY ordinary DESC, task ASC`,
+          project,
+          start,
+        )
+      ).map((row) => ({
+        task: row.task,
+        ordinary: Number(row.ordinary),
+        super: Number(row.super),
+      }));
+    if (this.remote && !this.offline) {
+      try {
+        return await read(this.remote.query);
+      } catch (error) {
+        this.fallback(error);
+      }
+    }
+    return read(this.local.query);
+  }
+
   async history(project: string, start: string, end: string) {
     const read = async (query: Query) => ({
       results: await query<HistoryResult>(
