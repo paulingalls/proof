@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.0
+
+- Sets: a task's `sets:` and `--set <name>` for `plan`, `run` and `status`. Names are each repo's own.
+- `proof run --staged` runs a commit hook on the exact staged bytes and may publish, so the push finds
+  those tasks proven. A task with `needs` publishes nothing if an input differs from the snapshot.
+- This repo uses proof for its own commit and push hooks; the README shows how.
+
 ## 0.9.0
 
 - A `package.json` `version` value never enters a key, however the file is reached, so version bumps
