@@ -272,7 +272,6 @@ test('provider index mutations cannot replace captured declarations, inputs or w
     input: 'staged',
     'packages/shared/package.json': '{"name":"shared","exports":"./staged.ts"}',
   });
-  const captured = f.repo.git('write-tree');
   f.repo.write('packages/shared/package.json', '{"name":"shared","exports":"./working.ts"}');
   writeFileSync(
     join(f.control, 'replacement'),
@@ -299,13 +298,31 @@ git add proof.yaml input packages/shared/package.json\n`,
     { task: 'first', outcome: 'green', commit: `${parent} (staged)` },
     { task: 'second', outcome: 'green', commit: `${parent} (staged)` },
   ]);
-  expect(f.rows('proofs').map((row) => row.key)).toEqual(f.rows('results').map((row) => row.key));
-  f.repo.git('commit', '-qm', 'provider replacement');
-  expect(f.cli('plan').out.match(/RUN/g)).toHaveLength(2);
-  f.repo.git('read-tree', '--reset', captured);
-  f.repo.git('checkout-index', '-af');
-  f.repo.git('commit', '-qm', 'captured tree');
-  expect(f.cli('plan').out.match(/PROVEN/g)).toHaveLength(2);
+  expect(run.out).toContain("no proof published: provider can see unstaged 'input'");
+  expect(f.rows('proofs')).toEqual([]);
+});
+
+test('a provider reading unstaged bytes neither earns a proof nor contests one', () => {
+  const f = fixture();
+  const gate = {
+    run: `test "$(cat '${f.control}/served')" = good`,
+    inputs: ['input'],
+    needs: ['service'],
+  };
+  const extra = { providers: { service: { start: `cp input '${f.control}/served'` } } };
+  f.repo.commit({ 'proof.yaml': f.document({ gate }, extra), input: 'bad' });
+  f.repo.write('input', 'good');
+  const earned = f.cli('run', '--staged');
+  expect(earned.code).toBe(0);
+  expect(earned.out).toContain("no proof published: provider can see unstaged 'input'");
+  expect(f.rows('proofs')).toEqual([]);
+
+  f.repo.commit({ input: 'good' });
+  expect(f.cli('run').code).toBe(0);
+  expect(f.cli('record', 'gate', '--outcome', 'red').code).toBe(0);
+  f.repo.write('input', 'bad');
+  expect(f.cli('run', '--staged').code).toBe(1);
+  expect(f.rows('proofs')).toHaveLength(1);
 });
 
 test('staged sandbox still fails an undeclared relative read', () => {

@@ -183,7 +183,7 @@ its running group.
 Provider declarations and `needs` do not enter task keys. A selected file such as `proof.yaml`
 or a provider script still enters the key by its bytes. Declare the resource's relevant inputs
 on each task (a named `$stack` set can share them). Startup edits are re-evaluated before task
-execution and prevent publishing proof for the pre-start view.
+execution and prevent publishing proof for the pre-start view (under `--staged`, see below).
 
 `proof plan --json` remains an array of task decisions. RUN rows with needs also have
 `"providers":["stack"]`; their distinct union is the set a run would start. PROVEN rows and
@@ -207,8 +207,10 @@ any command exits 2 on a usage, declaration or store error.
 
 `proof run --staged` captures the index once. Declarations, includes, task selection, keys,
 workspace resolution and sandbox inputs all use that snapshot. Unstaged and untracked files
-neither enter the sandbox nor block publication. Providers still start in the checkout; their
-edits, including changes to the index, cannot replace the captured task view. Existing link
+neither enter the sandbox nor block publication, with one exception: a provider runs in the
+checkout and can see unstaged bytes, so a task with `needs` publishes nothing when a selected
+input differs from the snapshot, and its red contests no proof. Provider edits, including
+changes to the index, cannot replace the captured task view. Existing link
 escape checks still apply. Proofs keep the parent commit with a ` (staged)` marker.
 
 For the quickstart's `text` task, stage the desired edit before running the hook:

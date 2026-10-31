@@ -219,6 +219,9 @@ export async function run(args: string[]) {
             else if (added) unpublished = `new dirty path '${added}'`;
           }
         }
+        // Providers run in the checkout, so one can serve bytes this snapshot doesn't hold.
+        const unstaged = staged && task.needs?.length ? sandbox?.changed() : undefined;
+        if (unstaged) unpublished = `provider can see unstaged '${unstaged}'`;
         // The command may have changed bytes without changing the dirty path names.
         const afterDirty = [...dirty];
         const escapes = [
@@ -238,7 +241,9 @@ export async function run(args: string[]) {
             hostname(),
             staged ? `${parent}${STAGED_SUFFIX}` : tree.commit,
             unpublished !== undefined,
-            dirtyInputs || key(id, task, tree, afterDirty).key === undefined,
+            dirtyInputs ||
+              unstaged !== undefined ||
+              key(id, task, tree, afterDirty).key === undefined,
             current.env,
             fresh ? 'super' : 'ordinary',
           );
