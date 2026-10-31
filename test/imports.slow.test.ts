@@ -160,6 +160,28 @@ test('computed calls and unresolved imports are undecidable with file and expres
   }
 });
 
+test('a comment that looks like a computed call stays decidable; real ones do not', () => {
+  const quiet = fixture(
+    { a: task('src/a.tsx') },
+    {
+      'src/a.tsx': [
+        '// free of any native import (story-019).',
+        '/* require (name) */',
+        "import './lib/x';",
+        'export const A = () => <div>a</div>;',
+      ].join('\n'),
+    },
+  );
+  expect(plan(quiet)[0]?.reason).toBe('no proof for key');
+  for (const code of ['await import (name);', 'require (name);']) {
+    const loud = fixture(
+      { a: task('src/a.ts') },
+      { 'src/a.ts': `// a comment\nconst name = 'x';\n${code}` },
+    );
+    expect(plan(loud)[0]?.reason).toContain('computed import');
+  }
+});
+
 test('self references and baseUrl imports cannot publish an external proof', () => {
   const cases: [string, string, string, string][] = [
     ['absolute', "import '/abs/x';", 'local import not followed', '/abs/x'],
