@@ -44,8 +44,8 @@ function fixture() {
     'shared.ts': "import './leaf';",
     'leaf.ts': 'export {};',
     'flows/main.yaml': 'appId: x\n---\n- runFlow: common.yaml\n',
-    'flows/common.yaml': '- runFlow: leaf.yaml\n',
-    'flows/leaf.yaml': '- tapOn: Hello\n',
+    'flows/common.yaml': 'appId: x\n---\n- runFlow: leaf.yaml\n',
+    'flows/leaf.yaml': 'appId: x\n---\n- tapOn: Hello\n',
     control: 'ok',
   });
   const state = mkdtempSync(join(tmpdir(), 'proof-unkeyed-'));
@@ -130,4 +130,54 @@ test('unkeyed declarations validate all files and representatives before task se
     }),
   );
   cli(['plan']);
-});
+}, 30000);
+test('unkeyed bytes stay in sandboxes while only representatives key them', () => {
+  const { r, doc, cli } = fixture();
+  expect(cli(['run'])).toContain('proof published');
+  const from = r.git('rev-parse', 'HEAD');
+  const changed = "import './leaf';\n";
+  const to = r.commit({ 'shared.ts': changed });
+  for (const id of ['direct', 'closure']) {
+    expect(cli(['plan'])).toContain(`PROVEN ${id}`);
+    expect(cli(['run', '--fresh', '--tasks', id], changed)).toContain(`green ${id}`);
+  }
+  expect(cli(['plan'])).toContain('RUN representative');
+  const why = cli(['why', 'closure']);
+  expect(why.match(/^unkeyed shared.ts$/gm)).toHaveLength(1);
+  expect(why).not.toContain('changed file shared.ts');
+  expect(cli(['why', 'representative'])).toContain('file shared.ts ');
+  expect(cli(['why', 'control'])).not.toContain('unkeyed shared.ts');
+  r.write('shared.ts', `${changed}\n`);
+  expect(cli(['why', 'direct'])).toContain("dirty input 'shared.ts'");
+  r.git('reset', '--hard', to);
+  const cases = [{ name: 'shared.ts', from, to, expect: ['representative'] }];
+  for (const [path, content, expected] of [
+    ['flows/common.yaml', 'appId: x\n---\n- runFlow: leaf.yaml\n# edit', ['flowRep']],
+    ['leaf.ts', 'export const value = 1;', ['closure', 'representative']],
+    ['shared.ts', "import './other';", ['closure', 'representative']],
+    ['flows/leaf.yaml', 'appId: x\n---\n- tapOn: Goodbye\n', ['flow', 'flowRep']],
+  ] as const) {
+    r.git('reset', '--hard', from);
+    const to = r.commit({
+      [path]: content,
+      ...(path === 'shared.ts' ? { 'other.ts': 'export {};' } : {}),
+    });
+    cases.push({ name: path, from, to, expect: [...expected] });
+  }
+  const result = r.check(cases);
+  expect(result.code, result.err + result.out).toBe(0);
+  r.git('reset', '--hard', from);
+  doc.unkeyed.push('leaf.ts');
+  doc.tasks.representative.keyed?.push('leaf.ts');
+  r.commit({ 'proof.yaml': JSON.stringify(doc) });
+  expect(cli(['why', 'closure'])).toContain('now unkeyed leaf.ts');
+  cli(['record', 'closure', '--outcome', 'green']);
+  r.commit({
+    'proof.yaml': JSON.stringify({
+      ...doc,
+      unkeyed: ['shared.ts', 'flows/common.yaml'],
+      tasks: { ...doc.tasks, representative: task([{ 'imports-of': 'entry.ts' }], ['shared.ts']) },
+    }),
+  });
+  expect(cli(['why', 'closure'])).toContain('now keyed leaf.ts');
+}, 30000);
