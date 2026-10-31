@@ -9,7 +9,7 @@ function logPath(out: string, id: string, outcome = 'red') {
   const line = out
     .split('\n')
     .find((line) => line.startsWith(`${outcome} ${id};`) && line.includes('; log: '));
-  expect(line).toBeDefined();
+  expect(line, out).toBeDefined();
   const path = line?.split('; log: ')[1];
   if (!path) throw new Error(`missing log path: ${out}`);
   expect(isAbsolute(path)).toBe(true);
@@ -215,6 +215,27 @@ test('provider retention cannot prune a task with the same printed label', () =>
   }
   expect(readFileSync(path, 'utf8')).toBe('task-diagnostic\n');
 }, 15000);
+
+test('captures finalized in the same millisecond retain distinct bytes', () => {
+  const f = fixture({ a: task('cat scratch/control; false') });
+  f.repo.write(
+    'scratch/clock.ts',
+    "Date.prototype.toISOString = () => '2026-10-31T12:00:00.123Z';",
+  );
+  const paths: string[] = [];
+  for (const diagnostic of ['first', 'second']) {
+    f.repo.write('scratch/control', `${diagnostic}\n`);
+    const result = f.repo.cli(['run'], {
+      ...f.env,
+      BUN_OPTIONS: `--preload=${join(f.repo.path, 'scratch/clock.ts')}`,
+    });
+    expect(result.code, result.err).toBe(1);
+    paths.push(logPath(result.out, 'a'));
+  }
+  expect(paths.every((path) => path.includes('/20261031T120000123Z-'))).toBe(true);
+  expect(paths[0]).not.toBe(paths[1]);
+  expect(paths.map((path) => readFileSync(path, 'utf8'))).toEqual(['first\n', 'second\n']);
+});
 
 test('project and task ids remain distinct single safe path segments', () => {
   const ids = ['suite/a', 'suite:a', 'suite%2Fa', '..', '.'];

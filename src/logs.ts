@@ -39,7 +39,8 @@ export function logSuffix(result: LogResult) {
 export class Capture {
   readonly fd: number;
   private readonly root = resolve(statePath(), 'logs');
-  private readonly path = join(this.root, `${crypto.randomUUID()}.capture`);
+  private readonly id = crypto.randomUUID();
+  private readonly path = join(this.root, `${this.id}.capture`);
   private offset = 0;
   private error?: string;
   private timer?: ReturnType<typeof setInterval>;
@@ -105,7 +106,7 @@ export class Capture {
         const timestamp = new Date().toISOString().replace(/[-:.]/g, '');
         path = join(
           directory,
-          `${timestamp}-${this.identity.key?.slice(0, 8) ?? 'no-key'}-${outcome}.log`,
+          `${timestamp}-${this.id}-${this.identity.key?.slice(0, 8) ?? 'no-key'}-${outcome}.log`,
         );
         renameSync(this.path, path);
         const logs = readdirSync(directory)
