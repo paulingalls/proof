@@ -12,7 +12,7 @@ for (const dir of ['', 'packages/group/deep/']) {
     const base = {
       name: 'pkg',
       version: '1',
-      scripts: { test: 'true' },
+      scripts: { test: 'true', version: '0' },
       exports: { default: './entry', bun: './entry' },
     };
     const bytes = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
@@ -28,7 +28,7 @@ for (const dir of ['', 'packages/group/deep/']) {
     Object.assign(tasks, {
       version: { run: 'true', inputs: [{ path, json: ['version'] }] },
       both: { run: 'true', inputs: [path, { path, json: ['version'] }] },
-      other: { run: 'true', inputs: ['other.json'] },
+      other: { run: 'true', inputs: ['controls/other-package.json'] },
     });
     const cli = (args: string[], EXPECTED = original) => {
       const result = r.cli(args, { PROOF_STATE_DIR: state, EXPECTED });
@@ -41,7 +41,7 @@ for (const dir of ['', 'packages/group/deep/']) {
         ...(dir ? { 'package.json': '{"workspaces":["packages/group/*"]}' } : {}),
         [path]: original,
         [`${dir}entry.ts`]: "import './package.json';",
-        'other.json': '{"version":1}',
+        'controls/other-package.json': '{"version":1}',
       });
       expect(cli(['run'])).toContain('proof published');
       const from = r.git('rev-parse', 'HEAD');
@@ -72,7 +72,7 @@ for (const dir of ['', 'packages/group/deep/']) {
       for (const [name, content, expected] of [
         ['scripts', bytes({ ...base, scripts: { test: 'false' } }), readers],
         ['custom', bytes({ ...base, custom: true }), readers],
-        ['nested', bytes({ ...base, custom: { version: '2' } }), readers],
+        ['nested', bytes({ ...base, scripts: { test: 'true', version: '2' } }), readers],
         ['layout', JSON.stringify(base), readers],
         ['order', bytes({ ...base, exports: { bun: './entry', default: './entry' } }), readers],
         ['invalid', '{"version":', [...readers, 'version', 'both']],
@@ -81,7 +81,7 @@ for (const dir of ['', 'packages/group/deep/']) {
         const to = r.commit({ [path]: content });
         cases.push({ name, from, to, expect: [...new Set([...expected, 'both'])] });
       }
-      const other = r.commit({ [path]: original, 'other.json': '{"version":2}' });
+      const other = r.commit({ [path]: original, 'controls/other-package.json': '{"version":2}' });
       cases.push({ name: 'other JSON', from, to: other, expect: ['other'] });
       const result = r.check(cases);
       expect(result.code, result.err + result.out).toBe(0);
