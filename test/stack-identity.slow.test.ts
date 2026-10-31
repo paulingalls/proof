@@ -61,7 +61,7 @@ test('dotenv declarations validate fields, exclusions, projections and checkout 
     expect(r.err).toContain(diagnostic);
   }
   const f = fixture([{ dotenv: '.env.docker' }]);
-  expect(success(f.cli('lint'))).toContain('');
+  expect(f.cli('lint').code).toBe(0);
   f.repo.write('.env.docker', 'FLAG=one');
   expect(f.cli('lint').code).toBe(0);
 });
@@ -168,7 +168,9 @@ test('checkout dotenv values key alone, canonicalize, explain and stay secret in
   expect(cli('run', '--fresh')).toContain('green gate');
   f.repo.commit({ 'proof.yaml': declaration(['unrelated']) });
   rmSync(join(f.repo.path, '.env.docker'));
-  expect(cli('why', 'gate')).toContain('changed env .env.docker:FLAG');
+  const explained = cli('why', 'gate');
+  expect(explained).toContain('changed env .env.docker:FLAG');
+  expect(explained).not.toContain('proof undecidable');
 });
 
 test('missing, malformed and symlink dotenv inputs run undecidable without publication or leaks', () => {
