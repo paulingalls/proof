@@ -91,6 +91,8 @@ The package has its own tests for its own behaviour, on synthetic repos it build
     changed. Under `run --staged`, a version-only index retains the key its commit will have.
   - Paul, 2026-10-31, relayed through app-a's lead: "If it's referenced by everything, then
     you only need to test a couple things to verify it. If it works there, it works everywhere."
+    Confirmed directly: a common dependency's change is verified by a couple of tests of items
+    using it, which validate that its contract still works.
     Root `unkeyed: [paths/globs]` excludes matching files from every task's key, including
     projections and files reached through `imports-of` and `maestro`; task `keyed` restores
     their existing contributions for representatives. Traversal continues through excluded
