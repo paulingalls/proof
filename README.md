@@ -212,6 +212,29 @@ and stderr appear together on stdout when it finishes, under `--- <task>`; summa
 in declared order. Output is never saved in the proof store. Providers start once, all
 dependents await readiness, and teardown waits for their running and pending users.
 
+Resource lanes add a limit within `--jobs`. For example, after creating an `input` file:
+
+```yaml
+version: 1
+project: lane-example
+lanes: {ios: 2}
+tasks:
+  simulator: {run: echo simulator, inputs: [input], lane: ios}
+  exclusive: {run: echo exclusive, inputs: [input], lane: solo}
+```
+
+Commit the declaration and input, then run `proof run --jobs 3`. At most two `ios` tasks
+can occupy the run at once; a task without `lane` is bound only by `--jobs`. Tasks are
+admitted in declared order, skipping lanes at capacity. A waiting `solo` stops admission
+of later tasks until earlier tasks drain, then occupies the run alone. `solo` is reserved
+and needs no declaration. Declaring it in root `lanes`, naming an undeclared lane, or
+using a limit other than a positive safe integer is a declaration error (exit 2).
+
+Lanes and limits are read once when the run starts. Like task sets, they do not enter
+proof identity: changing them preserves proofs, except for a task selecting `proof.yaml`,
+whose bytes enter its key. Limits apply per `proof run`; separate invocations do not share
+capacity. Per-host locking across clones (design §4.11) remains a milestone Candidate.
+
 The first interrupt signals every active task and provider-start process group; a second
 kills every active group, including teardown. Interrupted tasks record incomplete. A sandbox
 failure cancels and drains siblings before returning the error; `--fresh` instead records
@@ -417,54 +440,7 @@ both `commit` and `push`; `test-slow` belongs to `push`. Each sandbox holds only
 files its command reads. Coverage makes `proof lint` reject unowned source, script
 and test files.
 
-```yaml
-version: 1
-project: proof
-inputs:
-  code:
-    - src/**
-    - test/**
-    - scripts/**
-    - package.json
-    - bun.lock
-    - tsconfig.json
-tasks:
-  lint:
-    run: bun run lint
-    inputs: [$code, biome.json, .gitignore]
-    links: [node_modules]
-    sets: [commit, push]
-  typecheck:
-    run: bun run typecheck
-    inputs: [$code]
-    links: [node_modules]
-    sets: [commit, push]
-  test-fast:
-    run: bun run test-fast
-    inputs:
-      - src/**
-      - test/**/*.test.ts
-      - '!test/**/*.slow.test.ts'
-      - test/support/repo.ts
-      - test/support/suite.ts
-      - package.json
-      - tsconfig.json
-      - proof.yaml
-    sets: [commit, push]
-  test-slow:
-    run: bun run test-slow
-    inputs:
-      - src/**
-      - test/**/*.slow.test.ts
-      - test/support/repo.ts
-      - test/support/postgres.ts
-      - test/support/jobs.ts
-      - package.json
-      - tsconfig.json
-      - docs/store.md
-    sets: [push]
-coverage: [src/**, scripts/**, test/**]
-```
+See [proof.yaml](proof.yaml) for the declarations.
 
 The ordered pre-commit hook scans secrets, then runs:
 

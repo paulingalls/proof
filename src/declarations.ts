@@ -17,6 +17,7 @@ export type Task = {
   links?: string[];
   needs?: string[];
   sets?: string[];
+  lane?: string;
 };
 
 export function mapping(value: unknown, context: string): Record<string, unknown> {
@@ -84,7 +85,17 @@ export function declarations(tree: RefTree, working = false) {
     fields(
       doc,
       root
-        ? ['version', 'project', 'inputs', 'tasks', 'include', 'coverage', 'exempt', 'providers']
+        ? [
+            'version',
+            'project',
+            'inputs',
+            'tasks',
+            'include',
+            'coverage',
+            'exempt',
+            'providers',
+            'lanes',
+          ]
         : ['inputs', 'tasks'],
       context,
     );
@@ -107,7 +118,7 @@ export function declarations(tree: RefTree, working = false) {
       const label = `${context} task '${id}'`;
       if (tasks.has(id)) throw new Error(`${label}: duplicate task '${id}'`);
       const task = mapping(value, label);
-      fields(task, ['run', 'inputs', 'env', 'links', 'needs', 'sets'], label);
+      fields(task, ['run', 'inputs', 'env', 'links', 'needs', 'sets', 'lane'], label);
       let membership: string[] | undefined;
       if ('sets' in task) {
         if (!Array.isArray(task.sets)) throw new Error(`${label}: sets must be a list`);
@@ -147,11 +158,22 @@ export function declarations(tree: RefTree, working = false) {
         links,
         needs,
         sets: membership,
+        lane: 'lane' in task ? text(task.lane, `${label} lane`) : undefined,
       });
     }
     return doc;
   }
   const root = read('proof.yaml', true);
+  const lanes = new Map<string, number>();
+  for (const [name, limit] of Object.entries(
+    mapping('lanes' in root ? root.lanes : {}, 'proof.yaml lanes'),
+  )) {
+    const label = `proof.yaml lane '${text(name, 'lane name')}'`;
+    if (name === 'solo') throw new Error(`${label}: reserved`);
+    if (typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < 1)
+      throw new Error(`${label}: expected a positive safe integer`);
+    lanes.set(name, limit);
+  }
   const providers = new Map<string, Provider>();
   for (const [name, value] of Object.entries(
     mapping('providers' in root ? root.providers : {}, 'proof.yaml providers'),
@@ -189,6 +211,8 @@ export function declarations(tree: RefTree, working = false) {
   }
   for (const [name, set] of sets) expand(set, contexts.get(name) as string, [name]);
   for (const [id, task] of tasks) {
+    if (task.lane !== undefined && task.lane !== 'solo' && !lanes.has(task.lane))
+      throw new Error(`task '${id}': unknown lane '${task.lane}'`);
     task.inputs = expand(task.inputs, `ref '${tree.ref}' task '${id}'`);
     for (const name of task.needs ?? [])
       if (!providers.has(name)) throw new Error(`task '${id}': unknown provider '${name}'`);
@@ -211,6 +235,7 @@ export function declarations(tree: RefTree, working = false) {
     project: text(root.project, 'proof.yaml project'),
     tasks,
     providers,
+    lanes,
     coverage,
     exempt,
     include: 'include' in root ? text(root.include, 'proof.yaml include') : undefined,
