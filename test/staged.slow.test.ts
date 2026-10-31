@@ -298,7 +298,9 @@ git add proof.yaml input packages/shared/package.json\n`,
     { task: 'first', outcome: 'green', commit: `${parent} (staged)` },
     { task: 'second', outcome: 'green', commit: `${parent} (staged)` },
   ]);
-  expect(run.out).toContain("no proof published: provider can see unstaged 'input'");
+  expect(run.out).toContain(
+    "no proof published: provider can see unstaged 'packages/shared/package.json'",
+  );
   expect(f.rows('proofs')).toEqual([]);
 });
 
@@ -362,6 +364,48 @@ for (const ignored of [false, true]) {
     rmSync(join(f.repo.path, 'input-extra'));
     expect(f.cli('run', '--set', 'push').out).toContain('green gate; proof published');
     expect(f.cli('plan', '--set', 'push').out).toContain('PROVEN gate');
+  });
+}
+
+for (const shared of [false, true]) {
+  test(`provider startup mismatch survives restoration; later dependent=${shared}`, () => {
+    const f = fixture();
+    const gate = {
+      run: `test "$(cat '${f.control}/served')" = good`,
+      inputs: ['input'],
+      needs: ['service'],
+    };
+    const tasks = shared
+      ? { first: { run: 'true', inputs: ['stable'], needs: ['service'] }, gate }
+      : { gate };
+    f.repo.commit({
+      'proof.yaml': f.document(tasks, {
+        providers: { service: { start: `cp input '${f.control}/served'; git restore input` } },
+      }),
+      input: 'bad',
+      stable: 'unchanged',
+    });
+    f.repo.write('input', 'good');
+    const earned = f.cli('run', '--staged');
+    expect(earned.code, earned.err).toBe(0);
+    expect(earned.out).toContain(
+      "green gate; no proof published: provider can see unstaged 'input'",
+    );
+    expect(f.rows('proofs').filter((row) => row.task === 'gate')).toEqual([]);
+    expect(f.repo.git('status', '--porcelain')).toBe('');
+    expect(f.cli('run').code).toBe(1);
+
+    f.repo.commit({ input: 'good' });
+    expect(f.cli('run').code).toBe(0);
+    expect(f.cli('record', 'gate', '--outcome', 'red').code).toBe(0);
+    f.repo.write('input', 'bad');
+    const red = f.cli('run', '--staged');
+    expect(red.code, red.err).toBe(1);
+    expect(red.out).toContain("red gate; no proof published: provider can see unstaged 'input'");
+    expect(f.rows('proofs').filter((row) => row.task === 'gate')).toHaveLength(1);
+    expect(f.rows('contradictions')).toHaveLength(1);
+    expect(f.repo.git('status', '--porcelain')).toBe('');
+    expect(f.cli('run').out).toContain('green gate; proof published');
   });
 }
 

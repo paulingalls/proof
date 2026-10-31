@@ -91,6 +91,7 @@ export async function run(args: string[]) {
       summary.push(message);
     },
   );
+  const providerMismatches = new Map<string, string>();
   try {
     const preview = new Map<string, string>();
     const initial = snapshot ?? currentTree();
@@ -143,6 +144,15 @@ export async function run(args: string[]) {
           if (interrupted) break;
           const provider = view.providers.get(name);
           if (!provider) throw new Error(`unknown provider '${name}'`);
+          if (staged && !providers.attempted([name])) {
+            for (const dependent of ids.slice(index)) {
+              const selected = view.tasks.get(dependent);
+              if (!selected?.needs?.includes(name)) continue;
+              const mismatch = providerMismatch(selected, view.tree);
+              if (mismatch && !providerMismatches.has(dependent))
+                providerMismatches.set(dependent, mismatch);
+            }
+          }
           started ||= !providers.attempted([name]);
           await providers.start(name, provider);
         }
@@ -221,7 +231,10 @@ export async function run(args: string[]) {
           }
         }
         // Providers run in the checkout, so one can serve bytes this snapshot doesn't hold.
-        const unstaged = staged && task.needs?.length ? providerMismatch(task, tree) : undefined;
+        const unstaged =
+          staged && task.needs?.length
+            ? (providerMismatches.get(id) ?? providerMismatch(task, tree))
+            : undefined;
         if (unstaged) unpublished = `provider can see unstaged '${unstaged}'`;
         // The command may have changed bytes without changing the dirty path names.
         const afterDirty = [...dirty];

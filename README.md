@@ -210,7 +210,9 @@ workspace resolution and sandbox inputs all use that snapshot. Unstaged and untr
 neither enter the sandbox nor block publication, with one exception: a provider runs in the
 checkout and can see unstaged bytes, so a task with `needs` publishes nothing when a selected
 input differs from the snapshot (including untracked or ignored glob matches), and its red
-contests no proof. Provider edits, including
+contests no proof. This comparison runs before provider startup for every selected dependent,
+including later tasks sharing that provider, and again after execution. A startup mismatch still
+blocks publication and contests after the checkout is restored. Provider edits, including
 changes to the index, cannot replace the captured task view. Existing link
 escape checks still apply. Proofs keep the parent commit with a ` (staged)` marker.
 
