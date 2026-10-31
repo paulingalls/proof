@@ -186,3 +186,61 @@ for (const bypass of [false, true]) {
     }
   }, 15000);
 }
+
+for (const saturated of [false, true]) {
+  test(`solo drains earlier tasks and blocks every later admission, saturated=${saturated}`, async () => {
+    const f = concurrent(saturated ? { ios: 1 } : {}, [
+      ['a', saturated ? 'ios' : undefined, 'release-a'],
+      ['b', saturated ? 'ios' : undefined, 'release-b'],
+      ['solo', 'solo', 'release-solo'],
+      ['d'],
+      ['e'],
+      ['f'],
+    ]);
+    const running = spawn(f, '--jobs', '3');
+    try {
+      await f.entered('a', ...(saturated ? [] : ['b']));
+      await Bun.sleep(300);
+      expect(
+        f
+          .events()
+          .map(([id]) => id)
+          .sort(),
+      ).toEqual(saturated ? ['a'] : ['a', 'b']);
+      f.mark('release-a');
+      await f.entered('b');
+      await until(() => f.events().some(([id, kind]) => id === 'a' && kind === 'exit'));
+      await Bun.sleep(300);
+      expect(
+        f
+          .events()
+          .filter(([, kind]) => kind === 'enter')
+          .map(([id]) => id)
+          .sort(),
+      ).toEqual(['a', 'b']);
+      f.mark('release-b');
+      await f.entered('solo');
+      await Bun.sleep(300);
+      expect(f.events().slice(-2)).toEqual([
+        ['b', 'exit'],
+        ['solo', 'enter'],
+      ]);
+      f.mark('release-solo');
+      await f.entered('d', 'e', 'f');
+      const events = f.events();
+      const soloExit = events.findIndex(([id, kind]) => id === 'solo' && kind === 'exit');
+      expect(soloExit).toBeGreaterThan(0);
+      expect(
+        events
+          .slice(soloExit + 1)
+          .map(([id]) => id)
+          .sort(),
+      ).toEqual(['d', 'e', 'f']);
+      f.mark('release');
+      expect((await finish(f, running)).ids).toEqual(['a', 'b', 'd', 'e', 'f', 'solo']);
+    } finally {
+      for (const name of ['release-a', 'release-b', 'release-solo', 'release']) f.mark(name);
+      await stop(running.child);
+    }
+  }, 15000);
+}
