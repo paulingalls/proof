@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite';
 import { afterAll, afterEach, beforeAll, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { output, Postgres, waitFor } from './support/postgres';
@@ -154,6 +154,32 @@ for (const remote of [false, true]) {
     }
   }, 30_000);
 }
+
+test('a task whose sandbox cannot be built fails alone in fresh and aborts ordinary run', () => {
+  const repo = new Repo();
+  repos.push(repo);
+  const env = { PROOF_STATE_DIR: directory(), TMPDIR: directory() };
+  symlinkSync('a.txt', join(repo.path, 'link'));
+  repo.commit({
+    'a.txt': 'a',
+    'proof.yaml': JSON.stringify({
+      version: 1,
+      project: 'fresh',
+      tasks: {
+        broken: { run: 'true', inputs: ['link'] },
+        later: { run: 'true', inputs: ['a.txt'] },
+        unproven: { run: 'echo unproven', inputs: ['link'] },
+      },
+    }),
+  });
+  expect(repo.cli(['record', 'broken', '--outcome', 'green'], env).code).toBe(0);
+  const fresh = repo.cli(['run', '--fresh'], env);
+  expect(fresh.code).toBe(1);
+  expect(fresh.out).toContain('incomplete broken; sandbox failed: ');
+  expect(fresh.out).toContain('green later; proof published');
+  expect(repo.cli(['plan'], env).out).toContain('PROVEN broken');
+  expect(repo.cli(['run', '--tasks', 'unproven'], env).code).toBe(2);
+}, 30_000);
 
 test('fresh captures dirty closure eligibility before a command removes its shadow', () => {
   const f = fixture();

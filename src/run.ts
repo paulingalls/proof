@@ -175,9 +175,16 @@ export async function run(args: string[]) {
       try {
         let seconds: number | null = null;
         let outcome: 'incomplete' | 'green' | 'red' = 'incomplete';
-        if (sandbox) {
-          sandbox.materialize(selection(task, tree, dirty), tree, dirty);
-          sandbox.link(task.links ?? [], inspection);
+        let unbuilt: string | undefined;
+        try {
+          sandbox?.materialize(selection(task, tree, dirty), tree, dirty);
+          sandbox?.link(task.links ?? [], inspection);
+        } catch (error) {
+          // Unattended, the backstop finishes every task it can; a person running `run` is told now.
+          if (!fresh) throw error;
+          unbuilt = error instanceof Error ? error.message : String(error);
+        }
+        if (sandbox && !unbuilt) {
           const env: Record<string, string> = {};
           for (const name of ['PATH', 'HOME', 'TMPDIR', ...(task.env ?? [])]) {
             const value = process.env[name];
@@ -228,7 +235,7 @@ export async function run(args: string[]) {
           if (deletedLocal) summary.push(`deleted proof local ${id} ${current.key}`);
           if (deletedShared) summary.push(`deleted proof shared ${id} ${current.key}`);
           summary.push(
-            `${outcome} ${id}${unpublished ? `; no proof published: ${unpublished}` : outcome === 'green' ? '; proof published' : ''}${sharing === 'local' ? '' : `; ${sharing}`}`,
+            `${outcome} ${id}${unbuilt ? `; sandbox failed: ${unbuilt}` : unpublished ? `; no proof published: ${unpublished}` : outcome === 'green' ? '; proof published' : ''}${sharing === 'local' ? '' : `; ${sharing}`}`,
           );
         } else
           summary.push(

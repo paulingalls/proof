@@ -211,7 +211,8 @@ A fresh red over unchanged selected inputs immediately deletes that key's stored
 records a `super` contradiction. The summary lists every red and each confirmed deletion as
 `deleted proof local <task> <key>` or `deleted proof shared <task> <key>`. Ordinary runs still
 contest a green on the first red and delete it on the second. A clean fresh green publishes
-proof, including for a contested key. Incomplete results and interrupts delete nothing.
+proof, including for a contested key. Incomplete results and interrupts delete nothing. A task whose sandbox can't be built records
+`incomplete` and the rest still run, so a scheduled run finishes; the run exits 1 and names it.
 
 A dirty tree still executes (a dirty declaration runs without recording) and records results, but says `no proof published` with a reason.
 A red over dirty selected inputs cannot delete proof of the committed bytes; unrelated dirt

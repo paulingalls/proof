@@ -7,7 +7,8 @@
   Keys change (scheme 4), so existing proofs re-prove once.
 - `plan` and `run` are far faster on dirty trees with many closures: 29 s to 0.45 s on a 250-task fixture.
 - `proof run --fresh` is the backstop: it runs every task regardless of proofs, one red never stops
-  the rest, and a fresh red deletes that green everywhere at once. Scheduling it is the repo's job.
+  the rest, and a fresh red deletes that green everywhere at once. A task whose sandbox can't be
+  built records `incomplete` and the rest continue. Scheduling it is the repo's job.
 
 ## 0.8.1
 
