@@ -205,6 +205,18 @@ proof doctor                 which store is in use, and whether it's reachable
 `run` exits 0 when every task is proven or green, 1 when a task is red/incomplete or a provider fails, 130/143 when interrupted;
 any command exits 2 on a usage, declaration or store error.
 
+`proof run --jobs 2` runs up to two tasks concurrently. `--jobs` accepts a positive safe
+integer and belongs after `--fresh` or `--staged`, before the selector. It defaults to 1,
+which preserves streaming output and declared execution order. Above 1, each task's stdout
+and stderr appear together on stdout when it finishes, under `--- <task>`; summaries stay
+in declared order. Output is never saved in the proof store. Providers start once, all
+dependents await readiness, and teardown waits for their running and pending users.
+
+The first interrupt signals every active task and provider-start process group; a second
+kills every active group, including teardown. Interrupted tasks record incomplete. A sandbox
+failure cancels and drains siblings before returning the error; `--fresh` instead records
+that task incomplete and finishes the remaining tasks.
+
 `proof run --staged` captures the index once. Declarations, includes, task selection, keys,
 workspace resolution and sandbox inputs all use that snapshot. Unstaged and untracked files
 neither enter the sandbox nor block publication, with one exception: a provider runs in the

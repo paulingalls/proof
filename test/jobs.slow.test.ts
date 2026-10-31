@@ -323,18 +323,20 @@ test('queued PROVEN task refreshes its decision before dispatch', async () => {
 
 test('staged startup remembers restored unstaged bytes for concurrent dependents', () => {
   const f = fixture(
+    { a: task('true', ['held', 'stack']), b: task('false', ['gate', 'stack']) },
     {
-      a: task('true', ['stack']),
-      b: task('false', ['stack']),
+      held: { start: `printf unstaged > input; touch scratch/held; ${wait('restored')}` },
+      gate: { start: wait('held') },
+      stack: {
+        start: `${wait('held')}; cp input scratch/seen; git show :input > input; touch scratch/restored`,
+      },
     },
-    { stack: { start: 'cp input scratch/seen; git show :input > input' } },
   );
   for (const id of ['a', 'b'])
     for (const outcome of ['green', 'red'])
       expect(f.repo.cli(['record', id, '--outcome', outcome], f.env).code).toBe(0);
   const proofs = f.rows('proofs');
   const contests = f.rows('contradictions');
-  f.repo.write('input', 'unstaged');
   const result = f.run('--staged', '--jobs', '2');
   expect(result.code, result.err + result.out).toBe(1);
   expect(f.read('seen')).toBe('unstaged');
@@ -342,4 +344,33 @@ test('staged startup remembers restored unstaged bytes for concurrent dependents
     expect(result.out).toContain(`${id}; no proof published: provider can see unstaged 'input'`);
   expect(f.rows('proofs')).toEqual(proofs);
   expect(f.rows('contradictions')).toEqual(contests);
+}, 15000);
+
+test('a declaration edit cannot release a provider still used by a running task', async () => {
+  const f = fixture(
+    {
+      a: task(`touch scratch/a; ${wait('release-a')}; test ! -f scratch/stopped`, ['stack']),
+      b: task(`touch scratch/b; ${wait('release-b')}`),
+      c: task('touch scratch/c'),
+    },
+    { stack: { start: 'true', stop: 'touch scratch/stopped' } },
+  );
+  const { child, output } = spawn(f, '--jobs', '2');
+  try {
+    await until(() => f.has('a') && f.has('b'));
+    const yaml = JSON.parse(readFileSync(join(f.repo.path, 'proof.yaml'), 'utf8'));
+    yaml.tasks.a.needs = [];
+    f.repo.write('proof.yaml', JSON.stringify(yaml));
+    f.mark('release-b');
+    await until(() => f.has('c'));
+    expect(f.has('stopped')).toBe(false);
+    f.mark('release-a');
+    const [out, err] = await output;
+    expect(await child.exited, err + out).toBe(0);
+    expect(f.has('stopped')).toBe(true);
+  } finally {
+    f.mark('release-a');
+    f.mark('release-b');
+    await stop(child);
+  }
 }, 15000);

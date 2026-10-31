@@ -12,6 +12,7 @@ import type { Store } from './store';
 type Context = {
   snapshot?: ReturnType<typeof currentTree>;
   fresh: boolean;
+  capture: boolean;
   staged: boolean;
   parent?: string;
   ids: string[];
@@ -22,12 +23,14 @@ type Context = {
   processes: RunProcesses;
   providers: Providers;
   fail: () => void;
+  retain: (needs: string[]) => void;
 };
 export async function runTask(
   id: string,
   {
     snapshot,
     fresh,
+    capture,
     staged,
     parent,
     ids,
@@ -38,13 +41,15 @@ export async function runTask(
     processes,
     providers,
     fail,
+    retain,
   }: Context,
 ) {
   const baseline = snapshot ?? currentTree();
   let view = baseline;
   let task = view.tasks.get(id);
   if (!task) throw new Error(`undeclared task '${id}'`);
-  if (processes.interrupted && !providers.attempted(task.needs ?? [])) return;
+  retain(task.needs ?? []);
+  if (processes.cancelled && !providers.attempted(task.needs ?? [])) return;
   let inspection = inspectTaskLinks(task, view.tree, view.dirty);
   let decision = await decide(
     id,
@@ -57,7 +62,7 @@ export async function runTask(
     inspection,
     fresh,
   );
-  if (processes.interrupted && !providers.attempted(task.needs ?? [])) return;
+  if (processes.cancelled && !providers.attempted(task.needs ?? [])) return;
   const printRevision = () => {
     const rendered = renderDecision(decision);
     if (preview.get(id) !== rendered) console.log(rendered);
@@ -65,9 +70,9 @@ export async function runTask(
   };
   printRevision();
   let started = false;
-  if (decision.state !== 'PROVEN' && !processes.interrupted) {
+  if (decision.state !== 'PROVEN' && !processes.cancelled) {
     for (const name of task.needs ?? []) {
-      if (processes.interrupted) break;
+      if (processes.cancelled) break;
       const provider = view.providers.get(name);
       if (!provider) throw new Error(`unknown provider '${name}'`);
       if (staged && !providers.attempted([name])) {
@@ -87,6 +92,7 @@ export async function runTask(
     view = snapshot ?? currentTree();
     task = view.tasks.get(id);
     if (!task) throw new Error(`undeclared task '${id}'`);
+    retain(task.needs ?? []);
     inspection = inspectTaskLinks(task, view.tree, view.dirty);
     decision = await decide(
       id,
@@ -107,7 +113,7 @@ export async function runTask(
     return;
   }
   const blocked =
-    processes.interrupted ||
+    processes.cancelled ||
     (task.needs ?? []).map((name) => providers.ready(name)).some((ready) => !ready);
   const current = declaration
     ? { reason: `dirty declaration '${declaration}'`, key: undefined }
@@ -133,9 +139,15 @@ export async function runTask(
         if (value !== undefined) env[name] = value;
       }
       const started = performance.now();
-      const result = await processes.execute(task.run, sandbox.path, env);
+      const result = await processes.execute(
+        task.run,
+        sandbox.path,
+        env,
+        false,
+        capture ? id : undefined,
+      );
       outcome =
-        processes.interrupted || result.signal ? 'incomplete' : result.code === 0 ? 'green' : 'red';
+        processes.cancelled || result.signal ? 'incomplete' : result.code === 0 ? 'green' : 'red';
       seconds = (performance.now() - started) / 1000;
     }
     if (outcome !== 'green') fail();

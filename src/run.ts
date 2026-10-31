@@ -72,43 +72,61 @@ export async function run(args: string[]) {
       console.log(renderDecision(row));
     }
     const unfinished = new Set(ids);
-    const slots = ids.map(() => [] as string[]);
-    let next = 0;
+    const runningNeeds = new Map<string, Set<string>>();
+    const slots: string[][] = [];
+    const pending = ids.entries();
+    let fatal: { error: unknown } | undefined;
     async function worker() {
-      while (next < ids.length) {
-        const index = next++;
-        const id = ids[index];
-        if (id === undefined) break;
+      while (!processes.aborted) {
+        const next = pending.next();
+        if (next.done) break;
+        const [index, id] = next.value;
+        const taskSummary: string[] = [];
+        slots[index] = taskSummary;
         if (processes.interrupted && !providers.live()) break;
-        await runTask(id, {
-          snapshot,
-          fresh,
-          staged,
-          parent,
-          ids: [...unfinished],
-          store,
-          summary: jobs === 1 ? summary : (slots[index] ?? []),
-          preview,
-          providerMismatches,
-          processes,
-          providers,
-          fail: () => {
-            failed = true;
-          },
-        });
-        unfinished.delete(id);
-        const view = snapshot ?? currentTree();
-        await providers.stopExcept(
-          new Set([...unfinished].flatMap((later) => view.tasks.get(later)?.needs ?? [])),
-        );
+        try {
+          await runTask(id, {
+            snapshot,
+            fresh,
+            capture: jobs > 1,
+            staged,
+            parent,
+            ids: [...unfinished],
+            store,
+            summary: jobs === 1 ? summary : taskSummary,
+            preview,
+            providerMismatches,
+            processes,
+            providers,
+            retain: (needs) => {
+              const retained = runningNeeds.get(id) ?? new Set<string>();
+              for (const name of needs) retained.add(name);
+              runningNeeds.set(id, retained);
+            },
+            fail: () => {
+              failed = true;
+            },
+          });
+          unfinished.delete(id);
+          runningNeeds.delete(id);
+          if (processes.aborted) return;
+          const view = snapshot ?? currentTree();
+          await providers.stopExcept(
+            new Set(
+              [...unfinished].flatMap((later) => [
+                ...(runningNeeds.get(later) ?? view.tasks.get(later)?.needs ?? []),
+              ]),
+            ),
+          );
+        } catch (error) {
+          fatal ??= { error };
+          processes.abort();
+        }
       }
     }
-    const workers = await Promise.allSettled(
-      Array.from({ length: Math.min(jobs, ids.length) }, worker),
-    );
+    await Promise.all(Array.from({ length: Math.min(jobs, ids.length) }, worker));
     if (jobs > 1) summary.push(...slots.flat());
-    const rejected = workers.find((result) => result.status === 'rejected');
-    if (rejected?.status === 'rejected') throw rejected.reason;
+    if (fatal) throw fatal.error;
     await providers.stopExcept(new Set());
     console.log(summary.join('\n'));
     return processes.interrupted
