@@ -16,7 +16,9 @@ test('default and explicit jobs=1 preserve the serial transcript', () => {
   for (const args of [[], ['--jobs', '1']]) {
     const result = f.repo.cli(['run', ...args], { ...f.env, PROOF_STATE_DIR: f.directory() });
     const path = result.out.match(/red a; log: (.*)\n/)?.[1];
-    expect(path).toMatch(/\/logs\/jobs\/a\/\d{8}T\d{9}Z-[a-f0-9]{8}-red\.log$/);
+    expect(path).toMatch(
+      /\/logs\/jobs\/tasks\/a\/\d{8}T\d{9}Z-[a-f0-9-]{36}-[a-f0-9]{8}-red\.log$/,
+    );
     expect(readFileSync(path as string, 'utf8')).toBe('a-out\na-err\n');
     expect({ ...result, out: result.out.replace(path as string, '<log>') }).toEqual(expected);
   }
