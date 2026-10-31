@@ -64,7 +64,10 @@ test('task set boundaries, proof reuse, historical views and invalid selectors',
       '--set',
       '--set commit --set push',
     ])
-      rejected(`run ${args}`, 'usage: proof run [--fresh] [--tasks <id> ... | --set <name>]');
+      rejected(
+        `run ${args}`,
+        'usage: proof run [--fresh | --staged] [--tasks <id> ... | --set <name>]',
+      );
     expect(log()).toBe(before);
     const a = declare(
       { pending: task('pending', ['push']) },

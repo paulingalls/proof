@@ -1,8 +1,8 @@
 import { hostname } from 'node:os';
-import { declarationPaths, selectTasks } from './declarations';
-import { dirtyPaths, resolveRef } from './git';
+import { declarationPaths, declarations, selectTasks } from './declarations';
+import { dirtyPaths, RefTree, resolveRef } from './git';
 import { key, scope, selection } from './key';
-import { currentTree, decide, inspectTaskLinks, renderDecision } from './plan';
+import { currentTree, decide, inspectTaskLinks, renderDecision, STAGED_SUFFIX } from './plan';
 import { Providers } from './providers';
 import { Sandbox } from './sandbox';
 import { Store } from './store';
@@ -22,7 +22,8 @@ function signalGroup(pid: number, signal: NodeJS.Signals | 0) {
 
 export async function run(args: string[]) {
   const fresh = args[0] === '--fresh';
-  if (fresh) args = args.slice(1);
+  const staged = args[0] === '--staged';
+  if (fresh || staged) args = args.slice(1);
   const set =
     args[0] === '--set' && args.length === 2 && !args[1]?.startsWith('-') ? args[1] : undefined;
   if (
@@ -30,8 +31,13 @@ export async function run(args: string[]) {
     set === undefined &&
     (args[0] !== '--tasks' || args.length < 2 || args.slice(1).some((id) => id.startsWith('--')))
   )
-    throw new Error('usage: proof run [--fresh] [--tasks <id> ... | --set <name>]');
-  const roster = selectTasks(currentTree().tasks, set);
+    throw new Error('usage: proof run [--fresh | --staged] [--tasks <id> ... | --set <name>]');
+  const parent = staged ? resolveRef('HEAD') : undefined;
+  const captured = staged ? RefTree.index() : undefined;
+  const snapshot = captured
+    ? { tree: captured, ...declarations(captured), dirty: [], declaration: undefined }
+    : undefined;
+  const roster = selectTasks((snapshot ?? currentTree()).tasks, set);
   const requested = set === undefined ? args.slice(1) : [];
   for (const id of requested) if (!roster.has(id)) throw new Error(`undeclared task '${id}'`);
   const ids = [...roster.keys()].filter((id) => !requested.length || requested.includes(id));
@@ -86,7 +92,7 @@ export async function run(args: string[]) {
   );
   try {
     const preview = new Map<string, string>();
-    const initial = currentTree();
+    const initial = snapshot ?? currentTree();
     for (const id of ids) {
       const task = initial.tasks.get(id);
       if (!task) throw new Error(`undeclared task '${id}'`);
@@ -106,7 +112,7 @@ export async function run(args: string[]) {
     }
     for (const [index, id] of ids.entries()) {
       if (interrupted && !providers.live()) break;
-      const baseline = currentTree();
+      const baseline = snapshot ?? currentTree();
       let view = baseline;
       let task = view.tasks.get(id);
       if (!task) throw new Error(`undeclared task '${id}'`);
@@ -141,7 +147,7 @@ export async function run(args: string[]) {
         }
       }
       if (started) {
-        view = currentTree();
+        view = snapshot ?? currentTree();
         task = view.tasks.get(id);
         if (!task) throw new Error(`undeclared task '${id}'`);
         inspection = inspectTaskLinks(task, view.tree, view.dirty);
@@ -202,7 +208,7 @@ export async function run(args: string[]) {
         }
         failed ||= outcome !== 'green';
         let unpublished = baseline.dirty.length ? `dirty path '${baseline.dirty[0]}'` : undefined;
-        if (!unpublished) {
+        if (!staged && !unpublished) {
           if (resolveRef('HEAD') !== baseline.tree.commit) unpublished = 'HEAD changed';
           else {
             const changed = sandbox?.changed();
@@ -230,7 +236,7 @@ export async function run(args: string[]) {
             outcome,
             seconds,
             hostname(),
-            tree.commit,
+            staged ? `${parent}${STAGED_SUFFIX}` : tree.commit,
             unpublished !== undefined,
             dirtyInputs || key(id, task, tree, afterDirty).key === undefined,
             current.env,
