@@ -210,7 +210,7 @@ export class Store {
     }>(
       `SELECT p.key, p.env_hashes, r."commit", r.host, r.finished_at FROM proofs p JOIN results r
       ON r.id = p.result_id AND r.project = p.project AND r.task = p.task AND r.key = p.key
-      WHERE p.project = ? AND p.task = ? AND r.outcome = 'green' AND r.dirty = 0
+      WHERE p.project = ? AND p.task = ?
       ORDER BY r.finished_at DESC, p.result_id DESC LIMIT 1`,
       project,
       task,

@@ -184,8 +184,9 @@ any command exits 2 on a usage, declaration or store error.
 `proof why <task>` starts with the task's `plan` decision, then prints its current key
 parts: selected paths with Git blob ids and modes, JSON member identities, declared env names
 (without values), and the declaration hash. These parts use the files on disk, including staged
-and unstaged edits, additions, deletions and selected ignored files. Blob ids hash raw bytes;
-Git clean filters are not applied. Plan's dirty-input eligibility stays the same.
+and unstaged edits, additions, deletions and selected ignored files. Git decides whether a
+tracked path is clean, so a line-ending or LFS filter never reads as a change; blob ids of
+dirty paths hash their raw bytes. Plan's dirty-input eligibility stays the same.
 
 For example, after proving `text`, edit its input and explain it:
 
@@ -205,8 +206,8 @@ Changes list added, removed and changed paths or JSON members, changed env names
 `declaration changed` when the command or links changed. Env comparisons use stored hashes,
 never today's env as a substitute for historical values. Mode changes count too.
 
-With no differences it says `no inputs changed`; unresolved inputs print their reasons and
-available parts, and only comparable differences are reported. Older proofs say
+With no differences it says `no inputs changed`, or `no comparable inputs changed` when something
+couldn't be compared; unresolved inputs print their reasons and available parts. Older proofs say
 `env comparison unavailable` while files still compare. A pruned proof commit says
 `proof commit unavailable: <commit>` and leaves the current parts visible. A task never proven
 says `no proof for this task`. Why exits 0 for these explanations and 2 for an unknown task,

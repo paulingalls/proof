@@ -110,6 +110,9 @@ test('legacy proofs migrate without inventing env metadata and can be replaced',
   const db = new Database(join(env.PROOF_STATE_DIR, 'proof.db'));
   try {
     db.exec('ALTER TABLE proofs DROP COLUMN env_hashes; UPDATE schema_version SET version = 1');
+    const unchanged = repo.cli(['why', 'gate'], env);
+    expect(unchanged.out).toContain('env comparison unavailable');
+    expect(unchanged.out).toContain('no comparable inputs changed');
     repo.commit({ 'src/a.ts': 'changed' });
     for (let i = 0; i < 2; i++) {
       const result = repo.cli(['why', 'gate'], env);
@@ -123,6 +126,10 @@ test('legacy proofs migrate without inventing env metadata and can be replaced',
     const result = repo.cli(['why', 'gate'], env);
     expect(result.out).not.toContain('env comparison unavailable');
     expect(result.out).toContain('no inputs changed');
+    db.exec('UPDATE proofs SET env_hashes = NULL');
+    expect(repo.cli(['record', 'gate', '--outcome', 'green'], env).code).toBe(0);
+    const nulls = db.query('SELECT 1 FROM proofs WHERE env_hashes IS NULL ORDER BY rowid DESC');
+    expect(nulls.all()).toEqual([{ 1: 1 }]);
   } finally {
     db.close();
   }
@@ -162,9 +169,10 @@ test('unreachable proof commit prints current parts only; available invalid hist
   expect(broken.out).not.toContain('proof commit unavailable');
 }, 30_000);
 
-test('current parts hash raw disk bytes even when git filters consider the checkout clean', () => {
+test('git decides whether a tracked path is clean, whatever its filters or type', () => {
   const { repo, env } = fixture();
   repo.git('config', 'core.autocrlf', 'true');
+  symlinkSync('a.ts', join(repo.path, 'src/link'));
   repo.commit({ 'src/a.ts': 'export default 1;\n' });
   expect(repo.cli(['record', 'gate', '--outcome', 'green'], env).code).toBe(0);
   rmSync(join(repo.path, 'src/a.ts'));
@@ -172,10 +180,34 @@ test('current parts hash raw disk bytes even when git filters consider the check
   expect(repo.git('status', '--porcelain')).toBe('');
   const result = repo.cli(['why', 'gate'], env);
   expect(result.code).toBe(0);
-  expect(result.out).toContain(
-    `file src/a.ts 100644 ${repo.git('hash-object', '--no-filters', 'src/a.ts')}`,
-  );
+  expect(result.out).toContain(`file src/a.ts 100644 ${repo.git('rev-parse', 'HEAD:src/a.ts')}`);
+  expect(result.out).toContain(`file src/link 120000 ${repo.git('rev-parse', 'HEAD:src/link')}`);
+  expect(changes(result.out)).toEqual([]);
+  expect(result.out).toContain('no inputs changed');
+}, 30_000);
+
+test('an import into a committed gitlink is unavailable, not an added file', () => {
+  const { repo, env } = fixture([{ 'imports-of': 'src/a.ts' }]);
+  const head = repo.git('rev-parse', 'HEAD');
+  repo.git('update-index', '--add', '--cacheinfo', `160000,${head},src/sub`);
+  repo.git('commit', '-qm', 'gitlink');
+  repo.write('src/sub/a.ts', 'export default 3;');
+  repo.write('src/a.ts', "import './sub/a';");
+  const result = repo.cli(['why', 'gate'], env);
+  expect(result.code).toBe(0);
+  expect(result.out).not.toContain('src/sub/a.ts');
   expect(changes(result.out)).toEqual(['changed file src/a.ts']);
+}, 30_000);
+
+test('an unresolved input with nothing else changed claims only what was compared', () => {
+  const { repo, env } = fixture([{ 'imports-of': 'src/a.ts' }]);
+  repo.commit({ 'src/a.ts': "import './b';" });
+  expect(repo.cli(['record', 'gate', '--outcome', 'green'], env).code).toBe(0);
+  rmSync(join(repo.path, 'src/b.ts'));
+  symlinkSync('a.ts', join(repo.path, 'src/b.ts'));
+  const result = repo.cli(['why', 'gate'], env);
+  expect(changes(result.out)).toEqual([]);
+  expect(result.out).toContain('no comparable inputs changed');
 }, 30_000);
 
 test('working declarations compare semantic hashes and removed env names', () => {

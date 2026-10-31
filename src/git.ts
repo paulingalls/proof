@@ -144,8 +144,7 @@ export class WorkingTree extends RefTree {
     if (this.visited.has(path)) return super.entry(path);
     this.visited.add(path);
     const mode = this.modes.get(path);
-    if (!this.dirty.has(path) && mode && !['100644', '100755'].includes(mode))
-      return super.entry(path);
+    if (!this.dirty.has(path) && mode) return super.entry(path);
     const state = workingEntry(path);
     if (state === 'deleted') {
       this.files.delete(path);
