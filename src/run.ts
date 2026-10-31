@@ -1,6 +1,6 @@
 import { hostname } from 'node:os';
 import { declarationPaths } from './declarations';
-import { dirtyPaths, RefTree } from './git';
+import { dirtyPaths, resolveRef } from './git';
 import { key, scope, selection } from './key';
 import { currentTree, decide, inspectTaskLinks, renderDecision } from './plan';
 import { Providers } from './providers';
@@ -185,7 +185,7 @@ export async function run(args: string[]) {
         failed ||= outcome !== 'green';
         let unpublished = baseline.dirty.length ? `dirty path '${baseline.dirty[0]}'` : undefined;
         if (!unpublished) {
-          if (new RefTree('HEAD').commit !== baseline.tree.commit) unpublished = 'HEAD changed';
+          if (resolveRef('HEAD') !== baseline.tree.commit) unpublished = 'HEAD changed';
           else {
             const changed = sandbox?.changed();
             const added = dirtyPaths(
@@ -195,10 +195,12 @@ export async function run(args: string[]) {
             else if (added) unpublished = `new dirty path '${added}'`;
           }
         }
+        // The command may have changed bytes without changing the dirty path names.
+        const afterDirty = [...dirty];
         const escapes = [
           ...new Set([
             ...inspection.escapes,
-            ...inspectTaskLinks(task, tree, dirty, inspection).escapes,
+            ...inspectTaskLinks(task, tree, afterDirty, inspection).escapes,
           ]),
         ];
         if (escapes.length) unpublished = [unpublished, ...escapes].filter(Boolean).join('; ');
@@ -212,7 +214,7 @@ export async function run(args: string[]) {
             hostname(),
             tree.commit,
             unpublished !== undefined,
-            key(id, task, tree, dirty).key === undefined,
+            key(id, task, tree, afterDirty).key === undefined,
             current.env,
           );
           summary.push(

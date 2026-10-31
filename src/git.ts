@@ -13,6 +13,36 @@ function git(...args: string[]) {
   return gitBytes(...args).toString();
 }
 
+export function resolveRef(ref: string) {
+  try {
+    return git('rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`).trim();
+  } catch (error) {
+    throw new Error(`ref '${ref}': ${error}`);
+  }
+}
+
+export function* readBlobs(ids: Iterable<string>) {
+  const result = Bun.spawnSync(['git', 'cat-file', '--batch'], {
+    stdin: Buffer.from(`${[...ids].join('\n')}\n`),
+    env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
+  });
+  if (result.exitCode !== 0) throw new Error(result.stderr.toString().trim());
+  const bytes = result.stdout;
+  let offset = 0;
+  while (offset < bytes.length) {
+    const end = bytes.indexOf(10, offset);
+    if (end < 0) throw new Error('truncated git cat-file header');
+    const [id, type, size] = bytes.subarray(offset, end).toString().split(' ');
+    if (type !== 'blob') throw new Error(`git cat-file: ${id} ${type}`);
+    const length = Number(size);
+    offset = end + 1;
+    if (!Number.isSafeInteger(length) || length < 0 || bytes[offset + length] !== 10)
+      throw new Error('truncated git cat-file blob');
+    yield [id as string, bytes.subarray(offset, offset + length)] as const;
+    offset += length + 1;
+  }
+}
+
 export class RefTree {
   readonly commit: string;
   readonly files = new Map<string, string>();

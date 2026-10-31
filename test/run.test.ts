@@ -189,6 +189,65 @@ test('re-decides a previously proven later task after an earlier checkout edit',
   expect(rows(env, 'results').map((r) => r.outcome)).toEqual(['green', 'green', 'green']);
 });
 
+test('refreshes a dirty closure when its entry changes without changing dirty paths', () => {
+  const { repo, env, run } = fixture({});
+  repo.commit({
+    'proof.yaml': JSON.stringify({
+      version: 1,
+      project: 'run',
+      tasks: {
+        first: {
+          run: `printf "import './new';" > '${repo.path}/entry.ts'`,
+          inputs: [{ 'imports-of': 'entry.ts' }],
+        },
+        later: {
+          run: 'test -f new.ts && test ! -e old.ts && grep new entry.ts',
+          inputs: [{ 'imports-of': 'entry.ts' }],
+        },
+      },
+    }),
+    clean: 'clean',
+    'entry.ts': "import './base';",
+    'base.ts': 'export const base = 1;',
+    'old.ts': 'export const old = 1;',
+    'new.ts': 'export const next = 1;',
+  });
+  repo.write('entry.ts', "import './old';");
+  const dirty = repo.git('status', '--porcelain');
+  const result = run();
+  expect(result.code).toBe(0);
+  expect(result.out).toContain("RUN later: undecidable: dirty input 'entry.ts'");
+  expect(result.out).toContain('green later; no proof published');
+  expect(repo.git('status', '--porcelain')).toBe(dirty);
+  expect(rows(env, 'results').map((r) => [r.task, r.outcome, r.dirty])).toEqual([
+    ['first', 'green', 1],
+    ['later', 'green', 1],
+  ]);
+  expect(rows(env, 'proofs')).toEqual([]);
+});
+
+test('a red contests the head proof when the command removed the dirty input', () => {
+  const { repo, env, run } = fixture({});
+  repo.commit({
+    'proof.yaml': JSON.stringify({
+      version: 1,
+      project: 'run',
+      tasks: {
+        shadowed: {
+          run: `rm '${repo.path}/resolved.tsx'; exit 1`,
+          inputs: [{ 'imports-of': 'entry.ts' }],
+        },
+      },
+    }),
+    'entry.ts': "import './resolved';",
+    'resolved.js': 'export const value = 1;',
+  });
+  expect(repo.cli(['record', 'shadowed', '--outcome', 'green'], env).code).toBe(0);
+  repo.write('resolved.tsx', 'export const value = 2;');
+  expect(run().code).toBe(1);
+  expect(repo.cli(['plan'], env).out).toContain('RUN shadowed: contested');
+});
+
 test('dirty red retains the HEAD proof without a contradiction', () => {
   const { repo, env, run } = fixture({ ok: task('test "$(cat src/a.ts)" = original') });
   expect(repo.cli(['record', 'ok', '--outcome', 'green'], env).code).toBe(0);
