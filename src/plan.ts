@@ -1,5 +1,5 @@
 import type { Task } from './declarations';
-import { declarationPaths, declarations, dirtyDeclaration } from './declarations';
+import { declarationPaths, declarations, dirtyDeclaration, selectTasks } from './declarations';
 import { dirtyPaths, RefTree, resolveRef } from './git';
 import { source } from './imports';
 import { key, scope } from './key';
@@ -7,8 +7,11 @@ import { inspectLinks } from './sandbox';
 import { Store } from './store';
 import { workspaces } from './workspaces';
 
-export async function plan() {
-  return planTree(currentTree());
+export const STAGED_SUFFIX = ' (staged)';
+
+export async function plan(set?: string) {
+  const view = currentTree();
+  return planTree({ ...view, tasks: selectTasks(view.tasks, set) });
 }
 
 export async function planTree(

@@ -16,6 +16,7 @@ export type Task = {
   env?: string[];
   links?: string[];
   needs?: string[];
+  sets?: string[];
 };
 
 export function mapping(value: unknown, context: string): Record<string, unknown> {
@@ -106,7 +107,12 @@ export function declarations(tree: RefTree, working = false) {
       const label = `${context} task '${id}'`;
       if (tasks.has(id)) throw new Error(`${label}: duplicate task '${id}'`);
       const task = mapping(value, label);
-      fields(task, ['run', 'inputs', 'env', 'links', 'needs'], label);
+      fields(task, ['run', 'inputs', 'env', 'links', 'needs', 'sets'], label);
+      let membership: string[] | undefined;
+      if ('sets' in task) {
+        if (!Array.isArray(task.sets)) throw new Error(`${label}: sets must be a list`);
+        membership = [...new Set(task.sets.map((name) => text(name, `${label} set name`)))];
+      }
       let needs: string[] | undefined;
       if ('needs' in task) {
         if (!Array.isArray(task.needs)) throw new Error(`${label}: needs must be a list`);
@@ -140,6 +146,7 @@ export function declarations(tree: RefTree, working = false) {
         env,
         links,
         needs,
+        sets: membership,
       });
     }
     return doc;
@@ -218,4 +225,12 @@ export function dirtyDeclaration(dirty: string[], include: string | undefined) {
   return dirty.find(
     (path) => path === 'proof.yaml' || (include !== undefined && new Bun.Glob(include).match(path)),
   );
+}
+
+export function selectTasks(tasks: Map<string, Task>, set?: string) {
+  if (set === undefined) return tasks;
+  const known = [...new Set([...tasks.values()].flatMap((task) => task.sets ?? []))].sort();
+  if (!known.includes(set))
+    throw new Error(`unknown task set '${set}'; known sets: ${known.join(', ') || 'none'}`);
+  return new Map([...tasks].filter(([, task]) => task.sets?.includes(set)));
 }

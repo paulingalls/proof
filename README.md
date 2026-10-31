@@ -32,7 +32,7 @@ The goal: run only what a change can actually affect, and nothing extra.
 tagged release from GitHub:
 
 ```sh
-bun add -d "git+https://github.com/paulingalls/proof.git#v0.9.0"
+bun add -d "git+https://github.com/paulingalls/proof.git#v0.10.0"
 bunx proof --version
 ```
 
@@ -65,9 +65,10 @@ bunx proof plan    # PROVEN math ... / PROVEN text ...
 Edit `src/text.ts` (imported by `test/text.test.ts`) and commit: `plan` now says `RUN text` and
 keeps `math` PROVEN, and `run` runs only `text`.
 
-Proofs are published only from a clean tree. With uncommitted changes to a task's inputs, that task
-runs every time and publishes nothing, so a commit hook is safe. `pre-push` or CI, where the tree
-is clean, is where proofs get earned.
+Plain `run` publishes proofs only from a clean tree. With uncommitted changes to a task's inputs,
+that task runs every time and publishes nothing. A commit hook can use `proof run --staged`
+to prove the index instead: its green is reusable after committing those staged bytes, including
+at push or in CI.
 
 ## Declaring tasks
 
@@ -75,7 +76,7 @@ is clean, is where proofs get earned.
 version: 1
 project: my-app                # scopes proofs in a shared store
 include: proof.d/*.yaml        # optional: more files with `inputs` and `tasks`
-inputs:                        # named sets, referenced as $name
+inputs:                        # named input sets, referenced as $name
   config:
     - tsconfig.json
     - {path: package.json, json: [dependencies, devDependencies]}
@@ -86,6 +87,7 @@ tasks:
       - $config
       - {imports-of: test/math.test.ts}
       - 'fixtures/**'
+    sets: [commit, push]       # repository-owned task boundaries
     env: [CI]                  # env names that reach the task and enter its key
     links: [node_modules]      # untracked paths the sandbox links in
 coverage: ['src/**', 'scripts/**']
@@ -113,7 +115,8 @@ exempt:
   Invalid JSON and valid non-object JSON keep their whole-byte identity where the file keys whole;
   projections and resolver metadata retain their failures. Sandboxes always hold exact file bytes,
   including version. A dirty consulted manifest still runs with
-  `undecidable: dirty input '<path>'` and publishes no proof.
+  `undecidable: dirty input '<path>'` and publishes no proof in plain `run`.
+  `run --staged` consults indexed bytes, so a version-only staged edit can retain PROVEN.
   Closures no longer key `dependencies`, `devDependencies`, `scripts`, `patchedDependencies`
   or `packageManager` implicitly. Declare the members your command needs, for example
   `{path: package.json, json: [dependencies, devDependencies, patchedDependencies, packageManager, scripts]}`
@@ -180,7 +183,7 @@ its running group.
 Provider declarations and `needs` do not enter task keys. A selected file such as `proof.yaml`
 or a provider script still enters the key by its bytes. Declare the resource's relevant inputs
 on each task (a named `$stack` set can share them). Startup edits are re-evaluated before task
-execution and prevent publishing proof for the pre-start view.
+execution and prevent publishing proof for the pre-start view (under `--staged`, see below).
 
 `proof plan --json` remains an array of task decisions. RUN rows with needs also have
 `"providers":["stack"]`; their distinct union is the set a run would start. PROVEN rows and
@@ -189,10 +192,10 @@ provider-free tasks have no `providers` field. Neither plan form starts resource
 ## Commands
 
 ```
-proof plan [--json]          what must run, and why
+proof plan [--set <name>] [--json]  what must run, and why
 proof why <task>            current key parts and changes since the newest proof
-proof status --ref <ref> [--json]  proof state of every task at a committed ref
-proof run [--fresh] [--tasks <id>...]  run tasks and record each result
+proof status --ref <ref> [--set <name>] [--json]  proof state at a committed ref
+proof run [--fresh | --staged] [--tasks <id> ... | --set <name>]  run tasks and record each result
 proof record <task> --outcome green|red|incomplete [--seconds N]
 proof lint                   check declarations against the staged tree
 proof check <cases.yaml>     run a requirement suite
@@ -202,10 +205,66 @@ proof doctor                 which store is in use, and whether it's reachable
 `run` exits 0 when every task is proven or green, 1 when a task is red/incomplete or a provider fails, 130/143 when interrupted;
 any command exits 2 on a usage, declaration or store error.
 
+`proof run --staged` captures the index once. Declarations, includes, task selection, keys,
+workspace resolution and sandbox inputs all use that snapshot. Unstaged and untracked files
+neither enter the sandbox nor block publication, with one exception: a provider runs in the
+checkout and can see unstaged bytes, so a task with `needs` publishes nothing when a selected
+input differs from the snapshot (including untracked or ignored glob matches), and its red
+contests no proof. This comparison runs before provider startup for every selected dependent,
+including later tasks sharing that provider, and again after execution. A startup mismatch still
+blocks publication and contests after the checkout is restored. Provider edits, including
+changes to the index, cannot replace the captured task view. Existing link
+escape checks still apply. Proofs keep the parent commit with a ` (staged)` marker.
+
+For the quickstart's `text` task, stage the desired edit before running the hook:
+
+```sh
+git add src/text.ts
+# Further edits to src/text.ts can remain unstaged.
+bunx proof run --staged
+# With sets: [commit] declared on the task:
+bunx proof run --staged --set commit
+git commit -m "Proven staged change"
+bunx proof plan
+bunx proof run
+bunx proof why text
+```
+
+After commit, `plan` and `run` report PROVEN for the committed inputs without executing again.
+If an unstaged input edit remains, plain `plan` reports `dirty input`; restore or commit it
+before expecting PROVEN. A different committed input gets its own key.
+
+A missing indexed input stays absent even if a file exists on disk. For example, with
+`{path: absent.json, json: [value]}` declared but absent from the index, `proof run --staged`
+reports the missing input and `not recorded`; a task reading it fails. An unmerged index exits 2
+and names the unmerged paths. Stage the resolution to run before completing the merge commit.
+`proof run --staged --fresh` and `proof run --fresh --staged` both exit 2 with usage.
+`why` prints current parts and staged provenance, then
+`historical comparison unavailable: staged proof`: the parent is not the proven tree.
+
 `proof run --fresh` executes every task even when its key is already proven, in the same
 sandboxes and with the same providers as an ordinary run. Select a subset with
-`proof run --fresh --tasks first second`. Providers start once for selected dependents,
+`proof run --fresh --tasks first second` or `proof run --fresh --set commit`.
+Only selected tasks execute, even when other sets have proofs. Providers start once for selected dependents,
 including proven ones. A red does not stop later tasks; each result is recorded independently.
+
+Task `sets` are arbitrary names owned by the repository, separate from the named `$input` sets.
+A task can belong to several sets; a selected run considers it once. A task with missing or
+empty `sets` belongs to no set. Plain `plan` and `run` include every task, including unassigned tasks.
+`plan` and `run` select membership from the current working declarations; `status` selects it
+from the requested ref. For the declaration above:
+
+```sh
+bunx proof plan --set push --json
+bunx proof run --set commit
+bunx proof run --fresh --set commit
+bunx proof status --set push --ref HEAD --json
+```
+
+An ordinary selected run skips PROVEN tasks. An unknown set exits 2 and names the known sets
+(or `none`). Combining `--set` and `--tasks` also exits 2 before executing anything.
+Membership itself does not enter proof identity: moving a task between sets preserves its proof.
+If a declaration file is explicitly selected as a task input, its bytes still enter that task's key.
 
 A fresh red over unchanged selected inputs immediately deletes that key's stored green and
 records a `super` contradiction. The summary lists every red and each confirmed deletion as
@@ -261,7 +320,7 @@ cannot be reconstructed also fails with exit 2, after printing current parts. Th
 is authoritative while online; an unreachable store announces fallback once and uses only this
 machine's own proofs.
 
-`proof status --ref <ref> [--json]` judges every task using that ref's committed
+`proof status --ref <ref> [--set <name>] [--json]` judges selected tasks using that ref's committed
 `proof.yaml`, included declarations and input bytes, plus the caller's declared env values.
 It resolves branches, commit ids, lightweight tags and annotated tags without checking out the
 ref, running tasks or starting providers. Uncommitted edits and installed dependencies do not
@@ -274,8 +333,8 @@ bunx proof status --ref release --json
 
 Rows use the same format as `plan`: PROVEN names the proof's commit, host and time; RUN explains
 `no proof for key`, a contested proof or an undecidable key. JSON has the same row shape as
-`plan --json`. Status exits 0 when every task is PROVEN (including a ref with no tasks), 1 when
-any task is RUN, and 2 for an unknown ref, invalid declarations, usage or store error. An
+`plan --json`. Status exits 0 when every selected task is PROVEN (including a ref with no tasks), 1 when
+any selected task is RUN, and 2 for an unknown ref, invalid declarations, usage or store error. An
 unreachable store uses the local replica and reports the fallback on stderr, keeping JSON
 stdout parseable.
 
@@ -338,6 +397,97 @@ suite. The shape, using Docker and [Tailscale](https://tailscale.com):
 If the store is unreachable, `proof` says so and uses that machine's own proofs; results recorded
 meanwhile aren't uploaded later. The store holds metadata only (task, key, outcome, host, timings, per-name env hashes),
 never logs or output. It's a cache: losing it costs re-runs, never correctness.
+
+## How this repo uses proof
+
+This repository declares four real tasks. `lint`, `typecheck` and `test-fast` belong to
+both `commit` and `push`; `test-slow` belongs to `push`. Each sandbox holds only the
+files its command reads. Coverage makes `proof lint` reject unowned source, script
+and test files.
+
+```yaml
+version: 1
+project: proof
+inputs:
+  code:
+    - src/**
+    - test/**
+    - scripts/**
+    - package.json
+    - bun.lock
+    - tsconfig.json
+tasks:
+  lint:
+    run: bun run lint
+    inputs: [$code, biome.json, .gitignore]
+    links: [node_modules]
+    sets: [commit, push]
+  typecheck:
+    run: bun run typecheck
+    inputs: [$code]
+    links: [node_modules]
+    sets: [commit, push]
+  test-fast:
+    run: bun run test-fast
+    inputs:
+      - src/**
+      - test/**/*.test.ts
+      - '!test/**/*.slow.test.ts'
+      - test/support/repo.ts
+      - test/support/suite.ts
+      - package.json
+      - tsconfig.json
+      - proof.yaml
+    sets: [commit, push]
+  test-slow:
+    run: bun run test-slow
+    inputs:
+      - src/**
+      - test/**/*.slow.test.ts
+      - test/support/repo.ts
+      - test/support/postgres.ts
+      - package.json
+      - tsconfig.json
+      - docs/store.md
+    sets: [push]
+coverage: [src/**, scripts/**, test/**]
+```
+
+The ordered pre-commit hook scans secrets, then runs:
+
+```sh
+bun --no-env-file src/cli.ts lint
+bun --no-env-file src/cli.ts run --staged --set commit
+```
+
+The pre-push hook scans outgoing commits for secrets with Git's ref-update stdin,
+then runs:
+
+```sh
+bun --no-env-file src/cli.ts run --set push
+```
+
+A cold commit executes lint, typecheck and fast tests. Push reuses those staged
+proofs after commit and executes only slow tests; the next push reuses all four.
+With proofs seeded, a README-only commit runs no task. Editing `docs/store.md`
+selects slow tests because they execute its setup example. Test edits rerun lint
+and typecheck; fast and slow test inventories select their respective test task.
+The sprint gate retains `bun install --frozen-lockfile`.
+
+Measured on this arm64 Mac with Bun 1.4.4 on October 30, 2026, using installed
+hooks and an isolated SQLite store. Times include secret scanning and declaration
+lint where applicable; load is the starting one-minute load average.
+
+| Hook | Seconds | Load | Commands executed |
+| --- | ---: | ---: | --- |
+| Cold commit | 32.03 | 76.54 | lint, typecheck, test-fast (71 tests) |
+| Cold push after commit | 65.98 | 69.25 | test-slow (204 tests) |
+| Warm commit | 0.43 | 71.80 | none |
+| Warm push | 0.70 | 114.94 | none |
+
+A separate README-only commit and push took 0.48 s and 2.35 s at load 107.98,
+executing no task. Store result counts stayed at one per task across all these
+runs. These are observations on a shared machine, not timing guarantees.
 
 ## Status
 
