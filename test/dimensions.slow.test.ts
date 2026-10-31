@@ -23,7 +23,7 @@ function fixture(source = doc({ tool: 'printf demo' })) {
   };
   const rows = (table = 'proofs') => {
     using db = new Database(join(env.PROOF_STATE_DIR, 'proof.db'));
-    return db.query(`SELECT * FROM ${table}`).all() as Record<string, unknown>[];
+    return db.query(`SELECT * FROM ${table} ORDER BY task`).all() as Record<string, unknown>[];
   };
   return { repo, cli, rows };
 }
