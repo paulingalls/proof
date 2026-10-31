@@ -195,7 +195,7 @@ provider-free tasks have no `providers` field. Neither plan form starts resource
 proof plan [--set <name>] [--json]  what must run, and why
 proof why <task>            current key parts and changes since the newest proof
 proof status --ref <ref> [--set <name>] [--json]  proof state at a committed ref
-proof run [--fresh | --staged] [--tasks <id> ... | --set <name>]  run tasks and record each result
+proof run [--fresh | --staged] [--jobs N] [--tasks <id> ... | --set <name>]  run tasks and record each result
 proof record <task> --outcome green|red|incomplete [--seconds N]
 proof lint                   check declarations against the staged tree
 proof check <cases.yaml>     run a requirement suite
@@ -204,6 +204,18 @@ proof doctor                 which store is in use, and whether it's reachable
 
 `run` exits 0 when every task is proven or green, 1 when a task is red/incomplete or a provider fails, 130/143 when interrupted;
 any command exits 2 on a usage, declaration or store error.
+
+`proof run --jobs 2` runs up to two tasks concurrently. `--jobs` accepts a positive safe
+integer and belongs after `--fresh` or `--staged`, before the selector. It defaults to 1,
+which preserves streaming output and declared execution order. Above 1, each task's stdout
+and stderr appear together on stdout when it finishes, under `--- <task>`; summaries stay
+in declared order. Output is never saved in the proof store. Providers start once, all
+dependents await readiness, and teardown waits for their running and pending users.
+
+The first interrupt signals every active task and provider-start process group; a second
+kills every active group, including teardown. Interrupted tasks record incomplete. A sandbox
+failure cancels and drains siblings before returning the error; `--fresh` instead records
+that task incomplete and finishes the remaining tasks.
 
 `proof run --staged` captures the index once. Declarations, includes, task selection, keys,
 workspace resolution and sandbox inputs all use that snapshot. Unstaged and untracked files
@@ -446,6 +458,7 @@ tasks:
       - test/**/*.slow.test.ts
       - test/support/repo.ts
       - test/support/postgres.ts
+      - test/support/jobs.ts
       - package.json
       - tsconfig.json
       - docs/store.md
@@ -464,7 +477,7 @@ The pre-push hook scans outgoing commits for secrets with Git's ref-update stdin
 then runs:
 
 ```sh
-bun --no-env-file src/cli.ts run --set push
+bun --no-env-file src/cli.ts run --jobs 2 --set push
 ```
 
 A cold commit executes lint, typecheck and fast tests. Push reuses those staged
@@ -474,20 +487,30 @@ selects slow tests because they execute its setup example. Test edits rerun lint
 and typecheck; fast and slow test inventories select their respective test task.
 The sprint gate retains `bun install --frozen-lockfile`.
 
-Measured on this arm64 Mac with Bun 1.4.4 on October 30, 2026, using installed
-hooks and an isolated SQLite store. Times include secret scanning and declaration
-lint where applicable; load is the starting one-minute load average.
+Measured once per workload and job count on this arm64 Mac with Bun 1.4.4 on
+October 30, 2026 (PDT), at tree/index `6a1e482`. Each cold workload used an empty
+isolated SQLite store and configuration; push after commit reused that job count's
+staged commit proofs. These CLI workload times exclude hook secret scanning and the
+pre-commit declaration lint. Suite parallelism stayed unchanged: 71 fast and 225 slow tests.
 
-| Hook | Seconds | Load | Commands executed |
-| --- | ---: | ---: | --- |
-| Cold commit | 32.03 | 76.54 | lint, typecheck, test-fast (71 tests) |
-| Cold push after commit | 65.98 | 69.25 | test-slow (204 tests) |
-| Warm commit | 0.43 | 71.80 | none |
-| Warm push | 0.70 | 114.94 | none |
+Commands measured with `N=1` and `N=2`:
 
-A separate README-only commit and push took 0.48 s and 2.35 s at load 107.98,
-executing no task. Store result counts stayed at one per task across all these
-runs. These are observations on a shared machine, not timing guarantees.
+```sh
+bun --no-env-file src/cli.ts run --staged --jobs N --set commit
+bun --no-env-file src/cli.ts run --jobs N --set push
+```
+
+| Workload | Jobs 1 seconds | Jobs 2 seconds | Starting load, 1 / 2 | RUN tasks |
+| --- | ---: | ---: | ---: | --- |
+| Cold commit | 29.57 | 32.58 | 179.08 / 29.42 | lint, typecheck, test-fast |
+| Cold push | 77.19 | 54.16 | 68.55 / 22.04 | lint, typecheck, test-fast, test-slow |
+| Push after staged commit proofs | 47.45 | 55.37 | 123.25 / 22.83 | test-slow |
+
+All six runs exited green with the listed result rows. Commit keeps the default one job
+because two did not improve its measurement. Push uses two based on the cold-push reduction.
+After staged proofs, only one RUN task remains and the two-job measurement was slower.
+Feedback from these runs guides the hook choice; the changing shared-host load prevents a
+controlled speedup claim. These observations are not timing guarantees.
 
 ## Status
 

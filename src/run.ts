@@ -1,30 +1,24 @@
-import { hostname } from 'node:os';
-import { declarationPaths, declarations, selectTasks } from './declarations';
-import { dirtyPaths, RefTree, resolveRef } from './git';
-import { key, scope, selection } from './key';
-import { currentTree, decide, inspectTaskLinks, renderDecision, STAGED_SUFFIX } from './plan';
-import { providerMismatch } from './provider-inputs';
+import { declarations, selectTasks } from './declarations';
+import { RefTree, resolveRef } from './git';
+import { currentTree, decide, renderDecision } from './plan';
 import { Providers } from './providers';
-import { Sandbox } from './sandbox';
+import { RunProcesses } from './run-process';
+import { runTask } from './run-task';
 import { Store } from './store';
-
-function signalGroup(pid: number, signal: NodeJS.Signals | 0) {
-  try {
-    process.kill(-pid, signal);
-    return true;
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    // macOS answers EPERM while the group's only members are zombies awaiting their reaper.
-    if (code === 'EPERM') return true;
-    if (code !== 'ESRCH') throw error;
-    return false;
-  }
-}
 
 export async function run(args: string[]) {
   const fresh = args[0] === '--fresh';
   const staged = args[0] === '--staged';
   if (fresh || staged) args = args.slice(1);
+  const usage =
+    'usage: proof run [--fresh | --staged] [--jobs N] [--tasks <id> ... | --set <name>]';
+  let jobs = 1;
+  if (args[0] === '--jobs') {
+    const value = args[1] ?? '';
+    jobs = Number(value);
+    if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(jobs)) throw new Error(usage);
+    args = args.slice(2);
+  }
   const set =
     args[0] === '--set' && args.length === 2 && !args[1]?.startsWith('-') ? args[1] : undefined;
   if (
@@ -32,7 +26,7 @@ export async function run(args: string[]) {
     set === undefined &&
     (args[0] !== '--tasks' || args.length < 2 || args.slice(1).some((id) => id.startsWith('--')))
   )
-    throw new Error('usage: proof run [--fresh | --staged] [--tasks <id> ... | --set <name>]');
+    throw new Error(usage);
   const parent = staged ? resolveRef('HEAD') : undefined;
   const captured = staged ? RefTree.index() : undefined;
   const snapshot = captured
@@ -45,45 +39,10 @@ export async function run(args: string[]) {
   const store = await Store.open();
   const summary: string[] = [];
   let failed = false;
-  let interrupted: 'SIGINT' | 'SIGTERM' | undefined;
-  let active: ReturnType<typeof Bun.spawn> | undefined;
-  let cleanup = false;
-  const interrupt = (signal: 'SIGINT' | 'SIGTERM') => {
-    // A shell's `&` jobs start with SIGINT ignored, so a second interrupt must be able to end them.
-    if (interrupted) {
-      if (active) signalGroup(active.pid, 'SIGKILL');
-      return;
-    }
-    interrupted = signal;
-    if (active && !cleanup) signalGroup(active.pid, signal);
-  };
-  const onInt = () => interrupt('SIGINT');
-  const onTerm = () => interrupt('SIGTERM');
-  process.on('SIGINT', onInt);
-  process.on('SIGTERM', onTerm);
-  async function execute(command: string, cwd: string, env = process.env, stopping = false) {
-    cleanup = stopping;
-    const child = Bun.spawn(['sh', '-c', command], {
-      detached: true,
-      cwd,
-      env,
-      stdout: 'inherit',
-      stderr: 'inherit',
-    });
-    active = child;
-    try {
-      const code = await child.exited;
-      // A shell may exit before its foreground child has finished handling the signal.
-      if (interrupted && !stopping) while (signalGroup(child.pid, 0)) await Bun.sleep(10);
-      return { code, signal: child.signalCode };
-    } finally {
-      active = undefined;
-      cleanup = false;
-    }
-  }
+  const processes = new RunProcesses();
   const providers = new Providers(
     async (command, stopping = false) => {
-      const result = await execute(command, process.cwd(), process.env, stopping);
+      const result = await processes.execute(command, process.cwd(), process.env, stopping);
       return result.code === 0 && !result.signal;
     },
     (message) => {
@@ -112,172 +71,71 @@ export async function run(args: string[]) {
       preview.set(id, renderDecision(row));
       console.log(renderDecision(row));
     }
-    for (const [index, id] of ids.entries()) {
-      if (interrupted && !providers.live()) break;
-      const baseline = snapshot ?? currentTree();
-      let view = baseline;
-      let task = view.tasks.get(id);
-      if (!task) throw new Error(`undeclared task '${id}'`);
-      if (interrupted && !providers.attempted(task.needs ?? [])) continue;
-      let inspection = inspectTaskLinks(task, view.tree, view.dirty);
-      let decision = await decide(
-        id,
-        task,
-        view.tree,
-        view.dirty,
-        view.declaration,
-        view.project,
-        store,
-        inspection,
-        fresh,
-      );
-      if (interrupted && !providers.attempted(task.needs ?? [])) continue;
-      const printRevision = () => {
-        const rendered = renderDecision(decision);
-        if (preview.get(id) !== rendered) console.log(rendered);
-        preview.set(id, rendered);
-      };
-      printRevision();
-      let started = false;
-      if (decision.state !== 'PROVEN' && !interrupted) {
-        for (const name of task.needs ?? []) {
-          if (interrupted) break;
-          const provider = view.providers.get(name);
-          if (!provider) throw new Error(`unknown provider '${name}'`);
-          if (staged && !providers.attempted([name])) {
-            for (const dependent of ids.slice(index)) {
-              const selected = view.tasks.get(dependent);
-              if (!selected?.needs?.includes(name)) continue;
-              const mismatch = providerMismatch(selected, view.tree);
-              if (mismatch && !providerMismatches.has(dependent))
-                providerMismatches.set(dependent, mismatch);
-            }
-          }
-          started ||= !providers.attempted([name]);
-          await providers.start(name, provider);
-        }
-      }
-      if (started) {
-        view = snapshot ?? currentTree();
-        task = view.tasks.get(id);
-        if (!task) throw new Error(`undeclared task '${id}'`);
-        inspection = inspectTaskLinks(task, view.tree, view.dirty);
-        decision = await decide(
-          id,
-          task,
-          view.tree,
-          view.dirty,
-          view.declaration,
-          view.project,
-          store,
-          inspection,
-          fresh,
-        );
-        printRevision();
-      }
-      const { tree, project, dirty, declaration } = view;
-      const release = () =>
-        providers.stopExcept(
-          new Set(ids.slice(index + 1).flatMap((later) => view.tasks.get(later)?.needs ?? [])),
-        );
-      if (decision.state === 'PROVEN') {
-        summary.push(`PROVEN ${id}: ${decision.reason}`);
-        await release();
-        continue;
-      }
-      const blocked =
-        interrupted ||
-        (task.needs ?? []).map((name) => providers.ready(name)).some((ready) => !ready);
-      const current = declaration
-        ? { reason: `dirty declaration '${declaration}'`, key: undefined }
-        : key(id, task, tree);
-      const dirtyInputs = fresh && key(id, task, tree, dirty).key === undefined;
-      const sandbox = blocked ? undefined : new Sandbox();
-      try {
-        let seconds: number | null = null;
-        let outcome: 'incomplete' | 'green' | 'red' = 'incomplete';
-        let unbuilt: string | undefined;
+    const unfinished = new Set(ids);
+    const runningNeeds = new Map<string, Set<string>>();
+    const slots: string[][] = [];
+    const pending = ids.entries();
+    let fatal: { error: unknown } | undefined;
+    async function worker() {
+      while (!processes.aborted) {
+        const next = pending.next();
+        if (next.done) break;
+        const [index, id] = next.value;
+        const taskSummary: string[] = [];
+        slots[index] = taskSummary;
+        if (processes.interrupted && !providers.live()) break;
         try {
-          sandbox?.materialize(selection(task, tree, dirty), tree, dirty, staged);
-          sandbox?.link(task.links ?? [], inspection);
+          await runTask(id, {
+            snapshot,
+            fresh,
+            capture: jobs > 1,
+            staged,
+            parent,
+            ids: [...unfinished],
+            store,
+            summary: jobs === 1 ? summary : taskSummary,
+            preview,
+            providerMismatches,
+            processes,
+            providers,
+            retain: (needs) => {
+              const retained = runningNeeds.get(id) ?? new Set<string>();
+              for (const name of needs) retained.add(name);
+              runningNeeds.set(id, retained);
+            },
+            fail: () => {
+              failed = true;
+            },
+          });
+          unfinished.delete(id);
+          runningNeeds.delete(id);
+          if (processes.aborted) return;
+          const view = snapshot ?? currentTree();
+          await providers.stopExcept(
+            new Set(
+              [...unfinished].flatMap((later) => [
+                ...(runningNeeds.get(later) ?? view.tasks.get(later)?.needs ?? []),
+              ]),
+            ),
+          );
         } catch (error) {
-          // Unattended, the backstop finishes every task it can; a person running `run` is told now.
-          if (!fresh) throw error;
-          unbuilt = error instanceof Error ? error.message : String(error);
+          fatal ??= { error };
+          processes.abort();
         }
-        if (sandbox && !unbuilt) {
-          const env: Record<string, string> = {};
-          for (const name of ['PATH', 'HOME', 'TMPDIR', ...(task.env ?? [])]) {
-            const value = process.env[name];
-            if (value !== undefined) env[name] = value;
-          }
-          const started = performance.now();
-          const result = await execute(task.run, sandbox.path, env);
-          outcome =
-            interrupted || result.signal ? 'incomplete' : result.code === 0 ? 'green' : 'red';
-          seconds = (performance.now() - started) / 1000;
-        }
-        failed ||= outcome !== 'green';
-        let unpublished = baseline.dirty.length ? `dirty path '${baseline.dirty[0]}'` : undefined;
-        if (!staged && !unpublished) {
-          if (resolveRef('HEAD') !== baseline.tree.commit) unpublished = 'HEAD changed';
-          else {
-            const changed = sandbox?.changed();
-            const added = dirtyPaths(
-              scope(baseline.tasks.values(), declarationPaths(baseline.include), baseline.tree),
-            ).find((path) => !baseline.dirty.includes(path));
-            if (changed) unpublished = `selected path changed '${changed}'`;
-            else if (added) unpublished = `new dirty path '${added}'`;
-          }
-        }
-        // Providers run in the checkout, so one can serve bytes this snapshot doesn't hold.
-        const unstaged =
-          staged && task.needs?.length
-            ? (providerMismatches.get(id) ?? providerMismatch(task, tree))
-            : undefined;
-        if (unstaged) unpublished = `provider can see unstaged '${unstaged}'`;
-        // The command may have changed bytes without changing the dirty path names.
-        const afterDirty = [...dirty];
-        const escapes = [
-          ...new Set([
-            ...inspection.escapes,
-            ...inspectTaskLinks(task, tree, afterDirty, inspection).escapes,
-          ]),
-        ];
-        if (escapes.length) unpublished = [unpublished, ...escapes].filter(Boolean).join('; ');
-        if (current.key !== undefined) {
-          const { sharing, deletedLocal, deletedShared } = await store.record(
-            project,
-            id,
-            current.key,
-            outcome,
-            seconds,
-            hostname(),
-            staged ? `${parent}${STAGED_SUFFIX}` : tree.commit,
-            unpublished !== undefined,
-            dirtyInputs ||
-              unstaged !== undefined ||
-              key(id, task, tree, afterDirty).key === undefined,
-            current.env,
-            fresh ? 'super' : 'ordinary',
-          );
-          if (deletedLocal) summary.push(`deleted proof local ${id} ${current.key}`);
-          if (deletedShared) summary.push(`deleted proof shared ${id} ${current.key}`);
-          summary.push(
-            `${outcome} ${id}${unbuilt ? `; sandbox failed: ${unbuilt}` : unpublished ? `; no proof published: ${unpublished}` : outcome === 'green' ? '; proof published' : ''}${sharing === 'local' ? '' : `; ${sharing}`}`,
-          );
-        } else
-          summary.push(
-            `${outcome} ${id}; not recorded: ${current.reason}${escapes.length ? `; ${escapes.join('; ')}` : ''}`,
-          );
-      } finally {
-        sandbox?.close();
       }
-      await release();
     }
+    await Promise.all(Array.from({ length: Math.min(jobs, ids.length) }, worker));
+    if (jobs > 1) summary.push(...slots.flat());
+    if (fatal) throw fatal.error;
     await providers.stopExcept(new Set());
     console.log(summary.join('\n'));
-    return interrupted ? (interrupted === 'SIGINT' ? 130 : 143) : failed ? 1 : 0;
+    return processes.interrupted
+      ? processes.interrupted === 'SIGINT'
+        ? 130
+        : 143
+      : failed
+        ? 1
+        : 0;
   } catch (error) {
     try {
       await providers.stopExcept(new Set());
@@ -288,8 +146,7 @@ export async function run(args: string[]) {
     }
     throw error;
   } finally {
-    process.off('SIGINT', onInt);
-    process.off('SIGTERM', onTerm);
+    processes.close();
     await store.close();
   }
 }

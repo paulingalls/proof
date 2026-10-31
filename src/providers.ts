@@ -1,6 +1,11 @@
 import type { Provider } from './declarations';
 
-type Attempt = { declaration: Provider; ready: boolean; stopped: boolean };
+type Attempt = {
+  declaration: Provider;
+  ready: boolean;
+  stopped: boolean;
+  starting: Promise<boolean>;
+};
 
 export class Providers {
   private readonly attempts = new Map<string, Attempt>();
@@ -20,12 +25,20 @@ export class Providers {
 
   async start(name: string, declaration: Provider) {
     const previous = this.attempts.get(name);
-    if (previous) return this.ready(name);
-    const attempt = { declaration, ready: false, stopped: false };
+    if (previous) return previous.starting;
+    const attempt: Attempt = {
+      declaration,
+      ready: false,
+      stopped: false,
+      starting: Promise.resolve(false),
+    };
     this.attempts.set(name, attempt);
-    attempt.ready = await this.execute(declaration.start);
-    if (!attempt.ready) this.report(`provider '${name}' start failed`);
-    return attempt.ready;
+    attempt.starting = this.execute(declaration.start).then((ready) => {
+      attempt.ready = ready;
+      if (!ready) this.report(`provider '${name}' start failed`);
+      return ready;
+    });
+    return attempt.starting;
   }
 
   ready(name: string) {
