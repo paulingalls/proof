@@ -1,5 +1,5 @@
 import { hostname } from 'node:os';
-import { declarationPaths } from './declarations';
+import { declarationPaths, selectTasks } from './declarations';
 import { dirtyPaths, resolveRef } from './git';
 import { key, scope, selection } from './key';
 import { currentTree, decide, inspectTaskLinks, renderDecision } from './plan';
@@ -23,14 +23,18 @@ function signalGroup(pid: number, signal: NodeJS.Signals | 0) {
 export async function run(args: string[]) {
   const fresh = args[0] === '--fresh';
   if (fresh) args = args.slice(1);
+  const set =
+    args[0] === '--set' && args.length === 2 && !args[1]?.startsWith('-') ? args[1] : undefined;
   if (
     args.length &&
+    set === undefined &&
     (args[0] !== '--tasks' || args.length < 2 || args.slice(1).some((id) => id.startsWith('--')))
   )
-    throw new Error('usage: proof run [--fresh] [--tasks <id> ...]');
-  const roster = currentTree().tasks;
-  for (const id of args.slice(1)) if (!roster.has(id)) throw new Error(`undeclared task '${id}'`);
-  const ids = [...roster.keys()].filter((id) => !args.length || args.slice(1).includes(id));
+    throw new Error('usage: proof run [--fresh] [--tasks <id> ... | --set <name>]');
+  const roster = selectTasks(currentTree().tasks, set);
+  const requested = set === undefined ? args.slice(1) : [];
+  for (const id of requested) if (!roster.has(id)) throw new Error(`undeclared task '${id}'`);
+  const ids = [...roster.keys()].filter((id) => !requested.length || requested.includes(id));
   const store = await Store.open();
   const summary: string[] = [];
   let failed = false;
