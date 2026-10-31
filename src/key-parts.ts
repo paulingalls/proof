@@ -148,8 +148,9 @@ export function keyParts(task: Task, tree: RefTree, historical = false) {
   if (!historical) {
     const entries = new Map(env);
     for (const [name, command] of task.dimensions ?? []) {
-      const { value } = dimension(name, command);
-      entries.set(`dimension:${name}`, hash(value));
+      const resolved = dimension(name, command);
+      if (resolved.value !== undefined) entries.set(`dimension:${name}`, hash(resolved.value));
+      else reasons.push(resolved.reason);
     }
     for (const input of task.inputs) {
       if (typeof input === 'string' || !('dotenv' in input)) continue;

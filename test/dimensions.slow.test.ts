@@ -138,3 +138,23 @@ test('commands are lazy and cached throughout plan, run and stored-proof why', (
   }
   expect(f.rows()).toHaveLength(3);
 });
+
+for (const output of ['printf raw-marker; printf raw-error >&2; exit 1', 'true', "printf '  \\n'"])
+  test(`unavailable dimensions run without publication: ${output}`, () => {
+    const f = fixture(
+      doc(
+        { tool: `echo hit >> .git/counter; ${output}` },
+        { native: task(['tool']), second: task(['tool']), plain: task() },
+      ),
+    );
+    for (const args of [['plan'], ['why', 'native'], ['run', '--jobs', '2']]) {
+      f.repo.write('.git/counter', '');
+      const out = f.cli(args);
+      expect(out).toContain("dimension 'tool'");
+      expect(out).toContain(args[0] === 'run' ? 'not recorded' : 'undecidable');
+      expect(out).not.toContain('raw-');
+      expect(Bun.file(join(f.repo.path, '.git/counter')).size).toBe(4);
+    }
+    for (const table of ['results', 'proofs'])
+      expect(f.rows(table).map((r) => r.task)).toEqual(['plain']);
+  });

@@ -1,11 +1,19 @@
-const values = new Map<string, string>();
+type Resolution = { value: string; failure?: never } | { failure: string; value?: never };
+const values = new Map<string, Resolution>();
 
-export function dimension(_name: string, command: string) {
-  let value = values.get(command);
-  if (value === undefined) {
+export function dimension(name: string, command: string) {
+  let resolved = values.get(command);
+  if (resolved === undefined) {
     const result = Bun.spawnSync(['sh', '-c', command]);
-    value = result.stdout.toString().trim();
-    values.set(command, value);
+    const value = result.stdout.toString().trim();
+    resolved = !result.success
+      ? { failure: 'command failed' }
+      : !value
+        ? { failure: 'empty output' }
+        : { value };
+    values.set(command, resolved);
   }
-  return { value };
+  return resolved.failure === undefined
+    ? { value: resolved.value }
+    : { reason: `dimension '${name}': ${resolved.failure}` };
 }
