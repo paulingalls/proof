@@ -38,6 +38,7 @@ export async function run(args: string[]) {
   const ids = [...roster.keys()].filter((id) => !requested.length || requested.includes(id));
   const store = await Store.open();
   const summary: string[] = [];
+  const skipped: string[] = [];
   let failed = false;
   let logFailed = false;
   const processes = new RunProcesses();
@@ -102,6 +103,7 @@ export async function run(args: string[]) {
       try {
         await runTask(id, {
           snapshot,
+          skipped: (id) => skipped.push(id),
           fresh,
           live: jobs === 1,
           logFailed: () => {
@@ -169,6 +171,7 @@ export async function run(args: string[]) {
     }
     if (jobs > 1) summary.push(...slots.flat());
     if (fatal) throw fatal.error;
+    await store.skip(initial.project, skipped);
     await providers.stopExcept(new Set());
     console.log(summary.join('\n'));
     return processes.interrupted

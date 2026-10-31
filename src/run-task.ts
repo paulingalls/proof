@@ -25,6 +25,7 @@ type Context = {
   processes: RunProcesses;
   providers: Providers;
   fail: () => void;
+  skipped: (id: string) => void;
   retain: (needs: string[]) => void;
 };
 export async function runTask(
@@ -44,6 +45,7 @@ export async function runTask(
     processes,
     providers,
     fail,
+    skipped,
     retain,
   }: Context,
 ) {
@@ -112,6 +114,7 @@ export async function runTask(
   }
   const { tree, project, dirty, declaration } = view;
   if (decision.state === 'PROVEN') {
+    skipped(id);
     summary.push(`PROVEN ${id}: ${decision.reason}`);
     return;
   }

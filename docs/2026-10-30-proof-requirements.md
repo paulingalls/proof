@@ -156,9 +156,8 @@ The package has its own tests for its own behaviour, on synthetic repos it build
 - **R14. A local fallback.** Each machine keeps a local SQLite replica of its own results. When the store is
   unreachable, `plan` falls back to that machine's own proofs, otherwise runs everything, and says so loudly.
 - **R15. The store absorbs the history** that app-a scatters today: per-task timings, flake history,
-  contradictions, and release freshness ("every journey green at this tag" is a query). Import app-a's
-  existing ledger (`$(git rev-parse --git-common-dir)/land-timing.jsonl`, about 26k rows) once, as history
-  rows that create no proofs. Tag nested wrapper rows so time isn't double-counted.
+  contradictions, and release freshness ("every journey green at this tag" is a query).
+  Ledger import dropped 2026-10-30: no current consumer needs it (the lead's reading; Paul may correct it).
 
 ### The interface
 - **R16. The CLI** follows design §4.6:
@@ -176,7 +175,8 @@ The package has its own tests for its own behaviour, on synthetic repos it build
   - **Core:** parser and lint, hashing over the git index, env class, key, store client (`Bun.sql`,
     `bun:sqlite`), planner, executor, sandboxes, providers and lanes, CLI.
   - **Shipped adapters:** as in R5.
-  - **A repo can add an adapter** under `proof.d/adapters/`.
+  - Repo adapters under `proof.d/adapters/` dropped 2026-10-30: no current consumer needs it
+    (the lead's reading; Paul may correct it).
 - **R19. Nothing from a consumer leaks into the core.** No app-a or xp-plugin vocabulary goes in the schema,
   CHECK constraints, task kinds or CLI. Run sets (`push`, `land`, `story`, `super`, ...) are each repo's own
   names in its `proof.yaml`.

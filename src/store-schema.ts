@@ -39,6 +39,10 @@ export async function initialize(backend: Backend) {
         project TEXT NOT NULL, task TEXT NOT NULL, key TEXT NOT NULL,
         result_id INTEGER NOT NULL REFERENCES results(id), PRIMARY KEY (project, task, key)
       )`);
+    await query(`CREATE TABLE IF NOT EXISTS skips (
+      project TEXT NOT NULL, task TEXT NOT NULL, day TEXT NOT NULL, count INTEGER NOT NULL,
+      PRIMARY KEY (project, task, day)
+    )`);
     if (!row) await query('INSERT INTO schema_version (singleton, version) VALUES (1, 2)');
     else if (row.version === 1) await query('UPDATE schema_version SET version = 2');
     return 2;

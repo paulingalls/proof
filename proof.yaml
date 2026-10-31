@@ -33,6 +33,7 @@ tasks:
     sets: [commit, push]
   test-slow:
     run: bun run test-slow
+    links: [node_modules]
     inputs:
       - src/**
       - test/**/*.slow.test.ts

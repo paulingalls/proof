@@ -22,6 +22,18 @@ type Proof = {
   red_host: string | null;
 };
 
+export function localDay(date = new Date()) {
+  return `${String(date.getFullYear()).padStart(4, '0')}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+type HistoryResult = {
+  task: string;
+  outcome: Outcome;
+  seconds: number | null;
+  finished_at: string;
+};
+type Skip = { task: string; day: string; count: number };
+
 export class Store {
   private closed = false;
   private offline = false;
@@ -294,6 +306,46 @@ export class Store {
       this.fallback(error);
       return { ...result, sharing: 'sharing uncertain' };
     }
+  }
+
+  async skip(project: string, tasks: string[]) {
+    if (!tasks.length) return;
+    const day = localDay();
+    const statement = `INSERT INTO skips (project, task, day, count) VALUES
+      ${tasks.map(() => '(?, ?, ?, 1)').join(', ')}
+      ON CONFLICT (project, task, day) DO UPDATE SET count = skips.count + excluded.count`;
+    const values = tasks.flatMap((task) => [project, task, day]);
+    await this.local.query(statement, ...values);
+    if (this.remote && !this.offline) {
+      try {
+        await this.remote.query(statement, ...values);
+      } catch (error) {
+        this.fallback(error);
+      }
+    }
+  }
+
+  async history(project: string, start: string, end: string) {
+    const read = async (query: Query) => ({
+      results: await query<HistoryResult>(
+        'SELECT task, outcome, seconds, finished_at FROM results WHERE project = ?',
+        project,
+      ),
+      skips: await query<Skip>(
+        'SELECT task, day, count FROM skips WHERE project = ? AND day >= ? AND day < ?',
+        project,
+        start,
+        end,
+      ),
+    });
+    if (this.remote && !this.offline) {
+      try {
+        return await read(this.remote.query);
+      } catch (error) {
+        this.fallback(error);
+      }
+    }
+    return read(this.local.query);
   }
 
   async close() {

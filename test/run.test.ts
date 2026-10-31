@@ -188,6 +188,7 @@ test('re-decides a previously proven later task after an earlier checkout edit',
   expect(result.out.indexOf('PROVEN later')).toBeLessThan(result.out.indexOf('RUN later'));
   expect(result.out).toContain('green later');
   expect(result.out).toContain("undecidable: dirty input 'src/a.ts'");
+  expect(rows(env, 'skips')).toEqual([]);
   expect(rows(env, 'results').map((r) => r.outcome)).toEqual(['green', 'green', 'green']);
 });
 
