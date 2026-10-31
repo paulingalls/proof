@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { fixture, task } from './support/jobs';
 
 const declaration = (tasks: unknown, extra = {}) =>
-  JSON.stringify({ version: 1, project: 'lanes', tasks, ...extra });
+  JSON.stringify({ version: 1, project: 'jobs', tasks, ...extra });
 
 test('lane declaration errors reach every declaration reader', () => {
   const f = fixture({ t: task('true') });
