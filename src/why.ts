@@ -1,7 +1,7 @@
 import { declarations } from './declarations';
 import { hasCommit, RefTree, WorkingTree } from './git';
 import { keyParts } from './key-parts';
-import { currentTree, decide, renderDecision } from './plan';
+import { currentTree, decide, renderDecision, STAGED_SUFFIX } from './plan';
 import { Store } from './store';
 
 export async function why(args: string[]) {
@@ -30,6 +30,10 @@ export async function why(args: string[]) {
       return;
     }
     console.log(`comparison: ${proof.commit} on ${proof.host} ${proof.finished_at}`);
+    if (proof.commit.endsWith(STAGED_SUFFIX)) {
+      console.log('historical comparison unavailable: staged proof');
+      return;
+    }
     if (!hasCommit(proof.commit)) {
       console.log(`proof commit unavailable: ${proof.commit}`);
       return;

@@ -187,7 +187,7 @@ export async function run(args: string[]) {
         let outcome: 'incomplete' | 'green' | 'red' = 'incomplete';
         let unbuilt: string | undefined;
         try {
-          sandbox?.materialize(selection(task, tree, dirty), tree, dirty);
+          sandbox?.materialize(selection(task, tree, dirty), tree, dirty, staged);
           sandbox?.link(task.links ?? [], inspection);
         } catch (error) {
           // Unattended, the backstop finishes every task it can; a person running `run` is told now.

@@ -1,10 +1,13 @@
 import { Database } from 'bun:sqlite';
-import { afterEach, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { afterAll, afterEach, expect, test } from 'bun:test';
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Postgres } from './support/postgres';
 import { Repo } from './support/repo';
 
+const postgres = new Postgres();
+afterAll(() => postgres.close());
 const repos: Repo[] = [];
 const dirs: string[] = [];
 afterEach(() => {
@@ -16,11 +19,11 @@ function directory() {
   dirs.push(dir);
   return dir;
 }
-function fixture() {
+function fixture(remote = '') {
   const repo = new Repo();
   repos.push(repo);
   const control = directory();
-  const env = { PROOF_STATE_DIR: directory() };
+  const env = { PROOF_STATE_DIR: directory(), ...(remote ? { PROOF_STORE: remote } : {}) };
   const cli = (...args: string[]) => repo.cli(args, env);
   const rows = (table: string) => {
     const db = new Database(join(env.PROOF_STATE_DIR, 'proof.db'));
@@ -44,20 +47,42 @@ function fixture() {
   return { repo, control, env, cli, rows, document, task, stage };
 }
 
-test('staged green is reused after committing exactly the index', () => {
-  const f = fixture();
-  const parent = f.repo.git('rev-parse', 'HEAD');
-  f.stage();
-  const run = f.cli('run', '--staged');
-  expect(run.code, run.err).toBe(0);
-  expect(run.out).toContain('green task; proof published');
-  expect(f.rows('results')).toMatchObject([{ commit: `${parent} (staged)`, outcome: 'green' }]);
-  f.repo.git('commit', '-qm', 'staged');
-  expect(f.cli('plan').out).toContain('PROVEN task');
-  expect(f.cli('run').out).toContain('PROVEN task');
-  expect(readFileSync(join(f.control, 'log'), 'utf8')).toBe('executed\n');
-  expect(f.rows('results')).toHaveLength(1);
-});
+for (const remote of [false, true]) {
+  test(`staged green is reused after committing exactly the index; remote=${remote}`, async () => {
+    if (remote) await postgres.start();
+    const database = remote ? await postgres.database() : undefined;
+    const f = fixture(database?.PROOF_STORE);
+    const parent = f.repo.git('rev-parse', 'HEAD');
+    f.stage();
+    const run = f.cli('run', '--staged');
+    expect(run.code, run.err).toBe(0);
+    expect(run.out).toContain('green task; proof published');
+    expect(f.rows('results')).toMatchObject([{ commit: `${parent} (staged)`, outcome: 'green' }]);
+    f.repo.git('commit', '-qm', 'staged');
+    expect(f.cli('plan').out).toContain('PROVEN task');
+    expect(f.cli('run').out).toContain('PROVEN task');
+    expect(readFileSync(join(f.control, 'log'), 'utf8')).toBe('executed\n');
+    expect(f.rows('results')).toHaveLength(1);
+    if (database) {
+      expect(run.out).toContain('; shared');
+      expect([...(await database.sql`SELECT outcome, "commit" FROM results`)]).toMatchObject([
+        { outcome: 'green', commit: `${parent} (staged)` },
+      ]);
+      expect([...(await database.sql`SELECT key FROM proofs`)]).toMatchObject([
+        { key: f.rows('results')[0]?.key },
+      ]);
+      const clone = new Repo(f.repo);
+      repos.push(clone);
+      const env = { PROOF_STORE: database.PROOF_STORE, PROOF_STATE_DIR: directory() };
+      expect(clone.cli(['run'], env).out).toContain('PROVEN task');
+      expect(clone.cli(['why', 'task'], env).out).toContain(
+        'historical comparison unavailable: staged proof',
+      );
+      expect(readFileSync(join(f.control, 'log'), 'utf8')).toBe('executed\n');
+      expect(await database.sql`SELECT id FROM results`).toHaveLength(1);
+    }
+  }, 120_000);
+}
 
 test('partial staging ignores untracked inputs and staged deletions left on disk', () => {
   const f = fixture();
@@ -65,7 +90,7 @@ test('partial staging ignores untracked inputs and staged deletions left on disk
     'proof.yaml': f.document({
       task: {
         ...f.task,
-        run: `${f.task.run} && test ! -e extra && test ! -e other && test ! -e deleted`,
+        run: `${f.task.run} && test ! -e extra && test ! -e outside/other && test ! -e deleted`,
         inputs: ['*', '!proof.yaml'],
       },
     }),
@@ -75,14 +100,14 @@ test('partial staging ignores untracked inputs and staged deletions left on disk
   f.repo.git('rm', '--cached', 'deleted');
   f.repo.write('input', 'working');
   f.repo.write('extra', 'untracked matching input');
-  f.repo.write('other', 'untracked');
+  f.repo.write('outside/other', 'untracked');
   const result = f.cli('run', '--staged');
   expect(result.code, result.out + result.err).toBe(0);
   expect(result.out).toContain('green task; proof published');
   f.repo.git('commit', '-qm', 'index only');
   expect(f.cli('status', '--ref', 'HEAD').out).toContain('PROVEN task');
   expect(f.cli('plan').out).toContain('dirty input');
-  for (const path of ['extra', 'other', 'deleted']) rmSync(join(f.repo.path, path));
+  for (const path of ['extra', 'outside/other', 'deleted']) rmSync(join(f.repo.path, path));
   f.repo.git('restore', 'input');
   expect(f.cli('plan').out).toContain('PROVEN task');
   expect(f.cli('run').out).toContain('PROVEN task');
@@ -135,8 +160,7 @@ test('staged red retains ordinary contest and recovery rules despite checkout di
   });
   f.stage();
   f.repo.write('input', 'working');
-  // External control changes execution without changing the task key.
-  Bun.write(join(f.control, 'red'), 'red');
+  writeFileSync(join(f.control, 'red'), 'red');
   expect(f.cli('run', '--staged').code).toBe(1);
   expect(f.rows('results')).toMatchObject([{ outcome: 'red', dirty: 0 }]);
   rmSync(join(f.control, 'red'));
@@ -145,7 +169,7 @@ test('staged red retains ordinary contest and recovery rules despite checkout di
   f.repo.git('restore', 'input');
   expect(f.cli('record', 'task', '--outcome', 'red').code).toBe(0);
   f.repo.write('input', 'working');
-  Bun.write(join(f.control, 'red'), 'red');
+  writeFileSync(join(f.control, 'red'), 'red');
   expect(f.cli('run', '--staged').code).toBe(1);
   expect(f.rows('proofs')).toEqual([]);
   expect(f.rows('contradictions')).toMatchObject([
@@ -179,4 +203,121 @@ test('unmerged index fails loudly; staged merge resolution publishes before merg
   expect(f.rows('results')).toHaveLength(1);
   f.repo.git('commit', '-qm', 'merge');
   expect(f.cli('plan').out).toContain('PROVEN task');
+});
+
+test('a projected input absent from the index never falls back to disk', () => {
+  const f = fixture();
+  f.repo.commit({
+    'proof.yaml': f.document({
+      task: {
+        run: 'test ! -e absent.json && echo snapshot-absence',
+        inputs: ['input', { path: 'absent.json', json: ['value'] }],
+      },
+    }),
+  });
+  f.repo.write('absent.json', '{"value":1}');
+  const run = f.cli('run', '--staged');
+  expect(run.code, run.err).toBe(0);
+  expect(run.out).toContain('snapshot-absence');
+  expect(run.out).toContain('not recorded:');
+  expect(run.out).toContain("missing input 'absent.json'");
+  expect(f.rows('results')).toEqual([]);
+  expect(f.rows('proofs')).toEqual([]);
+});
+
+test('why never compares a staged proof to its parent; fresh and staged are incompatible', () => {
+  const f = fixture();
+  f.stage();
+  expect(f.cli('run', '--staged').code).toBe(0);
+  f.repo.git('commit', '-qm', 'target');
+  const why = f.cli('why', 'task');
+  expect(why.code, why.err).toBe(0);
+  expect(why.out).toContain('file input');
+  expect(why.out).toContain('(staged)');
+  expect(why.out).toContain('historical comparison unavailable: staged proof');
+  expect(why.out).not.toMatch(/(?:changed|added|removed) file|no inputs changed/);
+  for (const args of [
+    ['--staged', '--fresh'],
+    ['--fresh', '--staged'],
+  ]) {
+    const invalid = f.cli('run', ...args);
+    expect(invalid.code).toBe(2);
+    expect(invalid.err).toContain('usage: proof run');
+  }
+  expect(f.rows('results')).toHaveLength(1);
+  expect(readFileSync(join(f.control, 'log'), 'utf8')).toBe('executed\n');
+});
+
+test('provider index mutations cannot replace captured declarations, inputs or workspace exports', () => {
+  const f = fixture();
+  const task = (name: string) => ({
+    run: `${f.task.run} && '${process.execPath}' --no-install main.ts && echo ${name}`,
+    inputs: ['input', { 'imports-of': 'main.ts' }],
+    links: ['node_modules'],
+    needs: ['service'],
+  });
+  const extra = { providers: { service: { start: `sh '${f.control}/replace'` } } };
+  const original = f.document({ first: task('first'), second: task('second') }, extra);
+  f.repo.commit({
+    'proof.yaml': original,
+    'package.json': '{"workspaces":["packages/*"]}',
+    'packages/shared/package.json': '{"name":"shared","exports":"./head.ts"}',
+    'packages/shared/head.ts': "throw new Error('HEAD export');",
+    'packages/shared/staged.ts': "console.log('captured-export');",
+    'packages/shared/working.ts': "throw new Error('working export');",
+    'main.ts': "import 'shared';",
+  });
+  symlinkSync('../packages/shared', join(f.repo.path, 'node_modules/shared'));
+  f.stage({
+    input: 'staged',
+    'packages/shared/package.json': '{"name":"shared","exports":"./staged.ts"}',
+  });
+  const captured = f.repo.git('write-tree');
+  f.repo.write('packages/shared/package.json', '{"name":"shared","exports":"./working.ts"}');
+  writeFileSync(
+    join(f.control, 'replacement'),
+    f.document(
+      {
+        first: { ...task('first'), run: 'echo replacement-first; exit 1' },
+        second: { ...task('second'), run: 'echo replacement-second; exit 1' },
+      },
+      extra,
+    ),
+  );
+  writeFileSync(
+    join(f.control, 'replace'),
+    `cp '${f.control}/replacement' proof.yaml
+printf replacement > input
+git add proof.yaml input packages/shared/package.json\n`,
+  );
+  const parent = f.repo.git('rev-parse', 'HEAD');
+  const run = f.cli('run', '--staged');
+  expect(run.code, run.out + run.err).toBe(0);
+  expect(run.out.match(/captured-export/g)).toHaveLength(2);
+  expect(run.out).not.toContain('replacement-');
+  expect(f.rows('results')).toMatchObject([
+    { task: 'first', outcome: 'green', commit: `${parent} (staged)` },
+    { task: 'second', outcome: 'green', commit: `${parent} (staged)` },
+  ]);
+  expect(f.rows('proofs').map((row) => row.key)).toEqual(f.rows('results').map((row) => row.key));
+  f.repo.git('commit', '-qm', 'provider replacement');
+  expect(f.cli('plan').out.match(/RUN/g)).toHaveLength(2);
+  f.repo.git('read-tree', '--reset', captured);
+  f.repo.git('checkout-index', '-af');
+  f.repo.git('commit', '-qm', 'captured tree');
+  expect(f.cli('plan').out.match(/PROVEN/g)).toHaveLength(2);
+});
+
+test('staged sandbox still fails an undeclared relative read', () => {
+  const f = fixture();
+  f.repo.commit({
+    'proof.yaml': f.document({ task: { ...f.task, run: 'cat hidden' } }),
+    hidden: 'secret',
+  });
+  f.stage();
+  const run = f.cli('run', '--staged');
+  expect(run.code).toBe(1);
+  expect(run.err).toContain('hidden');
+  expect(f.rows('results')).toMatchObject([{ outcome: 'red', dirty: 0 }]);
+  expect(f.rows('proofs')).toEqual([]);
 });
