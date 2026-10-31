@@ -213,7 +213,7 @@ test('status requires exactly one ref and optional JSON in either order', () => 
     expect(repo.cli(['status', ...args], env)).toEqual({
       code: 2,
       out: '',
-      err: 'proof: usage: proof status --ref <ref> [--json]\n',
+      err: 'proof: usage: proof status --ref <ref> [--set <name>] [--json]\n',
     });
   }
   expect(repo.cli(['status', '--json', '--ref', 'HEAD'], env)).toEqual(status(repo, env));
