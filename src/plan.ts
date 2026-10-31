@@ -1,6 +1,6 @@
 import type { Task } from './declarations';
 import { declarationPaths, declarations, dirtyDeclaration } from './declarations';
-import { dirtyPaths, RefTree } from './git';
+import { dirtyPaths, RefTree, resolveRef } from './git';
 import { source } from './imports';
 import { key, scope } from './key';
 import { inspectLinks } from './sandbox';
@@ -74,6 +74,7 @@ export async function decide(
   project: string,
   store: Store,
   inspection = inspectTaskLinks(decl, tree, dirty),
+  fresh = false,
 ) {
   const links = [
     ...(inspection.trusted.length ? [`trusted links: ${inspection.trusted.join(', ')}`] : []),
@@ -94,6 +95,7 @@ export async function decide(
     if (current.key === undefined)
       return { task, state: 'RUN', reason: `undecidable: ${current.reason}` };
     if (inspection.escapes.length) return { task, state: 'RUN', reason: 'untrusted links' };
+    if (fresh) return { task, state: 'RUN', reason: 'fresh execution requested' };
     const proof = await store.proof(project, task, current.key);
     if (proof?.red_commit)
       return {
@@ -111,9 +113,15 @@ export async function decide(
   }
 }
 
+let committed: { tree: RefTree; document: ReturnType<typeof declarations> } | undefined;
+
 export function currentTree() {
-  const tree = new RefTree('HEAD');
-  let document = declarations(tree);
+  if (committed?.tree.commit !== resolveRef('HEAD')) {
+    const tree = new RefTree('HEAD');
+    committed = { tree, document: declarations(tree) };
+  }
+  const { tree } = committed;
+  let document = committed.document;
   let dirty = dirtyPaths(scope(document.tasks.values(), declarationPaths(document.include), tree));
   const declaration = dirtyDeclaration(dirty, document.include);
   if (declaration) {

@@ -32,7 +32,7 @@ The goal: run only what a change can actually affect, and nothing extra.
 tagged release from GitHub:
 
 ```sh
-bun add -d "git+https://github.com/paulingalls/proof.git#v0.8.1"
+bun add -d "git+https://github.com/paulingalls/proof.git#v0.9.0"
 bunx proof --version
 ```
 
@@ -105,14 +105,21 @@ exempt:
   proof. `exports` retains
   JSON object order because the resolver takes the first matching condition; other projected
   members use canonical object order. A manifest imported directly by source, or selected by
-  a path or glob, keys the whole file regardless of input order. Sandboxes always hold exact
-  file bytes, including unprojected members. A dirty consulted manifest still runs with
+  a path or glob, keys its exact bytes with the first `"version": <parsed version>` value
+  blanked. This applies to every `package.json` at any depth; layout and other members stay keyed.
+  Adding or removing the member still changes those bytes. A nested version with the same value
+  earlier in the file is an accepted rare corner of this simple replacement.
+  Opt in when the task needs the version: `{path: package.json, json: [version]}`.
+  Invalid JSON and valid non-object JSON keep their whole-byte identity where the file keys whole;
+  projections and resolver metadata retain their failures. Sandboxes always hold exact file bytes,
+  including version. A dirty consulted manifest still runs with
   `undecidable: dirty input '<path>'` and publishes no proof.
   Closures no longer key `dependencies`, `devDependencies`, `scripts`, `patchedDependencies`
   or `packageManager` implicitly. Declare the members your command needs, for example
   `{path: package.json, json: [dependencies, devDependencies, patchedDependencies, packageManager, scripts]}`
-  alongside its closure input. Key scheme 3 requires fresh proof for all tasks, including
-  tasks without closures.
+  alongside its closure input. Key scheme 4 requires fresh proof for all tasks, including
+  tasks without closures. Accepted risk: a test hard-coding a version can retain proof after a
+  committed version bump; the super run that executes every task fresh catches it.
 - **Maestro inputs**, such as `{maestro: flows/journey.yaml}`, select the flow and its
   recursive `runFlow` and `runScript` references (strings or `{file: path}`), plus
   `addMedia` paths (a list or `{files: [...]}`). References resolve relative to the including
@@ -185,7 +192,7 @@ provider-free tasks have no `providers` field. Neither plan form starts resource
 proof plan [--json]          what must run, and why
 proof why <task>            current key parts and changes since the newest proof
 proof status --ref <ref> [--json]  proof state of every task at a committed ref
-proof run [--tasks <id>...]  run what must run, and record the results
+proof run [--fresh] [--tasks <id>...]  run tasks and record each result
 proof record <task> --outcome green|red|incomplete [--seconds N]
 proof lint                   check declarations against the staged tree
 proof check <cases.yaml>     run a requirement suite
@@ -195,12 +202,33 @@ proof doctor                 which store is in use, and whether it's reachable
 `run` exits 0 when every task is proven or green, 1 when a task is red/incomplete or a provider fails, 130/143 when interrupted;
 any command exits 2 on a usage, declaration or store error.
 
+`proof run --fresh` executes every task even when its key is already proven, in the same
+sandboxes and with the same providers as an ordinary run. Select a subset with
+`proof run --fresh --tasks first second`. Providers start once for selected dependents,
+including proven ones. A red does not stop later tasks; each result is recorded independently.
+
+A fresh red over unchanged selected inputs immediately deletes that key's stored green and
+records a `super` contradiction. The summary lists every red and each confirmed deletion as
+`deleted proof local <task> <key>` or `deleted proof shared <task> <key>`. Ordinary runs still
+contest a green on the first red and delete it on the second. A clean fresh green publishes
+proof, including for a contested key. Incomplete results and interrupts delete nothing. A task whose sandbox can't be built records
+`incomplete` and the rest still run, so a scheduled run finishes; the run exits 1 and names it.
+
+A dirty tree still executes (a dirty declaration runs without recording) and records results, but says `no proof published` with a reason.
+A red over dirty selected inputs cannot delete proof of the committed bytes; unrelated dirt
+does not prevent deletion. Offline deletions apply locally and say `not shared`; an attempted
+share whose commit is uncertain says `sharing uncertain` and claims no shared deletion.
+Reconnection does not replay results. Schedule fresh runs in the repository using cron or
+launchd; proof provides no scheduler.
+
 `proof why <task>` starts with the task's `plan` decision, then prints its current key
-parts: selected paths with Git blob ids and modes, JSON member identities, declared env names
+parts: selected paths with file identities and modes, JSON member identities, declared env names
 (without values), and the declaration hash. These parts use the files on disk, including staged
 and unstaged edits, additions, deletions and selected ignored files. Git decides whether a
 tracked path is clean, so a line-ending or LFS filter never reads as a change; blob ids of
-dirty paths hash their raw bytes. Plan's dirty-input eligibility stays the same. Resolver-only manifests print
+dirty paths hash their raw bytes. Whole-selected object manifests instead print a SHA-256 identity
+of their bytes with the version value blanked, rather than a Git blob id.
+Plan's dirty-input eligibility stays the same. Resolver-only manifests print
 `member package.json <member> <mode> <hash>` lines instead of a `file package.json` line.
 A version-only edit reports `no inputs changed` in the comparison even when the dirty rule
 requires RUN; a resolution-member edit reports, for example, `changed member package.json name`.

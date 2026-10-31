@@ -58,7 +58,7 @@ test('design case 3: committed root and workspace version bumps retain proof', (
   expect(cli(['why', 'a'])).toContain(`changed member ${manifest} main`);
 });
 
-test('whole-file reads dominate metadata in either input and traversal order', () => {
+test('whole-file selection preserves version exclusion in either input and traversal order', () => {
   const direct = { 'imports-of': 'direct.ts' };
   const { r, cli } = fixture({
     a: [closure],
@@ -81,7 +81,13 @@ test('whole-file reads dominate metadata in either input and traversal order', (
   expect(cli(['why', 'first'])).toContain('file package.json ');
   const to = r.commit({ 'package.json': JSON.stringify({ ...root, version: '2' }) });
   const readers = 'first last pathFirst pathLast globFirst globLast two readded flow'.split(' ');
-  const result = r.check([{ name: 'whole reads', from, to, expect: readers }]);
+  const scripts = r.commit({
+    'package.json': JSON.stringify({ ...root, version: '2', scripts: { test: 'false' } }),
+  });
+  const result = r.check([
+    { name: 'version excluded', from, to, expect: [] },
+    { name: 'whole reads', from: to, to: scripts, expect: readers },
+  ]);
   expect(result.code, result.err + result.out).toBe(0);
 });
 

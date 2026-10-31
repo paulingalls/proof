@@ -29,8 +29,8 @@ pre-push:
       # clones loading this shared Mac: these tests spawn the CLI many times.
       run: bun run lint && bun run typecheck && bun test --timeout=30000
 sprint:
-  # The release suite. Sprint land runs it on the trial-merged tree.
+  # Land pushes next, and pre-push runs the whole suite; this only checks the lockfile.
   # no `skip:` here: land runs this mid-merge
   commands:
-    tests:
-      run: bun install --frozen-lockfile && bun run lint && bun run typecheck && bun test --timeout=30000
+    install:
+      run: bun install --frozen-lockfile
