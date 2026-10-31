@@ -418,7 +418,7 @@ test('staged sandbox still fails an undeclared relative read', () => {
   f.stage();
   const run = f.cli('run', '--staged');
   expect(run.code).toBe(1);
-  expect(run.err).toContain('hidden');
+  expect(run.out).toContain('hidden');
   expect(f.rows('results')).toMatchObject([{ outcome: 'red', dirty: 0 }]);
   expect(f.rows('proofs')).toEqual([]);
 });

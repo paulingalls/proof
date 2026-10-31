@@ -39,11 +39,30 @@ export async function run(args: string[]) {
   const store = await Store.open();
   const summary: string[] = [];
   let failed = false;
+  let logFailed = false;
   const processes = new RunProcesses();
   const providers = new Providers(
-    async (command, stopping = false) => {
-      const result = await processes.execute(command, process.cwd(), process.env, stopping);
-      return result.code === 0 && !result.signal;
+    async (command, stopping, name) => {
+      const result = await processes.execute(
+        command,
+        process.cwd(),
+        process.env,
+        stopping,
+        stopping
+          ? undefined
+          : {
+              project: (snapshot ?? currentTree()).project,
+              task: `provider-${name}`,
+              live: jobs === 1,
+            },
+      );
+      const ready = result.code === 0 && !result.signal;
+      const log =
+        result.capture?.finish(
+          ready ? 'green' : processes.cancelled || result.signal ? 'incomplete' : 'red',
+        ) ?? {};
+      if (log.error) logFailed = true;
+      return { ready, ...log };
     },
     (message) => {
       failed = true;
@@ -84,7 +103,10 @@ export async function run(args: string[]) {
         await runTask(id, {
           snapshot,
           fresh,
-          capture: jobs > 1,
+          live: jobs === 1,
+          logFailed: () => {
+            logFailed = true;
+          },
           staged,
           parent,
           ids: [...unfinished],
@@ -153,9 +175,11 @@ export async function run(args: string[]) {
       ? processes.interrupted === 'SIGINT'
         ? 130
         : 143
-      : failed
-        ? 1
-        : 0;
+      : logFailed
+        ? 2
+        : failed
+          ? 1
+          : 0;
   } catch (error) {
     try {
       await providers.stopExcept(new Set());

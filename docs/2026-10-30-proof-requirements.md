@@ -130,6 +130,7 @@ The package has its own tests for its own behaviour, on synthetic repos it build
   - An incomplete or killed run contests nothing.
   - `proof flakes` ranks tasks by contradictions.
   - A flake is re-run alone; never serialise a whole tier for one flake.
+  - Logs stay on the machine: they may hold private data, so they never reach either store (R13).
 - **R10. The super test is the backstop.** It runs every task fresh, and records each task's result
   independently so one red doesn't hide others. A fresh red against a stored green for the same key deletes
   that green everywhere and records a contradiction. Its greens publish proofs like any other clean run.
