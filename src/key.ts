@@ -118,7 +118,7 @@ function selector(task: Task, tree: RefTree) {
           ? closure(input['imports-of'], view).paths
           : 'maestro' in input
             ? maestro(input.maestro, view).paths
-            : new Set([input.path]),
+            : new Set('path' in input ? [input.path] : []),
       projection: 'path' in input,
     };
   });
@@ -206,7 +206,7 @@ export function key(id: string, task: Task, tree: RefTree, dirty: string[] = [])
   const parts = keyParts(task, tree);
   if (parts.reasons.length) return { reason: parts.reasons[0] as string };
   const tuple: unknown[] = [4, id, parts.declaration, [...parts.files, ...parts.members]];
-  if (task.env?.length) tuple.push(parts.env.map(([name, hash]) => ['env', name, hash]));
+  if (parts.env.length) tuple.push(parts.env.map(([name, hash]) => ['env', name, hash]));
   const hash = new Bun.CryptoHasher('sha256').update(JSON.stringify(tuple)).digest('hex');
   return { key: hash, env: parts.env };
 }

@@ -91,8 +91,11 @@ The package has its own tests for its own behaviour, on synthetic repos it build
 - **R4. Providers govern lifecycle, never keys.** Providers are the shared stack, a test database, the iOS app
   build and the web export. They start only when some RUN task needs them. A task's key holds the task's own
   inputs, never a provider's whole input set. A stack gate's inputs include a coarse named set `$stack` (the
-  backend source it exercises) and the stack's real identity: the env-file values the stack reads, and whether
-  provider keys are absent, dummy or real.
+  backend source it exercises) and the stack's real identity: the included env-file values the stack reads.
+  - Paul, 2026-10-30: drop the provider-key class (absent, dummy or real). Real keys run only in
+    the super run, which ignores proofs, so a dummy green cannot stand in for a real run.
+    A class in the key would hide super reds from dummy proofs and prevent reuse of super greens.
+    Repos exclude provider keys from dotenv identity.
   - Journeys (native and web) exercise the running backend, so their inputs include `$stack` too: a backend
     change re-runs them. Never a stale PROVEN; a repo narrows `$stack` per journey if that costs too much
     (Paul, 2026-10-30, resolving design §4.2 against §1.2 cases 4, 7 and 10).

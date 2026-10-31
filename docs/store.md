@@ -76,6 +76,7 @@ copied to Postgres retroactively. A missed share costs another run. Without a
 Postgres configuration, `plan`, `run` and `record` print no replica or sharing diagnostics.
 
 Proof metadata includes one identity per declared env name: `absent` or SHA-256 of its value.
+`env_hashes` also holds one `<file>:<NAME>` identity per included dotenv name, always a value hash.
 No env value is stored. These identities are captured with the key by both `record` and `run`;
 `why` uses them to explain env changes. Schema 2 adds nullable `proofs.env_hashes`, encoded as
 JSON name/identity pairs. NULL denotes a legacy proof whose env comparison is unavailable;

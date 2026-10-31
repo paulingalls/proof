@@ -1,6 +1,8 @@
 import type { Task } from './declarations';
+import { dotenv } from './dotenv';
 import type { RefTree } from './git';
 import { select } from './key';
+import { workingFile } from './sandbox';
 import { manifestMembers } from './workspaces';
 
 const contents = new WeakMap<RefTree, Map<string, string>>();
@@ -80,7 +82,8 @@ export function keyParts(task: Task, tree: RefTree, historical = false) {
     ...selection.manifests.map((path) => ({ path, json: manifestMembers })),
   ]) {
     if (typeof input === 'string' || !('path' in input)) continue;
-    const { path, json } = input;
+    const { path } = input;
+    const json = 'json' in input ? input.json : [];
     for (const member of json) projections.add(JSON.stringify([path, member]));
     const { mode } = tree.entry(path);
     if (!tree.files.has(path)) {
@@ -89,6 +92,26 @@ export function keyParts(task: Task, tree: RefTree, historical = false) {
     }
     if (!mode) {
       reasons.push(`unavailable input '${path}'`);
+      continue;
+    }
+    if ('dotenv-keys' in input) {
+      const member = 'dotenv-keys';
+      const id = JSON.stringify([path, member]);
+      projections.add(id);
+      if (mode !== '100644' && mode !== '100755') {
+        reasons.push(`input '${path}': not a regular file`);
+        continue;
+      }
+      try {
+        const names = [...dotenv(read(path), path).keys()].sort();
+        members.set(id, [path, mode, member, hash(JSON.stringify(names))]);
+      } catch (error) {
+        reasons.push(
+          error instanceof Error && error.message.startsWith(`input '${path}': invalid dotenv`)
+            ? error.message
+            : `unavailable input '${path}'`,
+        );
+      }
       continue;
     }
     let value: unknown;
@@ -121,6 +144,32 @@ export function keyParts(task: Task, tree: RefTree, historical = false) {
         name,
         process.env[name] === undefined ? 'absent' : hash(process.env[name]),
       ]);
+  if (!historical) {
+    const entries = new Map(env);
+    for (const input of task.inputs) {
+      if (typeof input === 'string' || !('dotenv' in input)) continue;
+      const path = input.dotenv;
+      let source: string;
+      try {
+        const file = workingFile(path);
+        if (!file) {
+          reasons.push(`missing input '${path}'`);
+          continue;
+        }
+        source = file.bytes.toString();
+      } catch {
+        reasons.push(`unavailable input '${path}'`);
+        continue;
+      }
+      try {
+        for (const [name, value] of dotenv(source, path))
+          if (!input.exclude?.includes(name)) entries.set(`${path}:${name}`, hash(value));
+      } catch (error) {
+        reasons.push((error as Error).message);
+      }
+    }
+    env.splice(0, env.length, ...[...entries].sort(([a], [b]) => compare(a, b)));
+  }
   return {
     tree,
     selection,
