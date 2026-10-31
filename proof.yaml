@@ -5,14 +5,41 @@ inputs:
     - src/**
     - test/**
     - scripts/**
-    - docs/store.md
     - package.json
     - bun.lock
     - tsconfig.json
-    - biome.json
-    - .gitignore
 tasks:
-  suite:
-    run: bun run lint && bun run typecheck && bun test --parallel --timeout=30000
+  lint:
+    run: bun run lint
+    inputs: [$code, biome.json, .gitignore]
+    links: [node_modules]
+    sets: [commit, push]
+  typecheck:
+    run: bun run typecheck
     inputs: [$code]
     links: [node_modules]
+    sets: [commit, push]
+  test-fast:
+    run: bun run test-fast
+    inputs:
+      - src/**
+      - test/**/*.test.ts
+      - '!test/**/*.slow.test.ts'
+      - test/support/repo.ts
+      - test/support/suite.ts
+      - package.json
+      - tsconfig.json
+      - proof.yaml
+    sets: [commit, push]
+  test-slow:
+    run: bun run test-slow
+    inputs:
+      - src/**
+      - test/**/*.slow.test.ts
+      - test/support/repo.ts
+      - test/support/postgres.ts
+      - package.json
+      - tsconfig.json
+      - docs/store.md
+    sets: [push]
+coverage: [src/**, scripts/**, test/**]
