@@ -229,5 +229,8 @@ export function dirtyDeclaration(dirty: string[], include: string | undefined) {
 
 export function selectTasks(tasks: Map<string, Task>, set?: string) {
   if (set === undefined) return tasks;
+  const known = [...new Set([...tasks.values()].flatMap((task) => task.sets ?? []))].sort();
+  if (!known.includes(set))
+    throw new Error(`unknown task set '${set}'; known sets: ${known.join(', ') || 'none'}`);
   return new Map([...tasks].filter(([, task]) => task.sets?.includes(set)));
 }

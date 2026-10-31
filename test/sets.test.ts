@@ -134,3 +134,25 @@ test('plan and status select their declaration view without changing proof ident
       });
   }
 }, 30_000);
+
+test('unknown sets name the known memberships, including none', () => {
+  const task = fixture();
+  repo.commit({
+    'proof.yaml': root({ a: task('a', ['push', 'commit']) }),
+    'proof.d/tasks.yaml': '{"tasks":{}}',
+    input: 'ok',
+  });
+  for (const args of [['plan'], ['run'], ['status', '--ref', 'HEAD']])
+    expect(cli(...args, '--set', 'missing')).toEqual({
+      code: 2,
+      out: '',
+      err: "proof: unknown task set 'missing'; known sets: commit, push\n",
+    });
+  expect(log()).toBe('');
+  repo.commit({ 'proof.yaml': root({ a: task('a') }) });
+  expect(cli('run', '--set', 'missing')).toEqual({
+    code: 2,
+    out: '',
+    err: "proof: unknown task set 'missing'; known sets: none\n",
+  });
+});
