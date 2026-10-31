@@ -70,3 +70,60 @@ test('flakes ranks ordinary counts, separates super, scopes project and calendar
   db.query("UPDATE contradictions SET recorded_at = ? WHERE kind = 'super'").run(ago(40));
   expect(cli(['flakes', '--since', '7d']).out).toBe('no contradictions in 7d\n');
 }, 30_000);
+
+test('manual deletion audits atomically, restores cleanly and leaves stats and flakes alone', () => {
+  const { cli, db, record, repo } = fixture();
+  expect(cli(['run', '--tasks', 'b']).code).toBe(0);
+  const before = cli(['stats']).out.split('\n')[1];
+  const proof = db.query('SELECT * FROM proofs').get() as { result_id: number; key: string };
+  const commit = repo.git('rev-parse', 'HEAD');
+  repo.write('src/a', 'dirty bytes do not change HEAD invalidation');
+  expect(cli(['invalidate', '--task', 'b'])).toEqual({
+    code: 0,
+    out: 'deleted 1 proof(s)\n',
+    err: '',
+  });
+  repo.git('checkout', '--', 'src/a');
+  expect(cli(['plan']).out).toContain('RUN b:');
+  const audit = db
+    .query(`SELECT c.*, r.outcome, r.seconds, r.host, r."commit", r.dirty,
+    r.finished_at FROM contradictions c JOIN results r ON r.id = c.red_result`)
+    .get() as Record<string, unknown>;
+  expect(audit).toMatchObject({
+    project: 'flakes',
+    task: 'b',
+    key: proof.key,
+    green_result: proof.result_id,
+    kind: 'manual',
+    deleted_proof: 1,
+    outcome: 'manual',
+    seconds: null,
+    commit,
+    dirty: 0,
+  });
+  expect(audit.recorded_at).toBe(audit.finished_at);
+  expect(audit.host).toBe(Bun.spawnSync(['hostname']).stdout.toString().trim());
+  expect(cli(['stats']).out.split('\n')[1]).toBe(before);
+  expect(cli(['flakes']).out).toBe('no contradictions in 30d\n');
+  expect(cli(['invalidate', '--task', 'b']).out).toContain('deleted 0');
+  expect(db.query("SELECT * FROM results WHERE outcome = 'manual'").all()).toHaveLength(1);
+  expect(cli(['run', '--tasks', 'b']).code).toBe(0);
+  expect(cli(['plan']).out).toContain('PROVEN b:');
+  record('b', 'red');
+  expect(cli(['invalidate', '--task', 'b']).out).toContain('deleted 1');
+  record('b', 'green');
+  expect(cli(['plan']).out).toContain('PROVEN b:');
+}, 30_000);
+
+test('a rejected manual audit rolls back the proof deletion and result', () => {
+  const { cli, db, record } = fixture();
+  record('b', 'green');
+  db.exec(`CREATE TRIGGER reject_manual BEFORE INSERT ON contradictions
+    WHEN NEW.kind = 'manual' BEGIN SELECT RAISE(ABORT, 'manual audit rejected'); END`);
+  const result = cli(['invalidate', '--task', 'b']);
+  expect(result.err).toContain('manual audit rejected');
+  expect(result.code).toBe(2);
+  expect(db.query('SELECT * FROM proofs').all()).toHaveLength(1);
+  expect(db.query("SELECT * FROM results WHERE outcome = 'manual'").all()).toHaveLength(0);
+  expect(db.query('SELECT * FROM contradictions').all()).toHaveLength(0);
+});
