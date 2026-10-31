@@ -81,6 +81,7 @@ test('env requires a list of nonempty string names', () => {
     [null, 'env must be a list'],
     [[1], 'env name: expected a nonempty string'],
     [[''], 'env name: expected a nonempty string'],
+    [['file:NAME'], 'env name must not contain'],
   ] as const) {
     const { repo, state } = fixture(env);
     const result = repo.cli(['plan'], state);
@@ -102,7 +103,10 @@ test('missing and empty env preserve the pinned version-4 key', () => {
   } finally {
     db.close();
   }
-  repo.commit({ 'proof.yaml': declaration([]) });
+  const empty = JSON.parse(declaration([]));
+  empty.dimensions = { unused: 'exit 99' };
+  empty.tasks.lint.dimensions = [];
+  repo.commit({ 'proof.yaml': JSON.stringify(empty) });
   expect(success(repo.cli(['plan'], state))).toContain('PROVEN lint');
 });
 
@@ -133,4 +137,16 @@ test('recorded env values never reach store bytes or CLI output', () => {
   }
   for (const { out, err } of [recorded, plain, json, checked])
     expect(out + err).not.toContain('secret-value');
+});
+
+test('nonempty env preserves the released version-4 key', () => {
+  const { repo, state } = fixture(['MODE']);
+  expect(success(repo.cli(record, { ...state, MODE: 'a' }))).toContain('proof published');
+  const db = new Database(join(state.PROOF_STATE_DIR, 'proof.db'));
+  try {
+    const releasedHash = 'fb7dd85b03e39fac3c9ea4c73dc1f92bf819eabeae8c536ddc145498f1f5e1cf';
+    expect(db.query('SELECT key FROM proofs').all()).toEqual([{ key: releasedHash }]);
+  } finally {
+    db.close();
+  }
 });

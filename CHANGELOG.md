@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.11.0
+
+- `proof run --jobs N` runs tasks concurrently. `lanes:` and a task's `lane:` cap a resource within a
+  run, and `lane: solo` runs a task alone. Neither enters a key.
+- A red or incomplete task keeps its log under the state directory, outside every worktree, and the
+  summary prints the path. Logs stay on the machine. `run` output now reaches stdout from that one
+  file: task stderr appears on stdout, and tasks see no terminal.
+- `proof stats` reports median seconds, the current plan's estimate and time saved. `run` records
+  each skip, in a table a 0.10.0 client ignores.
+- `proof flakes` ranks tasks by contradictions. `proof invalidate` deletes proofs and audits it.
+- `{path, dotenv-keys: true}` keys a tracked file's names. `{dotenv, exclude}` keys values from a
+  checkout file, without ever storing them. A `:` in an `env` name now exits 2.
+- `dimensions:` lets a repo key a task on a command's output, such as `xcodebuild -version`.
+- The command reference moved to `docs/commands.md`. R15's ledger import, R18's repo adapters and
+  R4's provider-key class are dropped from the requirements.
+
 ## 0.10.0
 
 - Sets: a task's `sets:` and `--set <name>` for `plan`, `run` and `status`. Names are each repo's own.

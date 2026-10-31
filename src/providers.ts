@@ -1,12 +1,22 @@
 import type { Provider } from './declarations';
+import { type LogResult, logSuffix } from './logs';
 
-type Attempt = { declaration: Provider; ready: boolean; stopped: boolean };
+type Attempt = {
+  declaration: Provider;
+  ready: boolean;
+  stopped: boolean;
+  starting: Promise<boolean>;
+};
 
 export class Providers {
   private readonly attempts = new Map<string, Attempt>();
 
   constructor(
-    private readonly execute: (command: string, cleanup?: boolean) => Promise<boolean>,
+    private readonly execute: (
+      command: string,
+      cleanup: boolean,
+      name: string,
+    ) => Promise<LogResult & { ready: boolean }>,
     private readonly report: (message: string) => void,
   ) {}
 
@@ -20,12 +30,24 @@ export class Providers {
 
   async start(name: string, declaration: Provider) {
     const previous = this.attempts.get(name);
-    if (previous) return this.ready(name);
-    const attempt = { declaration, ready: false, stopped: false };
+    if (previous) return previous.starting;
+    const attempt: Attempt = {
+      declaration,
+      ready: false,
+      stopped: false,
+      starting: Promise.resolve(false),
+    };
     this.attempts.set(name, attempt);
-    attempt.ready = await this.execute(declaration.start);
-    if (!attempt.ready) this.report(`provider '${name}' start failed`);
-    return attempt.ready;
+    attempt.starting = this.execute(declaration.start, false, name).then((result) => {
+      const { ready } = result;
+      attempt.ready = ready;
+      if (!ready || result.error)
+        this.report(
+          `provider '${name}' ${ready ? 'start ready' : 'start failed'}${logSuffix(result)}`,
+        );
+      return ready;
+    });
+    return attempt.starting;
   }
 
   ready(name: string) {
@@ -41,7 +63,7 @@ export class Providers {
       attempt.stopped = true;
       if (!attempt.declaration.stop) continue;
       try {
-        if (await this.execute(attempt.declaration.stop, true)) continue;
+        if ((await this.execute(attempt.declaration.stop, true, name)).ready) continue;
       } catch (error) {
         this.report(`provider '${name}' stop failed: ${error}`);
         continue;

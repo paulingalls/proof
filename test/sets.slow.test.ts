@@ -66,7 +66,7 @@ test('task set boundaries, proof reuse, historical views and invalid selectors',
     ])
       rejected(
         `run ${args}`,
-        'usage: proof run [--fresh | --staged] [--tasks <id> ... | --set <name>]',
+        'usage: proof run [--fresh | --staged] [--jobs N] [--tasks <id> ... | --set <name>]',
       );
     expect(log()).toBe(before);
     const a = declare(

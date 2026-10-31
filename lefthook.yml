@@ -23,7 +23,7 @@ pre-push:
       runner: sh
       use_stdin: true
     - name: tests
-      run: bun --no-env-file src/cli.ts run --set push
+      run: bun --no-env-file src/cli.ts run --jobs 2 --set push
 sprint:
   # Land pushes next, and pre-push runs the whole suite; this only checks the lockfile.
   # no `skip:` here: land runs this mid-merge

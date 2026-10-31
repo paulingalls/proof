@@ -1,12 +1,11 @@
-import { Database } from 'bun:sqlite';
-import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
-import { redacted, statePath, storeUrl } from './config';
+import { redacted, storeUrl } from './config';
 import { postgres, UnreachableStore } from './postgres';
+import { sqlite, sqlitePath } from './sqlite';
+import { initialize } from './store-schema';
 
 export type Sharing = 'local' | 'shared' | 'not shared' | 'sharing uncertain';
 export type Outcome = 'green' | 'red' | 'incomplete';
-type Value = string | number | null;
+export type Value = string | number | null;
 export type Query = <T = Record<string, unknown>>(sql: string, ...values: Value[]) => Promise<T[]>;
 export interface Backend {
   query: Query;
@@ -23,86 +22,17 @@ type Proof = {
   red_host: string | null;
 };
 
-function sqlitePath() {
-  return join(statePath(), 'proof.db');
+export function localDay(date = new Date()) {
+  return `${String(date.getFullYear()).padStart(4, '0')}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-function sqlite(): Backend {
-  const base = statePath();
-  mkdirSync(base, { recursive: true });
-  const db = new Database(sqlitePath());
-  try {
-    db.exec('PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON;');
-  } catch (error) {
-    db.close();
-    throw error;
-  }
-  const query: Query = async <T>(sql: string, ...values: Value[]) =>
-    db.query(sql).all(...values) as T[];
-  return {
-    query,
-    remote: false,
-    async transaction(_lock, work) {
-      db.exec('BEGIN IMMEDIATE');
-      try {
-        const result = await work(query);
-        db.exec('COMMIT');
-        return result;
-      } catch (error) {
-        db.exec('ROLLBACK');
-        throw error;
-      }
-    },
-    async close() {
-      db.close();
-    },
-  };
-}
-
-async function initialize(backend: Backend) {
-  return await backend.transaction('proof:schema', async (query) => {
-    await query(`CREATE TABLE IF NOT EXISTS schema_version (
-          singleton INTEGER PRIMARY KEY CHECK (singleton = 1), version INTEGER NOT NULL
-        )`);
-    const [row] = await query<{ version: number }>('SELECT version FROM schema_version');
-    if (row && row.version !== 1 && row.version !== 2)
-      throw new Error(`store schema version ${row.version}; supported version 2`);
-    const id = backend.remote
-      ? 'BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY'
-      : 'INTEGER PRIMARY KEY';
-    const reference = backend.remote ? 'BIGINT' : 'INTEGER';
-    await query(`CREATE TABLE IF NOT EXISTS results (
-          id ${id}, project TEXT NOT NULL, task TEXT NOT NULL, key TEXT NOT NULL,
-          outcome TEXT NOT NULL, seconds DOUBLE PRECISION, host TEXT NOT NULL, "commit" TEXT NOT NULL,
-          dirty INTEGER NOT NULL, finished_at TEXT NOT NULL
-        )`);
-    await query(`CREATE TABLE IF NOT EXISTS proofs (
-          project TEXT NOT NULL, task TEXT NOT NULL, key TEXT NOT NULL,
-          result_id ${reference} NOT NULL REFERENCES results(id),
-          PRIMARY KEY (project, task, key)
-        )`);
-    if (!row || row.version === 1) await query('ALTER TABLE proofs ADD COLUMN env_hashes TEXT');
-    await query(`CREATE TABLE IF NOT EXISTS contradictions (
-          id ${id}, project TEXT NOT NULL, task TEXT NOT NULL, key TEXT NOT NULL,
-          green_result ${reference} NOT NULL REFERENCES results(id),
-          red_result ${reference} NOT NULL REFERENCES results(id), kind TEXT NOT NULL,
-          deleted_proof INTEGER NOT NULL, recorded_at TEXT NOT NULL
-        )`);
-    if (!backend.remote)
-      await query(`CREATE TABLE IF NOT EXISTS observed_contests (
-        result_id INTEGER PRIMARY KEY REFERENCES results(id),
-        red_commit TEXT NOT NULL, red_host TEXT NOT NULL
-      )`);
-    if (!backend.remote)
-      await query(`CREATE TABLE IF NOT EXISTS unshared_reds (
-        project TEXT NOT NULL, task TEXT NOT NULL, key TEXT NOT NULL,
-        result_id INTEGER NOT NULL REFERENCES results(id), PRIMARY KEY (project, task, key)
-      )`);
-    if (!row) await query('INSERT INTO schema_version (singleton, version) VALUES (1, 2)');
-    else if (row.version === 1) await query('UPDATE schema_version SET version = 2');
-    return 2;
-  });
-}
+type HistoryResult = {
+  task: string;
+  outcome: Outcome;
+  seconds: number | null;
+  finished_at: string;
+};
+type Skip = { task: string; day: string; count: number };
 
 export class Store {
   private closed = false;
@@ -376,6 +306,147 @@ export class Store {
       this.fallback(error);
       return { ...result, sharing: 'sharing uncertain' };
     }
+  }
+
+  async skip(project: string, tasks: string[]) {
+    if (!tasks.length) return;
+    const day = localDay();
+    const statement = `INSERT INTO skips (project, task, day, count) VALUES
+      ${tasks.map(() => '(?, ?, ?, 1)').join(', ')}
+      ON CONFLICT (project, task, day) DO UPDATE SET count = skips.count + excluded.count`;
+    const values = tasks.flatMap((task) => [project, task, day]);
+    await this.local.query(statement, ...values);
+    if (this.remote && !this.offline) {
+      try {
+        await this.remote.query(statement, ...values);
+      } catch (error) {
+        this.fallback(error);
+      }
+    }
+  }
+
+  async invalidate(
+    project: string,
+    task: string,
+    selected: string | undefined,
+    host: string,
+    commit: string,
+  ) {
+    const finishedAt = new Date().toISOString();
+    const write = async (backend: Backend) => {
+      const keys =
+        selected === undefined
+          ? await backend.query<{ key: string }>(
+              'SELECT key FROM proofs WHERE project = ? AND task = ?',
+              project,
+              task,
+            )
+          : [{ key: selected }];
+      let deleted = 0;
+      for (const { key } of keys) {
+        deleted += await backend.transaction(
+          JSON.stringify([project, task, key]),
+          async (query) => {
+            const proof = await this.lookup(project, task, key, query, !backend.remote);
+            if (!proof) return 0;
+            const [result] = await query<{ id: number | string }>(
+              `INSERT INTO results (project, task, key, outcome, seconds, host, "commit", dirty, finished_at)
+            VALUES (?, ?, ?, 'manual', NULL, ?, ?, 0, ?) RETURNING id`,
+              project,
+              task,
+              key,
+              host,
+              commit,
+              finishedAt,
+            );
+            if (!result) throw new Error('store did not return the inserted result');
+            await query(
+              `INSERT INTO contradictions
+            (project, task, key, green_result, red_result, kind, deleted_proof, recorded_at)
+            VALUES (?, ?, ?, ?, ?, 'manual', 1, ?)`,
+              project,
+              task,
+              key,
+              proof.result_id,
+              result.id,
+              finishedAt,
+            );
+            await query(
+              'DELETE FROM proofs WHERE project = ? AND task = ? AND key = ?',
+              project,
+              task,
+              key,
+            );
+            return 1;
+          },
+        );
+      }
+      return deleted;
+    };
+    const local = await write(this.local);
+    if (!this.remote) return { local };
+    if (!this.offline) {
+      try {
+        return { local, shared: await write(this.remote) };
+      } catch (error) {
+        this.fallback(error);
+      }
+    }
+    throw new Error(`deleted ${local} local proof(s); shared proof may survive`);
+  }
+
+  async flakes(project: string, start: string) {
+    const read = async (query: Query) =>
+      (
+        await query<{
+          task: string;
+          ordinary: number | string;
+          super: number | string;
+        }>(
+          `SELECT task,
+      SUM(CASE WHEN kind = 'ordinary' THEN 1 ELSE 0 END) AS ordinary,
+      SUM(CASE WHEN kind = 'super' THEN 1 ELSE 0 END) AS super
+      FROM contradictions WHERE project = ? AND recorded_at >= ?
+      AND kind IN ('ordinary', 'super') GROUP BY task ORDER BY ordinary DESC, task ASC`,
+          project,
+          start,
+        )
+      ).map((row) => ({
+        task: row.task,
+        ordinary: Number(row.ordinary),
+        super: Number(row.super),
+      }));
+    if (this.remote && !this.offline) {
+      try {
+        return await read(this.remote.query);
+      } catch (error) {
+        this.fallback(error);
+      }
+    }
+    return read(this.local.query);
+  }
+
+  async history(project: string, start: string, end: string) {
+    const read = async (query: Query) => ({
+      results: await query<HistoryResult>(
+        `SELECT task, outcome, seconds, finished_at FROM results WHERE project = ? AND outcome <> 'manual'`,
+        project,
+      ),
+      skips: await query<Skip>(
+        'SELECT task, day, count FROM skips WHERE project = ? AND day >= ? AND day < ?',
+        project,
+        start,
+        end,
+      ),
+    });
+    if (this.remote && !this.offline) {
+      try {
+        return await read(this.remote.query);
+      } catch (error) {
+        this.fallback(error);
+      }
+    }
+    return read(this.local.query);
   }
 
   async close() {

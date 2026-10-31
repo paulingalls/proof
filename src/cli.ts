@@ -3,10 +3,13 @@ import { resolve } from 'node:path';
 import pkg from '../package.json';
 import { check } from './check';
 import { doctor } from './doctor';
+import { flakes } from './flakes';
+import { invalidate } from './invalidate';
 import { lint } from './lint';
 import { plan, renderDecision } from './plan';
 import { record } from './record';
 import { run } from './run';
+import { stats } from './stats';
 import { status } from './status';
 import { why } from './why';
 
@@ -15,7 +18,19 @@ const [command, ...args] = Bun.argv.slice(2);
 if (command === '--version') {
   console.log(pkg.version);
 } else if (
-  ['check', 'plan', 'record', 'lint', 'run', 'doctor', 'status', 'why'].includes(command ?? '')
+  [
+    'check',
+    'plan',
+    'record',
+    'lint',
+    'run',
+    'doctor',
+    'status',
+    'why',
+    'stats',
+    'flakes',
+    'invalidate',
+  ].includes(command ?? '')
 ) {
   try {
     // git reports root-relative paths, and the working-tree reads resolve against cwd.
@@ -23,7 +38,13 @@ if (command === '--version') {
     const top = Bun.spawnSync(['git', 'rev-parse', '--show-toplevel']);
     if (top.exitCode !== 0) throw new Error(top.stderr.toString().trim());
     process.chdir(top.stdout.toString().trim());
-    if (command === 'why') {
+    if (command === 'invalidate') {
+      console.log(await invalidate(args));
+    } else if (command === 'flakes') {
+      await flakes(args);
+    } else if (command === 'stats') {
+      await stats(args);
+    } else if (command === 'why') {
       await why(args);
     } else if (command === 'doctor') {
       if (args.length) throw new Error('usage: proof doctor');

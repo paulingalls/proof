@@ -91,8 +91,11 @@ The package has its own tests for its own behaviour, on synthetic repos it build
 - **R4. Providers govern lifecycle, never keys.** Providers are the shared stack, a test database, the iOS app
   build and the web export. They start only when some RUN task needs them. A task's key holds the task's own
   inputs, never a provider's whole input set. A stack gate's inputs include a coarse named set `$stack` (the
-  backend source it exercises) and the stack's real identity: the env-file values the stack reads, and whether
-  provider keys are absent, dummy or real.
+  backend source it exercises) and the stack's real identity: the included env-file values the stack reads.
+  - Paul, 2026-10-30: drop the provider-key class (absent, dummy or real). Real keys run only in
+    the super run, which ignores proofs, so a dummy green cannot stand in for a real run.
+    A class in the key would hide super reds from dummy proofs and prevent reuse of super greens.
+    Repos exclude provider keys from dotenv identity.
   - Journeys (native and web) exercise the running backend, so their inputs include `$stack` too: a backend
     change re-runs them. Never a stale PROVEN; a repo narrows `$stack` per journey if that costs too much
     (Paul, 2026-10-30, resolving design §4.2 against §1.2 cases 4, 7 and 10).
@@ -130,6 +133,7 @@ The package has its own tests for its own behaviour, on synthetic repos it build
   - An incomplete or killed run contests nothing.
   - `proof flakes` ranks tasks by contradictions.
   - A flake is re-run alone; never serialise a whole tier for one flake.
+  - Logs stay on the machine: they may hold private data, so they never reach either store (R13).
 - **R10. The super test is the backstop.** It runs every task fresh, and records each task's result
   independently so one red doesn't hide others. A fresh red against a stored green for the same key deletes
   that green everywhere and records a contradiction. Its greens publish proofs like any other clean run.
@@ -155,9 +159,8 @@ The package has its own tests for its own behaviour, on synthetic repos it build
 - **R14. A local fallback.** Each machine keeps a local SQLite replica of its own results. When the store is
   unreachable, `plan` falls back to that machine's own proofs, otherwise runs everything, and says so loudly.
 - **R15. The store absorbs the history** that app-a scatters today: per-task timings, flake history,
-  contradictions, and release freshness ("every journey green at this tag" is a query). Import app-a's
-  existing ledger (`$(git rev-parse --git-common-dir)/land-timing.jsonl`, about 26k rows) once, as history
-  rows that create no proofs. Tag nested wrapper rows so time isn't double-counted.
+  contradictions, and release freshness ("every journey green at this tag" is a query).
+  Ledger import dropped 2026-10-30: no current consumer needs it (the lead's reading; Paul may correct it).
 
 ### The interface
 - **R16. The CLI** follows design §4.6:
@@ -175,7 +178,8 @@ The package has its own tests for its own behaviour, on synthetic repos it build
   - **Core:** parser and lint, hashing over the git index, env class, key, store client (`Bun.sql`,
     `bun:sqlite`), planner, executor, sandboxes, providers and lanes, CLI.
   - **Shipped adapters:** as in R5.
-  - **A repo can add an adapter** under `proof.d/adapters/`.
+  - Repo adapters under `proof.d/adapters/` dropped 2026-10-30: no current consumer needs it
+    (the lead's reading; Paul may correct it).
 - **R19. Nothing from a consumer leaks into the core.** No app-a or xp-plugin vocabulary goes in the schema,
   CHECK constraints, task kinds or CLI. Run sets (`push`, `land`, `story`, `super`, ...) are each repo's own
   names in its `proof.yaml`.

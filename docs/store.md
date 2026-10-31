@@ -11,7 +11,7 @@ survives local proof deletion; incomplete results and dirty greens cannot clear
 it. A clean local green clears it, as does confirmation that the red was shared.
 Reconnection alone does not.
 
-For `plan`, `run`, `record`, `status` and `why`, a connection attempt has a two-second timeout. If
+For `plan`, `run`, `record`, `status`, `why`, `flakes` and `stats`, a connection attempt has a two-second timeout. If
 the store is unreachable at startup, during a read, or while publishing, the
 command switches to the local replica and prints one line to stderr:
 
@@ -54,12 +54,32 @@ any confirmed local deletion, without claiming shared deletion. An offline fresh
 veto survives deletion and blocks a still-green remote after reconnect until a clean local
 green or confirmed red share clears it.
 
+`invalidate` also writes local first, then shared. Each proof deletion, its untimed
+`manual` result (`dirty = 0`) and its `manual` contradiction (`deleted_proof = 1`)
+commit together under the existing per-key lock. The contradiction references the
+removed proof's green result and the new manual result; schema version remains 2.
+An absent proof writes no history. Counts distinguish confirmed local and shared deletions.
+If the configured store is unreachable, the local deletion remains committed and the
+command exits 2 saying `shared proof may survive`, even if no local proof existed.
+A lost connection during commit receives no special handling. Authentication, schema
+and query failures remain loud errors.
+
+Manual deletion creates no unshared-red veto and is never replayed. On reconnect a
+surviving shared proof can therefore be PROVEN again. A second clone must observe the
+deletion online before its replica stops serving its old proof offline. That observation
+uses the existing result-bound contest marker, rendered as `contested: red at <commit>`;
+a later clean local green replaces it. Offline clones cannot learn unseen deletions.
+`flakes` excludes manual history; `stats` excludes manual result rows from run counts.
+
 Nothing is queued, replayed, or uploaded on reconnect. Local proofs are never
 copied to Postgres retroactively. A missed share costs another run. Without a
 Postgres configuration, `plan`, `run` and `record` print no replica or sharing diagnostics.
 
 Proof metadata includes one identity per declared env name: `absent` or SHA-256 of its value.
-No env value is stored. These identities are captured with the key by both `record` and `run`;
+`env_hashes` also holds one `<file>:<NAME>` identity per included dotenv name, always a value hash.
+`env_hashes` also holds `dimension:<name>` with SHA-256 of each selected dimension's trimmed stdout.
+No raw env or dimension value is stored. These identities are captured with the key by both
+`record` and `run`;
 `why` uses them to explain env changes. Schema 2 adds nullable `proofs.env_hashes`, encoded as
 JSON name/identity pairs. NULL denotes a legacy proof whose env comparison is unavailable;
 `[]` denotes a new proof with no declared env. Migration preserves existing results and proofs
@@ -67,13 +87,29 @@ without backfilling env data.
 
 The first client at this version migrates a fresh, unversioned or schema-1 store to schema 2
 under the schema transaction/lock. Any command opening the store can migrate it, including
-`doctor`. An older pinned client then exits 2 naming the stored and supported versions until it
+`doctor`. A client predating schema 2 then exits 2 naming the stored and supported versions until it
 upgrades. Upgrade clients sharing a store together. Newer unsupported schemas are rejected
 without changing history.
 
 `why` reads the newest surviving proof across keys from the shared store when reachable,
 ordered by finish time and result id. Contested proofs remain comparison baselines. Shared reads
 do not import remote history into SQLite; offline explanations use only this machine's proofs.
+
+`run` batches its final PROVEN skips into one atomic multi-row increment per backend,
+local first and then shared when online. `skips` has one row per project, task and local
+calendar date of the recording machine, bounding rows by tasks times days. The date is
+taken when the run flushes, including runs ending after midnight. Red and interrupted
+runs retain skips already reached; a thrown sandbox failure exits 2 before flushing.
+Failed remote writes use the same loud fallback with no replay on reconnect.
+`plan` and `stats` never increment counts.
+
+The skips table is additive (`CREATE TABLE IF NOT EXISTS`); schema version stays 2.
+The v0.10.0 client can still open and write the same store, preserving skip rows.
+`stats` reads results and skips from one backend: Postgres while online, otherwise
+the local replica. Neither shared history nor skips are imported into the replica.
+It reads history after its current-plan decisions; if a decision loses the connection,
+earlier decisions remain shared and subsequent reads use the replica under the fallback
+diagnostic, as in `plan`. Authentication, schema and query errors still exit 2.
 
 ## Start the host
 
@@ -210,12 +246,15 @@ file with mode 600 (`umask 077` before writing it). `PROOF_STORE` in the environ
 takes precedence over the file; do not commit either credentials or real names.
 
 Run `proof doctor` inside a repository with `proof.yaml`. It prints labelled
-Store, Reachability, Schema version, Replica, Project and Bun lines. The URL is
+Store, Reachability, Schema version, Replica, Project and Bun lines, then a
+`Dimension <name>: <raw value>` line for every declared dimension. A failed command prints
+`Dimension <name>: unavailable (<reason>)` and the report continues. The URL is
 redacted to protocol and host/port. An empty store initializes through the same
-schema lifecycle as plan. Exit 0 means reachable; exit 1 means a configured store
-is unreachable, with a reason and schema `unavailable`. Doctor never substitutes
+schema lifecycle as plan. Exit 0 means the store and all dimensions are available; exit 1 means
+a dimension failed or a configured store is unreachable (with a reason and schema `unavailable`).
+Doctor never substitutes
 the replica's health for remote health. Authentication, schema and query errors
-exit 2. With no remote configured it diagnoses SQLite and exits 0 on success.
+exit 2. With no remote configured it diagnoses SQLite; dimension failures still exit 1.
 
 The SQLite filename is `proof.db` under `PROOF_STATE_DIR`, otherwise
 `$XDG_STATE_HOME/proof`, otherwise `$HOME/.local/state/proof`. Doctor prints that

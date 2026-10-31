@@ -33,11 +33,13 @@ tasks:
     sets: [commit, push]
   test-slow:
     run: bun run test-slow
+    links: [node_modules]
     inputs:
       - src/**
       - test/**/*.slow.test.ts
       - test/support/repo.ts
       - test/support/postgres.ts
+      - test/support/jobs.ts
       - package.json
       - tsconfig.json
       - docs/store.md
