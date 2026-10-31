@@ -184,10 +184,11 @@ is authoritative while online; an unreachable store announces fallback once and 
 machine's own proofs.
 
 `proof status --ref <ref> [--set <name>] [--json]` judges selected tasks using that ref's committed
-`proof.yaml`, included declarations and input bytes, plus the caller's declared env and dimension values.
+`proof.yaml`, included declarations and input bytes, plus the caller's declared env and
+dimension values.
 It resolves branches, commit ids, lightweight tags and annotated tags without checking out the
-ref, running tasks or starting providers. Uncommitted edits and installed dependencies do not
-change its answer. For example:
+ref, running tasks or starting providers. Input bytes come from the ref; env, dotenv and dimension
+values come from this invocation. For example:
 
 ```sh
 bunx proof status --ref HEAD --json
@@ -202,7 +203,8 @@ unreachable store uses the local replica and reports the fallback on stderr, kee
 stdout parseable.
 
 Status reads the ref's committed files and declarations, declared env, checkout dotenv values,
-and dimension commands evaluated on the current machine. `plan` also looks at this checkout, so `status --ref HEAD` can say PROVEN where
+and dimension commands evaluated on the current machine. `plan` also looks at this checkout,
+so `status --ref HEAD` can say PROVEN where
 `plan` says RUN when the checkout has something the commit doesn't: an uncommitted or ignored file
 a task selects (even when `git status` is empty), a file hidden by `assume-unchanged` or
 `skip-worktree`, or a linked `node_modules` escaping into tracked files. Status's `trusted links`
