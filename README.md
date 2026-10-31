@@ -213,7 +213,7 @@ records a `super` contradiction. The summary lists every red and each confirmed 
 contest a green on the first red and delete it on the second. A clean fresh green publishes
 proof, including for a contested key. Incomplete results and interrupts delete nothing.
 
-A dirty tree still executes and records results, but says `no proof published` with a reason.
+A dirty tree still executes (a dirty declaration runs without recording) and records results, but says `no proof published` with a reason.
 A red over dirty selected inputs cannot delete proof of the committed bytes; unrelated dirt
 does not prevent deletion. Offline deletions apply locally and say `not shared`; an attempted
 share whose commit is uncertain says `sharing uncertain` and claims no shared deletion.
