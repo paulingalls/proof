@@ -1,11 +1,13 @@
-import type { Input, Task } from './declarations';
+import type { Task } from './declarations';
 import type { RefTree, Scope } from './git';
 import { closure, source } from './imports';
+import { keyParts } from './key-parts';
 import { maestro } from './maestro';
 
-type Key = { key: string; reason?: never } | { key?: never; reason: string };
+type Key =
+  | { key: string; env: [string, string][]; reason?: never }
+  | { key?: never; reason: string };
 
-const contents = new WeakMap<RefTree, Map<string, string>>();
 const inventories = new WeakMap<RefTree, string[]>();
 
 function inventory(tree: RefTree) {
@@ -15,22 +17,6 @@ function inventory(tree: RefTree) {
     inventories.set(tree, paths);
   }
   return paths;
-}
-
-function compare(a: string, b: string) {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
-
-function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
-  if (value !== null && typeof value === 'object') {
-    return `{${Object.entries(value)
-      .map(([name, member]) => [JSON.stringify(name), canonical(member)] as const)
-      .sort(([a], [b]) => compare(a, b))
-      .map(([name, member]) => `${name}:${member}`)
-      .join(',')}}`;
-  }
-  return JSON.stringify(value);
 }
 
 function* candidates(available: string[], pattern: string, dirty: string[]) {
@@ -52,7 +38,7 @@ function* candidates(available: string[], pattern: string, dirty: string[]) {
   yield* dirty;
 }
 
-function select(
+export function select(
   task: Task,
   tree: RefTree,
   dirty: string[] = [],
@@ -172,80 +158,10 @@ export function key(id: string, task: Task, tree: RefTree, dirty: string[] = [])
       }
     }
   }
-  const selection = select(task, tree);
-  if (selection.reason) return { reason: selection.reason };
-  const selected: (
-    | [string, string | undefined, string | undefined]
-    | [string, string | undefined, string, string]
-  )[] = [...selection.paths].map((path) => [path, tree.modes.get(path), tree.files.get(path)]);
-  selected.sort(([a], [b]) => compare(a, b));
-  let cached = contents.get(tree);
-  if (!cached) {
-    cached = new Map();
-    contents.set(tree, cached);
-  }
-  const projections = task.inputs.filter(
-    (input): input is Extract<Input, { path: string }> =>
-      typeof input !== 'string' && 'path' in input,
-  );
-  const members = new Map<string, [string, string, string]>();
-  for (const { path, json } of projections) {
-    if (!tree.files.has(path)) return { reason: `missing input '${path}'` };
-    let source = cached.get(path);
-    if (source === undefined) {
-      source = tree.read(path);
-      cached.set(path, source);
-    }
-    let value: unknown;
-    try {
-      value = JSON.parse(source);
-    } catch {
-      return { reason: `input '${path}': invalid JSON` };
-    }
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-      return { reason: `input '${path}': not a JSON object` };
-    }
-    const object = value as Record<string, unknown>;
-    for (const member of json) {
-      members.set(JSON.stringify([path, member]), [
-        path,
-        member,
-        Object.hasOwn(object, member)
-          ? new Bun.CryptoHasher('sha256').update(canonical(object[member])).digest('hex')
-          : 'absent',
-      ]);
-    }
-  }
-  selected.push(
-    ...[...members.values()]
-      .sort(([ap, am], [bp, bm]) => compare(ap, bp) || compare(am, bm))
-      .map(([path, member, hash]): [string, string | undefined, string, string] => [
-        path,
-        tree.modes.get(path),
-        member,
-        hash,
-      ]),
-  );
-  const tuple: unknown[] = [
-    2,
-    id,
-    { run: task.run, ...(task.links?.length ? { links: task.links } : {}) },
-    selected,
-  ];
-  if (task.env?.length) {
-    tuple.push(
-      task.env.map((name) => {
-        const value = process.env[name];
-        return [
-          'env',
-          name,
-          value === undefined
-            ? 'absent'
-            : new Bun.CryptoHasher('sha256').update(value).digest('hex'),
-        ];
-      }),
-    );
-  }
+  const parts = keyParts(task, tree);
+  if (parts.reasons.length) return { reason: parts.reasons[0] as string };
+  const tuple: unknown[] = [2, id, parts.declaration, [...parts.files, ...parts.members]];
+  if (task.env?.length) tuple.push(parts.env.map(([name, hash]) => ['env', name, hash]));
   const hash = new Bun.CryptoHasher('sha256').update(JSON.stringify(tuple)).digest('hex');
-  return { key: hash };
+  return { key: hash, env: parts.env };
 }

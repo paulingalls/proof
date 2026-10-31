@@ -213,6 +213,7 @@ export async function run(args: string[]) {
             tree.commit,
             unpublished !== undefined,
             key(id, task, tree, dirty).key === undefined,
+            current.env,
           );
           summary.push(
             `${outcome} ${id}${unpublished ? `; no proof published: ${unpublished}` : outcome === 'green' ? '; proof published' : ''}${sharing === 'local' ? '' : `; ${sharing}`}`,

@@ -19,7 +19,7 @@ The goal: run only what a change can actually affect, and nothing extra.
   machine (OS, CPU and Bun version are deliberately not in the key), and a key can
   be computed for any ref without a checkout.
 - **Proofs live in one shared store.** Postgres (optional) stores metadata only:
-  task, key, outcome, host, timings and contradictions, never logs. Each machine
+  task, key, outcome, host, timings, per-name env hashes and contradictions, never logs. Each machine
   keeps a local SQLite copy of its own results.
 - **Declarations are enforced, not trusted.** Tasks run in a sandbox holding only
   their inputs, so a missing input fails loudly. An undecidable task always runs.
@@ -32,7 +32,7 @@ The goal: run only what a change can actually affect, and nothing extra.
 tagged release from GitHub:
 
 ```sh
-bun add -d "git+https://github.com/paulingalls/proof.git#v0.7.0"
+bun add -d "git+https://github.com/paulingalls/proof.git#v0.8.0"
 bunx proof --version
 ```
 
@@ -169,6 +169,8 @@ provider-free tasks have no `providers` field. Neither plan form starts resource
 
 ```
 proof plan [--json]          what must run, and why
+proof why <task>            current key parts and changes since the newest proof
+proof status --ref <ref> [--json]  proof state of every task at a committed ref
 proof run [--tasks <id>...]  run what must run, and record the results
 proof record <task> --outcome green|red|incomplete [--seconds N]
 proof lint                   check declarations against the staged tree
@@ -178,6 +180,66 @@ proof doctor                 which store is in use, and whether it's reachable
 
 `run` exits 0 when every task is proven or green, 1 when a task is red/incomplete or a provider fails, 130/143 when interrupted;
 any command exits 2 on a usage, declaration or store error.
+
+`proof why <task>` starts with the task's `plan` decision, then prints its current key
+parts: selected paths with Git blob ids and modes, JSON member identities, declared env names
+(without values), and the declaration hash. These parts use the files on disk, including staged
+and unstaged edits, additions, deletions and selected ignored files. Git decides whether a
+tracked path is clean, so a line-ending or LFS filter never reads as a change; blob ids of
+dirty paths hash their raw bytes. Plan's dirty-input eligibility stays the same.
+
+For example, after proving `text`, edit its input and explain it:
+
+```sh
+bunx proof record text --outcome green
+# Edit src/text.ts.
+bunx proof why text
+```
+
+The decision says `RUN text: undecidable: dirty input 'src/text.ts'`, and the comparison
+includes `changed file src/text.ts`. Explanation never executes tasks or starts providers.
+
+The baseline is the newest surviving proof for this project and task across all keys, including
+contested proofs. Newest means greatest finish time, then result id; the comparison names its
+commit, host and time. Historical inputs and declarations come from that commit's Git blobs.
+Changes list added, removed and changed paths or JSON members, changed env names, and
+`declaration changed` when the command or links changed. Env comparisons use stored hashes,
+never today's env as a substitute for historical values. Mode changes count too.
+
+With no differences it says `no inputs changed`, or `no comparable inputs changed` when something
+couldn't be compared; unresolved inputs print their reasons and available parts. Older proofs say
+`env comparison unavailable` while files still compare. A pruned proof commit says
+`proof commit unavailable: <commit>` and leaves the current parts visible. A task never proven
+says `no proof for this task`. Why exits 0 for these explanations and 2 for an unknown task,
+invalid arguments, declarations or store errors. An available proof commit whose declarations
+cannot be reconstructed also fails with exit 2, after printing current parts. The shared store
+is authoritative while online; an unreachable store announces fallback once and uses only this
+machine's own proofs.
+
+`proof status --ref <ref> [--json]` judges every task using that ref's committed
+`proof.yaml`, included declarations and input bytes, plus the caller's declared env values.
+It resolves branches, commit ids, lightweight tags and annotated tags without checking out the
+ref, running tasks or starting providers. Uncommitted edits and installed dependencies do not
+change its answer. For example:
+
+```sh
+bunx proof status --ref HEAD --json
+bunx proof status --ref release --json
+```
+
+Rows use the same format as `plan`: PROVEN names the proof's commit, host and time; RUN explains
+`no proof for key`, a contested proof or an undecidable key. JSON has the same row shape as
+`plan --json`. Status exits 0 when every task is PROVEN (including a ref with no tasks), 1 when
+any task is RUN, and 2 for an unknown ref, invalid declarations, usage or store error. An
+unreachable store uses the local replica and reports the fallback on stderr, keeping JSON
+stdout parseable.
+
+Status reads only the ref's committed files and your declared env, so a ref gets the same answer
+on every checkout. `plan` also looks at this checkout, so `status --ref HEAD` can say PROVEN where
+`plan` says RUN when the checkout has something the commit doesn't: an uncommitted or ignored file
+a task selects (even when `git status` is empty), a file hidden by `assume-unchanged` or
+`skip-worktree`, or a linked `node_modules` escaping into tracked files. Status's `trusted links`
+suffix restates the declaration rather than reporting an inspection.
 
 `proof check` compares the exact RUN set between committed refs without executing the declared
 commands. After the Quickstart's `src/text.ts` edit and commit, save this as `cases.yaml`:
@@ -197,8 +259,6 @@ diagnostic and counts as selected.
 Planned, specified in [R16](docs/2026-10-30-proof-requirements.md) and design §4.6:
 
 ```
-proof why <task>                          the key's parts, and the inputs changed since the newest proof
-proof status --ref <r>                    proof state at any ref, without a checkout
 proof invalidate --task <t> [--key k|--all] delete proofs (recorded as a manual contradiction)
 proof flakes [--since 30d]                tasks ranked by contradictions
 proof stats [--set land]                  median seconds per task; estimated minutes for a plan
@@ -231,7 +291,7 @@ suite. The shape, using Docker and [Tailscale](https://tailscale.com):
    Then run `bunx proof doctor` on each machine.
 
 If the store is unreachable, `proof` says so and uses that machine's own proofs; results recorded
-meanwhile aren't uploaded later. The store holds metadata only (task, key, outcome, host, timings),
+meanwhile aren't uploaded later. The store holds metadata only (task, key, outcome, host, timings, per-name env hashes),
 never logs or output. It's a cache: losing it costs re-runs, never correctness.
 
 ## Status

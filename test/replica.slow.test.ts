@@ -408,8 +408,8 @@ for (const failure of ['schema', 'authentication', 'query']) {
     expect(repo.cli(['plan'], { PROOF_STATE_DIR: a.PROOF_STATE_DIR }).out).toContain('PROVEN lint');
     let expected = 'result_id';
     if (failure === 'schema') {
-      await sql`UPDATE schema_version SET version = 2`;
-      expected = 'store schema version 2';
+      await sql`UPDATE schema_version SET version = 3`;
+      expected = 'store schema version 3';
     } else if (failure === 'authentication') {
       const url = new URL(a.PROOF_STORE);
       url.password = 'wrong-password';
