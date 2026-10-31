@@ -1,4 +1,4 @@
-import { redacted, storeUrl } from './config';
+import { redacted, storeConfig } from './config';
 import { postgres, UnreachableStore } from './postgres';
 import { sqlite, sqlitePath } from './sqlite';
 import { initialize } from './store-schema';
@@ -42,8 +42,8 @@ export class Store {
     private readonly remote?: Backend,
   ) {}
 
-  static async diagnose() {
-    const url = storeUrl();
+  static async diagnose(project: string) {
+    const { url, excluded } = storeConfig(project);
     const backend = url ? postgres(url) : sqlite();
     let version: number | undefined;
     let reason: string | undefined;
@@ -65,11 +65,17 @@ export class Store {
     } catch (error) {
       if (!(reason && error instanceof UnreachableStore)) throw error;
     }
-    return { store: url ? redacted(url) : sqlitePath(), replica: sqlitePath(), version, reason };
+    return {
+      store: excluded ?? (url ? redacted(url) : sqlitePath()),
+      replica: sqlitePath(),
+      version,
+      reason,
+    };
   }
 
-  static async open() {
-    const url = storeUrl();
+  static async open(project: string) {
+    const { url, excluded } = storeConfig(project);
+    if (excluded) console.error(excluded);
     const local = sqlite();
     const store = new Store(local, url === undefined ? undefined : postgres(url));
     try {

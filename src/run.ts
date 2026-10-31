@@ -32,11 +32,12 @@ export async function run(args: string[]) {
   const snapshot = captured
     ? { tree: captured, ...declarations(captured), dirty: [], declaration: undefined }
     : undefined;
-  const roster = selectTasks((snapshot ?? currentTree()).tasks, set);
+  const selected = snapshot ?? currentTree();
+  const roster = selectTasks(selected.tasks, set);
   const requested = set === undefined ? args.slice(1) : [];
   for (const id of requested) if (!roster.has(id)) throw new Error(`undeclared task '${id}'`);
   const ids = [...roster.keys()].filter((id) => !requested.length || requested.includes(id));
-  const store = await Store.open();
+  const store = await Store.open(selected.project);
   const summary: string[] = [];
   const skipped: string[] = [];
   let failed = false;

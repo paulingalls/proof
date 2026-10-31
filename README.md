@@ -311,7 +311,10 @@ suite. The shape, using Docker and [Tailscale](https://tailscale.com):
    ```
    postgres://proof:<password>@<host-magicdns-name>:5432/proof
    ```
-   Then run `bunx proof doctor` on each machine.
+   Optionally add allowed project names, one per subsequent nonempty line. Names match
+   `proof.yaml` exactly; unlisted projects use SQLite only. A URL alone allows every project,
+   and `PROOF_STORE` ignores the list. See [project selection](docs/store.md#configure-clients-and-diagnose),
+   including older-client and worktree behavior. Then run `bunx proof doctor` on each machine.
 
 If the store is unreachable, `proof` says so and uses that machine's own proofs; results recorded
 meanwhile aren't uploaded later. `invalidate` deletes locally but exits 2 if shared deletion cannot

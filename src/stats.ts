@@ -27,7 +27,7 @@ export async function stats(args: string[]) {
   if ([start, end, previous].some((date) => !Number.isFinite(+date))) throw new Error(usage);
   const view = currentTree();
   const tasks = selectTasks(view.tasks, set);
-  const store = await Store.open();
+  const store = await Store.open(view.project);
   try {
     const running: string[] = [];
     for (const [id, task] of tasks) {

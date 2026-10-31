@@ -10,7 +10,7 @@ export async function why(args: string[]) {
   const view = currentTree();
   const task = view.tasks.get(id);
   if (!task) throw new Error(`undeclared task '${id}'`);
-  const store = await Store.open();
+  const store = await Store.open(view.project);
   try {
     console.log(
       renderDecision(

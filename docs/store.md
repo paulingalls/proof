@@ -233,17 +233,37 @@ of those network checks. Every TCP client still needs the database password.
 ## Configure clients and diagnose
 
 The user config is `${XDG_CONFIG_HOME:-$HOME/.config}/proof/store`. Put the URL
-alone on its first line, with no YAML and no `PROOF_STORE=` prefix. For example,
-using placeholders only:
+alone on its first line, with no YAML and no `PROOF_STORE=` prefix. Optionally list
+allowed projects on subsequent lines, using placeholders only:
 
 ```text
 postgres://proof:PERCENT_ENCODED_PASSWORD@HOST.TAILNET.ts.net:5432/proof
+project-a
+project-b
 ```
 
 Use the host's Tailscale MagicDNS name. Percent-encode reserved characters in
 username, password and database name. Create the directory with mode 700 and the
 file with mode 600 (`umask 077` before writing it). `PROOF_STORE` in the environment
-takes precedence over the file; do not commit either credentials or real names.
+takes precedence over the file and ignores its project list: it is an explicit request
+for the remote. Do not commit either credentials or real names.
+
+Names match the declared `project` exactly, including whitespace and case. Empty
+lines are ignored; LF and CRLF line endings work. With no names, the URL applies
+to every project as before. With at least one name, an unlisted project uses only
+SQLite and opens no remote connection. Each command prints one line to stderr:
+
+```text
+store not used: project '<name>' is not listed in <file>
+```
+
+`doctor` instead prints that diagnostic on its `Store:` line, with empty stderr,
+and checks SQLite: healthy SQLite and dimensions exit 0; failed dimensions exit 1.
+Unlisted `invalidate` deletes only local proofs and can succeed; it does not
+attempt shared invalidation. The file URL must still be valid even for an unlisted project.
+
+Older clients read only the URL and ignore the list. All worktrees declaring a
+listed project name remain eligible; omit that name to keep all of them local.
 
 Run `proof doctor` inside a repository with `proof.yaml`. It prints labelled
 Store, Reachability, Schema version, Replica, Project and Bun lines, then a

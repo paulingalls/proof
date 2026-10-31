@@ -39,7 +39,7 @@ export async function record(args: string[]) {
         ? `dirty declaration '${declaration}'`
         : key(id, task, tree, dirty).reason
       : undefined;
-  const store = await Store.open();
+  const store = await Store.open(project);
   try {
     const { sharing } = await store.record(
       project,

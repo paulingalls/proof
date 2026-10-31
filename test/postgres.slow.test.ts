@@ -160,7 +160,7 @@ test('remote green is reused across clones with provenance, precise duration and
   mkdirSync(join(base, 'proof'));
   writeFileSync(
     join(base, 'proof/store'),
-    `${env.PROOF_STORE.replace('postgres:', 'postgresql:')}\r\nignored`,
+    `${env.PROOF_STORE.replace('postgres:', 'postgresql:')}\r\nexample`,
   );
   expect(
     clone.cli(['plan'], { XDG_CONFIG_HOME: base, PROOF_STATE_DIR: directory() }).out,
