@@ -89,6 +89,7 @@ test('task set boundaries, proof reuse, historical views and invalid selectors',
       'proof.d/tasks.yaml',
       JSON.stringify({ tasks: { earned: task('earned', ['working']) } }),
     );
+    rows('plan --set working', 'earned:RUN');
     expect(cli('run --set working').out).toContain('not recorded: dirty declaration');
     expect(log()).toBe(`${earned}earned\n`);
     rows('status --ref HEAD --set push', 'earned:PROVEN');
