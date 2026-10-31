@@ -74,57 +74,73 @@ export async function run(args: string[]) {
     const unfinished = new Set(ids);
     const runningNeeds = new Map<string, Set<string>>();
     const slots: string[][] = [];
-    const pending = ids.entries();
+    const pending = ids.map((id, index) => ({ index, id, lane: initial.tasks.get(id)?.lane }));
+    const active = new Map<number, { lane?: string; done: Promise<void> }>();
     let fatal: { error: unknown } | undefined;
-    async function worker() {
-      while (!processes.aborted) {
-        const next = pending.next();
-        if (next.done) break;
-        const [index, id] = next.value;
-        const taskSummary: string[] = [];
-        slots[index] = taskSummary;
-        if (processes.interrupted && !providers.live()) break;
-        try {
-          await runTask(id, {
-            snapshot,
-            fresh,
-            capture: jobs > 1,
-            staged,
-            parent,
-            ids: [...unfinished],
-            store,
-            summary: jobs === 1 ? summary : taskSummary,
-            preview,
-            providerMismatches,
-            processes,
-            providers,
-            retain: (needs) => {
-              const retained = runningNeeds.get(id) ?? new Set<string>();
-              for (const name of needs) retained.add(name);
-              runningNeeds.set(id, retained);
-            },
-            fail: () => {
-              failed = true;
-            },
-          });
-          unfinished.delete(id);
-          runningNeeds.delete(id);
-          if (processes.aborted) return;
-          const view = snapshot ?? currentTree();
-          await providers.stopExcept(
-            new Set(
-              [...unfinished].flatMap((later) => [
-                ...(runningNeeds.get(later) ?? view.tasks.get(later)?.needs ?? []),
-              ]),
-            ),
-          );
-        } catch (error) {
-          fatal ??= { error };
-          processes.abort();
-        }
+    async function execute(index: number, id: string) {
+      const taskSummary: string[] = [];
+      slots[index] = taskSummary;
+      try {
+        await runTask(id, {
+          snapshot,
+          fresh,
+          capture: jobs > 1,
+          staged,
+          parent,
+          ids: [...unfinished],
+          store,
+          summary: jobs === 1 ? summary : taskSummary,
+          preview,
+          providerMismatches,
+          processes,
+          providers,
+          retain: (needs) => {
+            const retained = runningNeeds.get(id) ?? new Set<string>();
+            for (const name of needs) retained.add(name);
+            runningNeeds.set(id, retained);
+          },
+          fail: () => {
+            failed = true;
+          },
+        });
+        unfinished.delete(id);
+        runningNeeds.delete(id);
+        if (processes.aborted) return;
+        const view = snapshot ?? currentTree();
+        await providers.stopExcept(
+          new Set(
+            [...unfinished].flatMap((later) => [
+              ...(runningNeeds.get(later) ?? view.tasks.get(later)?.needs ?? []),
+            ]),
+          ),
+        );
+      } catch (error) {
+        fatal ??= { error };
+        processes.abort();
       }
     }
-    await Promise.all(Array.from({ length: Math.min(jobs, ids.length) }, worker));
+    while (pending.length || active.size) {
+      while (
+        pending.length &&
+        active.size < jobs &&
+        !processes.aborted &&
+        !(processes.interrupted && !providers.live())
+      ) {
+        const next = pending.findIndex(
+          ({ lane }) =>
+            lane === undefined ||
+            lane === 'solo' ||
+            [...active.values()].filter((entry) => entry.lane === lane).length <
+              (initial.lanes.get(lane) as number),
+        );
+        if (next < 0) break;
+        const entry = pending.splice(next, 1)[0] as (typeof pending)[number];
+        const done = execute(entry.index, entry.id).finally(() => active.delete(entry.index));
+        active.set(entry.index, { lane: entry.lane, done });
+      }
+      if (!active.size) break;
+      await Promise.race([...active.values()].map((entry) => entry.done));
+    }
     if (jobs > 1) summary.push(...slots.flat());
     if (fatal) throw fatal.error;
     await providers.stopExcept(new Set());
