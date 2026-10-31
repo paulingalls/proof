@@ -85,6 +85,14 @@ for (const dir of ['', 'packages/group/deep/']) {
       cases.push({ name: 'other JSON', from, to: other, expect: ['other'] });
       const result = r.check(cases);
       expect(result.code, result.err + result.out).toBe(0);
+      r.commit({ [path]: '[]' });
+      for (const id of readers) cli(['record', id, '--outcome', 'green']);
+      for (const id of readers) expect(cli(['plan'])).toContain(`PROVEN ${id}`);
+      r.commit({ [path]: '[1]' });
+      for (const id of readers) {
+        expect(cli(['plan'])).toContain(`RUN ${id}`);
+        expect(cli(['why', id])).toContain(`changed file ${path}`);
+      }
       r.commit({ [path]: '{"version":' });
       for (const id of readers) cli(['record', id, '--outcome', 'green']);
       r.commit({ [path]: '{"version":2' });
