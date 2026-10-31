@@ -1,5 +1,5 @@
 import { posix } from 'node:path';
-import type { RefTree } from './git';
+import { type RefTree, readBlobs } from './git';
 import { workingFile } from './sandbox';
 import { type Edge, workspaces } from './workspaces';
 
@@ -9,9 +9,25 @@ export type Source = {
   mode(path: string): string | undefined;
 };
 const sources = new WeakMap<RefTree, Source>();
+const workingSources = new WeakMap<RefTree, WeakMap<string[], Source>>();
 const blobs = new Map<string, string>();
+const prefetched = new WeakSet<RefTree>();
 function committed(tree: RefTree, path: string) {
   const blob = tree.files.get(path) as string;
+  if (!blobs.has(blob) && !prefetched.has(tree)) {
+    const ids = new Set<string>();
+    for (const [path, id] of tree.files) {
+      if (
+        ['100644', '100755'].includes(tree.modes.get(path) ?? '') &&
+        (/\.(?:[cm]?[jt]s|[jt]sx)$/.test(path) ||
+          ['package.json', 'tsconfig.json', 'jsconfig.json'].includes(posix.basename(path))) &&
+        !blobs.has(id)
+      )
+        ids.add(id);
+    }
+    if (ids.size) for (const [id, bytes] of readBlobs(ids)) blobs.set(id, bytes.toString());
+    prefetched.add(tree);
+  }
   let text = blobs.get(blob);
   if (text === undefined) {
     text = tree.read(path);
@@ -20,28 +36,48 @@ function committed(tree: RefTree, path: string) {
   return text;
 }
 export function source(tree: RefTree, dirty?: string[]): Source {
-  const cached = dirty === undefined ? sources.get(tree) : undefined;
+  const cached = dirty === undefined ? sources.get(tree) : workingSources.get(tree)?.get(dirty);
   if (cached) return cached;
+  const reads = new Map<string, string | undefined>();
+  const modes = new Map<string, string | undefined>();
   const view: Source = {
     paths: [...new Set([...tree.files.keys(), ...(dirty ?? [])])],
-    read: (path) =>
-      dirty === undefined
-        ? tree.entry(path).mode
-          ? committed(tree, path)
-          : undefined
-        : tree.files.has(path) && !dirty.includes(path)
-          ? committed(tree, path)
-          : workingFile(path, true)?.bytes.toString(),
-    mode: (path) =>
-      dirty === undefined
-        ? tree.entry(path).mode
-        : tree.files.has(path) && !dirty.includes(path)
-          ? tree.modes.get(path)
-          : workingFile(path, true)
-            ? '100644'
-            : undefined,
+    read: (path) => {
+      if (reads.has(path)) return reads.get(path);
+      const text =
+        dirty === undefined
+          ? tree.entry(path).mode
+            ? committed(tree, path)
+            : undefined
+          : tree.files.has(path) && !dirty.includes(path)
+            ? committed(tree, path)
+            : workingFile(path, true)?.bytes.toString();
+      reads.set(path, text);
+      return text;
+    },
+    mode: (path) => {
+      if (modes.has(path)) return modes.get(path);
+      const mode =
+        dirty === undefined
+          ? tree.entry(path).mode
+          : tree.files.has(path) && !dirty.includes(path)
+            ? tree.modes.get(path)
+            : workingFile(path, true)
+              ? '100644'
+              : undefined;
+      modes.set(path, mode);
+      return mode;
+    },
   };
   if (dirty === undefined) sources.set(tree, view);
+  else {
+    let views = workingSources.get(tree);
+    if (!views) {
+      views = new WeakMap();
+      workingSources.set(tree, views);
+    }
+    views.set(dirty, view);
+  }
   return view;
 }
 const gap = String.raw`(?:\s|/\*[\s\S]*?\*/|//[^\n]*(?:\n|$))*`;

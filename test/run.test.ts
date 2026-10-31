@@ -196,7 +196,10 @@ test('refreshes a dirty closure when its entry changes without changing dirty pa
       version: 1,
       project: 'run',
       tasks: {
-        first: task(`printf "import './new';" > '${repo.path}/entry.ts'`, ['clean']),
+        first: {
+          run: `printf "import './new';" > '${repo.path}/entry.ts'`,
+          inputs: [{ 'imports-of': 'entry.ts' }],
+        },
         later: {
           run: 'test -f new.ts && test ! -e old.ts && grep new entry.ts',
           inputs: [{ 'imports-of': 'entry.ts' }],

@@ -110,11 +110,40 @@ export function* matching(tree: RefTree, pattern: string) {
   }
 }
 
+function selector(task: Task, tree: RefTree) {
+  const view = source(tree);
+  const rules = task.inputs.map((input) => {
+    if (typeof input === 'string') {
+      const negative = input.startsWith('!');
+      return { negative, glob: new Bun.Glob(negative ? input.slice(1) : input) };
+    }
+    return {
+      paths:
+        'imports-of' in input
+          ? closure(input['imports-of'], view).paths
+          : 'maestro' in input
+            ? maestro(input.maestro, view).paths
+            : new Set([input.path]),
+      projection: 'path' in input,
+    };
+  });
+  return (path: string) => {
+    let selected = false;
+    let projected = false;
+    for (const rule of rules) {
+      if (rule.glob) {
+        if (rule.glob.match(path)) selected = !rule.negative;
+      } else if (rule.paths.has(path)) {
+        if (rule.projection) projected = true;
+        else selected = true;
+      }
+    }
+    return selected || projected;
+  };
+}
+
 export function selects(task: Task, path: string, tree: RefTree) {
-  return (
-    select(task, tree, [path], false, []).paths.has(path) ||
-    task.inputs.some((input) => typeof input !== 'string' && 'path' in input && input.path === path)
-  );
+  return selector(task, tree)(path);
 }
 
 function literalDirectory(pattern: string) {
@@ -125,6 +154,13 @@ function literalDirectory(pattern: string) {
 
 export function scope(tasks: Iterable<Task>, declarations: string[], tree: RefTree): Scope {
   const list = [...tasks];
+  const matchers = list.map((task) => {
+    let matches: ReturnType<typeof selector> | undefined;
+    return (path: string) => {
+      matches ??= selector(task, tree);
+      return matches(path);
+    };
+  });
   const patterns = [...declarations, ...list.flatMap((t) => t.inputs)].filter(
     (p): p is string => typeof p === 'string' && !p.startsWith('!'),
   );
@@ -139,7 +175,7 @@ export function scope(tasks: Iterable<Task>, declarations: string[], tree: RefTr
   return {
     selects: (path) =>
       declarations.some((d) => new Bun.Glob(d).match(path)) ||
-      list.some((t) => selects(t, path, tree)),
+      matchers.some((matches) => matches(path)),
     prefixes: prefixes.includes(undefined) ? undefined : [...new Set(prefixes as string[])],
   };
 }
