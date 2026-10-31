@@ -71,14 +71,16 @@ test('whole-file reads dominate metadata in either input and traversal order', (
     two: [closure, direct],
     excluded: [closure, '!package.json'],
     readded: [closure, '!package.json', '*.json'],
+    flow: [closure, { maestro: 'flow.yaml' }],
   });
   const from = r.commit({
     'first.ts': "import 'pkg'; import './package.json';",
     'last.ts': "import './package.json'; import 'pkg';",
+    'flow.yaml': 'appId: x\n---\n- addMedia:\n    - package.json\n',
   });
   expect(cli(['why', 'first'])).toContain('file package.json ');
   const to = r.commit({ 'package.json': JSON.stringify({ ...root, version: '2' }) });
-  const readers = 'first last pathFirst pathLast globFirst globLast two readded'.split(' ');
+  const readers = 'first last pathFirst pathLast globFirst globLast two readded flow'.split(' ');
   const result = r.check([{ name: 'whole reads', from, to, expect: readers }]);
   expect(result.code, result.err + result.out).toBe(0);
 });
@@ -103,6 +105,20 @@ test('resolution members invalidate even when the source set stays unchanged', (
     from = to;
   }
   const result = r.check(cases);
+  expect(result.code, result.err + result.out).toBe(0);
+});
+
+test('a manifest a tsconfig extends keys the options the resolver reads from it', () => {
+  const { r } = fixture({ a: [{ 'imports-of': 'alias.ts' }] });
+  const aliased = (target: string) =>
+    JSON.stringify({ ...root, compilerOptions: { paths: { x: [target] } } });
+  const from = r.commit({
+    'tsconfig.json': '{"extends":"./package.json"}',
+    'package.json': aliased('./packages/p/a.ts'),
+    'alias.ts': "import 'x'; import './packages/p/a'; import './packages/p/b';",
+  });
+  const to = r.commit({ 'package.json': aliased('./packages/p/b.ts') });
+  const result = r.check([{ name: 'alias', from, to, expect: ['a'] }]);
   expect(result.code, result.err + result.out).toBe(0);
 });
 

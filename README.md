@@ -100,8 +100,9 @@ exempt:
   `extends` the way Bun does. An import proof can't follow, such as a computed `import()`, makes
   the task undecidable, so it always runs and says why.
 - **Closure manifests**: a `package.json` reached only as import resolver metadata keys
-  `name`, `main`, `module`, `type`, `exports`, `imports` and `workspaces`. A committed
-  `version` bump or changelog edit therefore preserves the closure proof. `exports` retains
+  `name`, `main`, `module`, `type`, `exports`, `imports`, `workspaces`, `extends` and
+  `compilerOptions`. A committed `version` bump or changelog edit therefore preserves the closure
+  proof. `exports` retains
   JSON object order because the resolver takes the first matching condition; other projected
   members use canonical object order. A manifest imported directly by source, or selected by
   a path or glob, keys the whole file regardless of input order. Sandboxes always hold exact

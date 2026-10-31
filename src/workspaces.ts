@@ -10,6 +10,8 @@ export const manifestMembers = [
   'exports',
   'imports',
   'workspaces',
+  'extends',
+  'compilerOptions',
 ];
 
 export type Edge = { specifier: string; kind: 'import' | 'require' };
