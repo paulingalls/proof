@@ -75,7 +75,7 @@ is clean, is where proofs get earned.
 version: 1
 project: my-app                # scopes proofs in a shared store
 include: proof.d/*.yaml        # optional: more files with `inputs` and `tasks`
-inputs:                        # named sets, referenced as $name
+inputs:                        # named input sets, referenced as $name
   config:
     - tsconfig.json
     - {path: package.json, json: [dependencies, devDependencies]}
@@ -86,6 +86,7 @@ tasks:
       - $config
       - {imports-of: test/math.test.ts}
       - 'fixtures/**'
+    sets: [commit, push]       # repository-owned task boundaries
     env: [CI]                  # env names that reach the task and enter its key
     links: [node_modules]      # untracked paths the sandbox links in
 coverage: ['src/**', 'scripts/**']
@@ -189,10 +190,10 @@ provider-free tasks have no `providers` field. Neither plan form starts resource
 ## Commands
 
 ```
-proof plan [--json]          what must run, and why
+proof plan [--set <name>] [--json]  what must run, and why
 proof why <task>            current key parts and changes since the newest proof
-proof status --ref <ref> [--json]  proof state of every task at a committed ref
-proof run [--fresh] [--tasks <id>...]  run tasks and record each result
+proof status --ref <ref> [--set <name>] [--json]  proof state at a committed ref
+proof run [--fresh] [--tasks <id> ... | --set <name>]  run tasks and record each result
 proof record <task> --outcome green|red|incomplete [--seconds N]
 proof lint                   check declarations against the staged tree
 proof check <cases.yaml>     run a requirement suite
@@ -204,8 +205,27 @@ any command exits 2 on a usage, declaration or store error.
 
 `proof run --fresh` executes every task even when its key is already proven, in the same
 sandboxes and with the same providers as an ordinary run. Select a subset with
-`proof run --fresh --tasks first second`. Providers start once for selected dependents,
+`proof run --fresh --tasks first second` or `proof run --fresh --set commit`.
+Only selected tasks execute, even when other sets have proofs. Providers start once for selected dependents,
 including proven ones. A red does not stop later tasks; each result is recorded independently.
+
+Task `sets` are arbitrary names owned by the repository, separate from the named `$input` sets.
+A task can belong to several sets; a selected run considers it once. A task with missing or
+empty `sets` belongs to no set. Plain `plan` and `run` include every task, including unassigned tasks.
+`plan` and `run` select membership from the current working declarations; `status` selects it
+from the requested ref. For the declaration above:
+
+```sh
+bunx proof plan --set push --json
+bunx proof run --set commit
+bunx proof run --fresh --set commit
+bunx proof status --set push --ref HEAD --json
+```
+
+An ordinary selected run skips PROVEN tasks. An unknown set exits 2 and names the known sets
+(or `none`). Combining `--set` and `--tasks` also exits 2 before executing anything.
+Membership itself does not enter proof identity: moving a task between sets preserves its proof.
+If a declaration file is explicitly selected as a task input, its bytes still enter that task's key.
 
 A fresh red over unchanged selected inputs immediately deletes that key's stored green and
 records a `super` contradiction. The summary lists every red and each confirmed deletion as
@@ -261,7 +281,7 @@ cannot be reconstructed also fails with exit 2, after printing current parts. Th
 is authoritative while online; an unreachable store announces fallback once and uses only this
 machine's own proofs.
 
-`proof status --ref <ref> [--json]` judges every task using that ref's committed
+`proof status --ref <ref> [--set <name>] [--json]` judges selected tasks using that ref's committed
 `proof.yaml`, included declarations and input bytes, plus the caller's declared env values.
 It resolves branches, commit ids, lightweight tags and annotated tags without checking out the
 ref, running tasks or starting providers. Uncommitted edits and installed dependencies do not
@@ -274,8 +294,8 @@ bunx proof status --ref release --json
 
 Rows use the same format as `plan`: PROVEN names the proof's commit, host and time; RUN explains
 `no proof for key`, a contested proof or an undecidable key. JSON has the same row shape as
-`plan --json`. Status exits 0 when every task is PROVEN (including a ref with no tasks), 1 when
-any task is RUN, and 2 for an unknown ref, invalid declarations, usage or store error. An
+`plan --json`. Status exits 0 when every selected task is PROVEN (including a ref with no tasks), 1 when
+any selected task is RUN, and 2 for an unknown ref, invalid declarations, usage or store error. An
 unreachable store uses the local replica and reports the fallback on stderr, keeping JSON
 stdout parseable.
 
