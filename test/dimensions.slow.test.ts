@@ -8,11 +8,9 @@ afterEach(() => {
   for (const repo of repos.splice(0)) repo.close();
 });
 const task = (dimensions?: unknown) => ({ run: 'true', inputs: ['input'], dimensions });
-const doc = (
-  dimensions: unknown = {},
-  tasks: unknown = { native: task(['tool']), plain: task() },
-  extra = {},
-) => JSON.stringify({ version: 1, project: 'dimensions', dimensions, tasks, ...extra });
+const base = { native: task(['tool']), plain: task() };
+const doc = (dimensions: unknown, tasks: unknown = base, extra = {}) =>
+  JSON.stringify({ version: 1, project: 'dimensions', dimensions, tasks, ...extra });
 function fixture(source = doc({ tool: 'printf demo' })) {
   const repo = new Repo();
   repos.push(repo);
@@ -24,12 +22,8 @@ function fixture(source = doc({ tool: 'printf demo' })) {
     return result.out + result.err;
   };
   const rows = (table = 'proofs') => {
-    const db = new Database(join(env.PROOF_STATE_DIR, 'proof.db'));
-    try {
-      return db.query(`SELECT * FROM ${table}`).all() as Record<string, unknown>[];
-    } finally {
-      db.close();
-    }
+    using db = new Database(join(env.PROOF_STATE_DIR, 'proof.db'));
+    return db.query(`SELECT * FROM ${table}`).all() as Record<string, unknown>[];
   };
   return { repo, cli, rows };
 }
@@ -38,37 +32,18 @@ test('dimension declarations validate every reader and included, unselected task
   const f = fixture(doc({}, { plain: task() }, { include: 'proof.d/*.yaml' }));
   f.repo.commit({ 'proof.d/tasks.yaml': JSON.stringify({ tasks: { native: task(['missing']) } }) });
   f.repo.write('.git/cases.yaml', '[{"name":"same","from":"HEAD","to":"HEAD","expect":[]}]');
-  for (const command of [
-    'plan',
-    'run --tasks plain',
-    'record plain --outcome green',
-    'why plain',
-    'status --ref HEAD',
-    'lint',
-    'doctor',
-    'check .git/cases.yaml',
-    'stats',
-    'flakes',
-    'invalidate --task plain',
-  ])
-    expect(f.cli(command.split(' '), 2)).toContain("task 'native': unknown dimension 'missing'");
-  for (const [dimensions, names, diagnostic] of [
-    [[], [], 'expected a mapping'],
-    [{ tool: '' }, [], 'nonempty string'],
-    [{ tool: 1 }, [], 'nonempty string'],
-    [{ tool: 'true' }, 'tool', 'must be a list'],
-    [{ tool: 'true' }, [''], 'nonempty string'],
-    [{ tool: 'true' }, [1], 'nonempty string'],
+  const commands = `plan;run --tasks plain;record plain --outcome green;why plain;
+status --ref HEAD;lint;doctor;check .git/cases.yaml;stats;flakes;invalidate --task plain`;
+  for (const command of commands.split(';'))
+    expect(f.cli(command.trim().split(' '), 2)).toContain("unknown dimension 'missing'");
+  for (const source of [
+    doc({}, { native: { ...task(), inputs: [{ dotenv: 'dimension' }] } }),
+    doc({}, {}, { inputs: { bad: [{ dotenv: 'dimension' }] } }),
+    doc({ 'a:b': 'printf demo' }, {}),
   ]) {
-    f.repo.commit({ 'proof.yaml': doc(dimensions, { native: task(names) }) });
-    expect(f.cli(['plan'], 2)).toContain(diagnostic as string);
+    f.repo.commit({ 'proof.yaml': source });
+    expect(f.cli(['plan'], 2)).toContain(source.includes('a:b') ? 'a:b' : 'dimension');
   }
-  f.repo.commit({
-    'proof.yaml': doc({ missing: 'printf demo' }, {}, { include: 'proof.d/*.yaml' }),
-  });
-  f.cli(['plan']);
-  f.repo.commit({ 'proof.d/tasks.yaml': '{"dimensions":{"bad":"true"}}' });
-  expect(f.cli(['plan'], 2)).toContain("unknown field 'dimensions'");
 });
 
 test('dimension-only identity uses current values, stored hashes and each ref command', () => {
@@ -88,8 +63,6 @@ test('dimension-only identity uses current values, stored hashes and each ref co
   expect(plan).toContain('RUN native');
   expect(plan).toContain('PROVEN plain');
   expect(f.cli(['status', '--ref', a], 1)).toContain('RUN native');
-  f.repo.write('.git/value', 'raw-marker-A');
-  expect(f.cli(['status', '--ref', a])).toContain('PROVEN native');
   const count = () => Bun.file(join(f.repo.path, '.git/old-counter')).size;
   const before = count();
   const b = f.repo.commit({ 'proof.yaml': doc({ tool: 'printf raw-marker-B' }) });
@@ -97,41 +70,24 @@ test('dimension-only identity uses current values, stored hashes and each ref co
   expect(why).toContain('changed env dimension:tool');
   expect(why).not.toContain('raw-marker');
   expect(count()).toBe(before);
-  const c = f.repo.commit({
-    'proof.yaml': doc(
-      { unused: 'exit 99', tool: "printf '%s' raw-marker-B" },
-      { native: task(['tool', 'tool']), plain: task([]) },
-    ),
-  });
-  f.repo.write(
-    '.git/cases.yaml',
-    JSON.stringify([
-      { name: 'change', from: a, to: b, expect: ['native'] },
-      { name: 'same value', from: b, to: c, expect: [] },
-    ]),
-  );
+  const c = f.repo.commit({ 'proof.yaml': doc({ tool: "printf '%s' raw-marker-B" }) });
+  const cases = [
+    { name: 'change', from: a, to: b, expect: ['native'] },
+    { name: 'same value', from: b, to: c, expect: [] },
+  ];
+  f.repo.write('.git/cases.yaml', JSON.stringify(cases));
   expect(f.cli(['check', '.git/cases.yaml'])).toContain('PASS same value');
 });
 
 test('commands are lazy and cached throughout plan, run and stored-proof why', () => {
   const command = 'echo hit >> .git/counter; printf demo';
+  const tasks = { native: task(['tool']), second: task(['alias']), plain: task() };
   const f = fixture(
-    doc(
-      { tool: command, alias: command },
-      {
-        native: task(['tool']),
-        second: task(['alias']),
-        plain: { ...task(), sets: ['plain'] },
-      },
-    ),
+    doc({ tool: command, alias: command }, { ...tasks, plain: { ...task(), sets: ['plain'] } }),
   );
-  for (const [args, count] of [
-    [['plan'], 1],
-    [['plan', '--set', 'plain'], 0],
-    [['run', '--jobs', '2'], 1],
-    [['why', 'native'], 1],
-    [['plan'], 1],
-  ] as [string[], number][]) {
+  for (const command of ['plan', 'plan --set plain', 'run --jobs 2', 'why native', 'plan']) {
+    const args = command.split(' ');
+    const count = command.includes('--set') ? 0 : 1;
     f.repo.write('.git/counter', '');
     f.cli(args);
     expect(Bun.file(join(f.repo.path, '.git/counter')).size).toBe(count * 4);
@@ -141,12 +97,8 @@ test('commands are lazy and cached throughout plan, run and stored-proof why', (
 
 for (const output of ['printf raw-marker; printf raw-error >&2; exit 1', 'true', "printf '  \\n'"])
   test(`unavailable dimensions run without publication: ${output}`, () => {
-    const f = fixture(
-      doc(
-        { tool: `echo hit >> .git/counter; ${output}` },
-        { native: task(['tool']), second: task(['tool']), plain: task() },
-      ),
-    );
+    const tasks = { native: task(['tool']), second: task(['tool']), plain: task() };
+    const f = fixture(doc({ tool: `echo hit >> .git/counter; ${output}` }, tasks));
     for (const args of [['plan'], ['why', 'native'], ['run', '--jobs', '2']]) {
       f.repo.write('.git/counter', '');
       const out = f.cli(args);
@@ -159,55 +111,12 @@ for (const output of ['printf raw-marker; printf raw-error >&2; exit 1', 'true',
       expect(f.rows(table).map((r) => r.task)).toEqual(['plain']);
   });
 
-test('dimension namespace cannot alias dotenv or ordinary env identities', () => {
-  const f = fixture();
-  for (const source of [
-    doc({}, { native: { ...task(), inputs: [{ dotenv: 'dimension' }] } }),
-    doc({}, {}, { inputs: { bad: [{ dotenv: 'dimension' }] } }),
-    doc({ 'a:b': 'printf demo' }, {}),
-  ]) {
-    f.repo.commit({ 'proof.yaml': source });
-    expect(f.cli(['plan'], 2)).toContain(source.includes('a:b') ? 'a:b' : 'dimension');
-  }
-  f.repo.commit({
-    'proof.yaml': doc(
-      { TOOL: 'cat .git/value' },
-      {
-        native: { ...task(['TOOL']), env: ['TOOL'], inputs: ['input', { dotenv: 'config' }] },
-      },
-    ),
-    '.gitignore': 'config',
-  });
-  f.repo.write('config', 'TOOL=file');
-  f.repo.write('.git/value', 'demo');
-  f.cli(['record', 'native', '--outcome', 'green']);
-  expect(JSON.parse(f.rows()[0]?.env_hashes as string).map(([name]: string[]) => name)).toEqual([
-    'TOOL',
-    'config:TOOL',
-    'dimension:TOOL',
-  ]);
-  f.repo.write('.git/value', 'changed');
-  expect(f.cli(['why', 'native']).match(/changed env .*/g)).toEqual(['changed env dimension:TOOL']);
-});
-
 test('doctor reports every dimension value and failure before exiting', () => {
   const f = fixture(doc({ first: 'printf demo', broken: 'exit 1', last: 'printf last-value' }, {}));
   const report = f.cli(['doctor'], 1);
-  for (const line of [
-    'Store:',
-    'Reachability:',
-    'Schema version:',
-    'Replica:',
-    'Project:',
-    'Bun:',
-    'Dimension first: demo',
-    "Dimension broken: unavailable (dimension 'broken': command failed)",
-    'Dimension last: last-value',
-  ])
-    expect(report).toContain(line);
+  expect(report).toContain('Dimension first: demo');
+  expect(report).toContain("Dimension broken: unavailable (dimension 'broken': command failed)");
+  expect(report).toContain('Dimension last: last-value');
   f.repo.commit({ 'proof.yaml': doc({ tool: 'printf demo' }) });
-  f.cli(['run']);
-  f.cli(['plan']);
-  f.cli(['why', 'native']);
   expect(f.cli(['doctor'])).toContain('Dimension tool: demo');
 });

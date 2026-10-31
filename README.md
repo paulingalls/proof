@@ -161,6 +161,32 @@ exempt:
   Gitignore local dotenv files: nonignored untracked files prevent publication under the
   clean-tree rule. To read a tracked dotenv file, also list its ordinary path as an input;
   this materializes it and keys its bytes. Links cannot reach tracked files.
+- **Dimensions** declare machine values only for tasks that depend on them:
+  ```yaml
+  dimensions: {tool: 'printf demo'}
+  tasks:
+    native:
+      run: 'true'
+      inputs: [input]
+      dimensions: [tool]
+  ```
+  Add these fields to a version-1 declaration with a project name and a tracked `input` file.
+  `proof run --tasks native`, `proof plan`, `proof why native` and `proof doctor` inspect this
+  example. Nothing enters a key by default. Commands run from the repository root in the normal
+  environment, only for dimensions used by selected tasks, at most once per command text per
+  invocation. Trimmed stdout contributes its SHA-256 under `dimension:<name>` in the existing
+  env identity. Changing command text alone preserves proof when the value stays the same.
+  Repeated or reordered task dimensions also preserve proof. Definitions belong at the root;
+  undeclared names fail declaration validation, even in unselected tasks.
+
+  Nonzero exits or empty trimmed output make the task undecidable, naming the dimension;
+  it runs and publishes nothing. Command output stays out of diagnostics and the store.
+  `why` compares stored hashes and reports `changed env dimension:tool`; it never executes the
+  historical command. `status --ref` uses that ref's commands on the current machine.
+  Dimension names cannot contain `:`, and `dotenv` cannot name a file exactly `dimension`,
+  keeping tuple names distinct from ordinary env and dotenv names. `doctor` is the diagnostic
+  exception: it evaluates every declared dimension and prints raw values, continuing through
+  failures and exiting 1 if any fail.
 - **`run`** executes in a sandbox holding only the task's inputs, with the environment cleared to
   `PATH`, `HOME`, `TMPDIR` and the declared `env`. A missing input fails the task instead of
   passing by luck.

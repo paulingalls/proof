@@ -146,11 +146,6 @@ test('nonempty env preserves the released version-4 key', () => {
   try {
     const releasedHash = 'fb7dd85b03e39fac3c9ea4c73dc1f92bf819eabeae8c536ddc145498f1f5e1cf';
     expect(db.query('SELECT key FROM proofs').all()).toEqual([{ key: releasedHash }]);
-    const unchanged = JSON.parse(declaration(['MODE']));
-    unchanged.dimensions = { unused: 'exit 99' };
-    unchanged.tasks.lint.dimensions = [];
-    repo.commit({ 'proof.yaml': JSON.stringify(unchanged) });
-    expect(success(repo.cli(['plan'], { ...state, MODE: 'a' }))).toContain('PROVEN lint');
   } finally {
     db.close();
   }

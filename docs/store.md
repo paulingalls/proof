@@ -77,7 +77,8 @@ Postgres configuration, `plan`, `run` and `record` print no replica or sharing d
 
 Proof metadata includes one identity per declared env name: `absent` or SHA-256 of its value.
 `env_hashes` also holds one `<file>:<NAME>` identity per included dotenv name, always a value hash.
-No env value is stored. These identities are captured with the key by both `record` and `run`;
+`env_hashes` also holds `dimension:<name>` with SHA-256 of each selected dimension’s trimmed stdout.
+No raw env or dimension value is stored. These identities are captured with the key by both `record` and `run`;
 `why` uses them to explain env changes. Schema 2 adds nullable `proofs.env_hashes`, encoded as
 JSON name/identity pairs. NULL denotes a legacy proof whose env comparison is unavailable;
 `[]` denotes a new proof with no declared env. Migration preserves existing results and proofs
@@ -244,12 +245,14 @@ file with mode 600 (`umask 077` before writing it). `PROOF_STORE` in the environ
 takes precedence over the file; do not commit either credentials or real names.
 
 Run `proof doctor` inside a repository with `proof.yaml`. It prints labelled
-Store, Reachability, Schema version, Replica, Project and Bun lines. The URL is
+Store, Reachability, Schema version, Replica, Project and Bun lines, then a
+`Dimension <name>: <raw value>` line for every declared dimension. A failed command prints
+`Dimension <name>: unavailable (<reason>)` and the report continues. The URL is
 redacted to protocol and host/port. An empty store initializes through the same
-schema lifecycle as plan. Exit 0 means reachable; exit 1 means a configured store
-is unreachable, with a reason and schema `unavailable`. Doctor never substitutes
+schema lifecycle as plan. Exit 0 means the store and all dimensions are available; exit 1 means a dimension failed
+or a configured store is unreachable (with a reason and schema `unavailable`). Doctor never substitutes
 the replica's health for remote health. Authentication, schema and query errors
-exit 2. With no remote configured it diagnoses SQLite and exits 0 on success.
+exit 2. With no remote configured it diagnoses SQLite; dimension failures still exit 1.
 
 The SQLite filename is `proof.db` under `PROOF_STATE_DIR`, otherwise
 `$XDG_STATE_HOME/proof`, otherwise `$HOME/.local/state/proof`. Doctor prints that
