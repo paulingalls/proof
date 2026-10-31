@@ -136,6 +136,7 @@ test('computed calls and unresolved imports are undecidable with file and expres
   for (const [code, word] of [
     ['const x = <div/>; require(name)', 'name'],
     ['import(name)', 'name'],
+    ["const s = `require(other)`; const t = 'import(other)';\nimport(name)", 'name'],
     ["require('./lib/' + name)", "'./lib/' + name"],
     [`import(\`./\${name}\`)`, `\${name}`],
     [`import(\`\${name}\`)`, `\${name}`],
@@ -396,6 +397,20 @@ test('ordered exclusions remove newly reached ignored working targets', () => {
 
 test('import-looking strings and templates add no edges', () => {
   const codes = [
+    ...["'", '"', '`'].flatMap((quote) =>
+      ['import', 'require'].flatMap((call) =>
+        ["'./decoy'", 'name'].map(
+          (arg) => `const s = ${quote}${call}(${arg.replaceAll(quote, `\\${quote}`)})${quote};`,
+        ),
+      ),
+    ),
+    "const s = `line one\nimport('./decoy')\nrequire(name)`;",
+    "// import('./decoy')\n/* require('./decoy') */",
+    `const s = \`await import(\${JSON.stringify(path)})\`;`,
+    String.raw`const s = 'it\'s import("./decoy")';`,
+    "const s = `escaped \\` import('./decoy')`;",
+    `const s = \`\${await import(name)}\`;`,
+    "const s = 'a \\\nimport(name)';",
     `const s = "from './missing'";`,
     "const s = `import { T } from './missing'`;",
     "const s = `import type { T } from './missing'`;",
@@ -423,6 +438,14 @@ test('import-looking strings and templates add no edges', () => {
 
 test('type-only forms keep edges without breaking type identifiers or aliases', () => {
   const codes = [
+    "export type A = import('./leaf').T;",
+    `const s = \`\${import('./leaf')}\`;`,
+    `const s = \`\${require('./leaf')}\`;`,
+    `const s = \`a \${x ? \`b\` : 'c'} d\`; export type A = import('./leaf').T;`,
+    "const c = (s: string) => s.replace(/\\/*$/, '');\nexport type A = import('./leaf').T;",
+    "const p = <p>it's text</p>;\nexport type A = import('./leaf').T;",
+    "const p = <p>it's \\\n</p>; export type A = import('./leaf').T;",
+    "const c = /`/;\nexport type A = import('./leaf').T;",
     "import type { T } from './leaf';",
     "import type T from './leaf';",
     "import type * as T from './leaf';",
@@ -448,9 +471,9 @@ test('type-only forms keep edges without breaking type identifiers or aliases', 
     `export {\n${'  /** doc */\n  a,\n'.repeat(30)}};\nexport type { T } from './leaf';`,
   ];
   const r = fixture(
-    Object.fromEntries(codes.map((_, i) => [`case${i}`, task(`src/case${i}.ts`)])),
+    Object.fromEntries(codes.map((_, i) => [`case${i}`, task(`src/case${i}.tsx`)])),
     {
-      ...Object.fromEntries(codes.map((code, i) => [`src/case${i}.ts`, code])),
+      ...Object.fromEntries(codes.map((code, i) => [`src/case${i}.tsx`, code])),
       'src/leaf.ts': 'export type T = number; export type U = T; export default 1;',
     },
   );
