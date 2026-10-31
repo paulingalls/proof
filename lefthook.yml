@@ -25,9 +25,9 @@ pre-push:
       runner: sh
       use_stdin: true
     - name: tests
-      # Broader tests: what must pass before work leaves this machine. The timeout is for other
-      # clones loading this shared Mac: these tests spawn the CLI many times.
-      run: bun run lint && bun run typecheck && bun test --timeout=30000
+      # proof re-runs the suite only when something it covers changed. The timeout in proof.yaml
+      # is for other clones loading this shared Mac.
+      run: bun --no-env-file src/cli.ts run
 sprint:
   # Land pushes next, and pre-push runs the whole suite; this only checks the lockfile.
   # no `skip:` here: land runs this mid-merge

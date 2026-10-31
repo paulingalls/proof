@@ -1,0 +1,18 @@
+version: 1
+project: proof
+inputs:
+  code:
+    - src/**
+    - test/**
+    - scripts/**
+    - docs/store.md
+    - package.json
+    - bun.lock
+    - tsconfig.json
+    - biome.json
+    - .gitignore
+tasks:
+  suite:
+    run: bun run lint && bun run typecheck && bun test --parallel --timeout=30000
+    inputs: [$code]
+    links: [node_modules]
