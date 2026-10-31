@@ -3,6 +3,7 @@ import { afterEach, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { output, Postgres, waitFor } from './support/postgres';
 import { Repo } from './support/repo';
 
 const repos: Repo[] = [];
@@ -53,6 +54,8 @@ test('flakes ranks ordinary counts, separates super, scopes project and calendar
   }
   record('a', 'green');
   expect(cli(['run', '--fresh', '--tasks', 'a']).code).toBe(1);
+  expect(cli(['flakes']).out).toBe('ordinary task super\n3 a 1\n1 b 0\n');
+  expect(cli(['invalidate', '--task', 'b']).code).toBe(0);
   expect(cli(['flakes']).out).toBe('ordinary task super\n3 a 1\n1 b 0\n');
   const other = fixture('other');
   for (const outcome of ['green', 'red'])
@@ -127,3 +130,181 @@ test('a rejected manual audit rolls back the proof deletion and result', () => {
   expect(db.query("SELECT * FROM results WHERE outcome = 'manual'").all()).toHaveLength(0);
   expect(db.query('SELECT * FROM contradictions').all()).toHaveLength(0);
 });
+
+test('explicit selectors clear stale tasks and isolate keys, tasks and projects', () => {
+  const { cli, db, record, repo, env } = fixture();
+  record('a', 'green');
+  const first = repo.git('rev-parse', 'HEAD');
+  const key1 = (db.query("SELECT key FROM proofs WHERE task = 'a'").get() as { key: string }).key;
+  repo.commit({ 'src/a': 'two' });
+  record('a', 'green');
+  record('b', 'green');
+  const other = fixture('other');
+  expect(other.repo.cli(['record', 'a', '--outcome', 'green'], env).code).toBe(0);
+  expect(cli(['invalidate', '--task', 'a', '--key', key1]).out).toContain('deleted 1');
+  expect(cli(['plan']).out).toContain('PROVEN a:');
+  expect(repo.cli(['status', '--ref', first], env).out).toContain('RUN a:');
+  repo.git('checkout', first);
+  record('a', 'green');
+  repo.git('checkout', '-');
+  expect(cli(['invalidate', '--task', 'a', '--all']).out).toContain('deleted 2');
+  expect(cli(['plan']).out).toContain('PROVEN b:');
+  expect(other.repo.cli(['plan'], env).out).toContain('PROVEN a:');
+  record('a', 'green');
+  const key2 = (
+    db.query("SELECT key FROM proofs WHERE project = 'flakes' AND task = 'a'").get() as {
+      key: string;
+    }
+  ).key;
+  repo.commit({
+    'proof.yaml': JSON.stringify({
+      version: 1,
+      project: 'flakes',
+      tasks: {
+        b: { run: 'true', inputs: ['src/**'] },
+      },
+    }),
+  });
+  const before = db.query('SELECT * FROM contradictions').all().length;
+  expect(cli(['invalidate', '--task', 'a']).err).toContain("undeclared task 'a'");
+  expect(db.query('SELECT * FROM contradictions').all()).toHaveLength(before);
+  expect(cli(['invalidate', '--task', 'a', '--key', key2]).out).toContain('deleted 1');
+  repo.git('checkout', first);
+  record('a', 'green');
+  repo.git('checkout', '-');
+  expect(cli(['invalidate', '--task', 'a', '--all']).out).toContain('deleted 1');
+}, 30_000);
+
+test('usage and undecidable HEAD keys fail before mutation; explicit selectors bypass inputs', () => {
+  const { cli, repo, db, record } = fixture();
+  record('a', 'green');
+  for (const args of [
+    [],
+    ['--all'],
+    ['--task'],
+    ['--task', 'a', '--key'],
+    ['--task', 'a', '--all', '--key', 'k'],
+    ['--task', 'a', '--all', '--all'],
+    ['--task', 'a', '--key', 'k', '--key', 'k'],
+    ['--task', 'a', '--task', 'a'],
+    ['--task', 'a', '--unknown'],
+    ['--task', 'a', '--since', '7d'],
+  ]) {
+    const result = cli(['invalidate', ...args]);
+    expect(result.code).toBe(2);
+    expect(result.err).toContain('usage: proof invalidate');
+  }
+  for (const args of [
+    ['--since'],
+    ['--unknown', '7d'],
+    ['--since', '7d', '--since', '7d'],
+    ...['0d', '-1d', '1.5d', '7', 'NaNd', '9007199254740992d', '1000000000d'].map((v) => [
+      '--since',
+      v,
+    ]),
+  ]) {
+    const result = cli(['flakes', ...args]);
+    expect(result.code).toBe(2);
+    expect(result.err).toContain('usage: proof flakes');
+  }
+  repo.commit({
+    'proof.yaml': JSON.stringify({
+      version: 1,
+      project: 'flakes',
+      tasks: {
+        a: { run: 'true', inputs: ['missing/**'] },
+      },
+    }),
+  });
+  const result = cli(['invalidate', '--task', 'a']);
+  expect(result.code).toBe(2);
+  expect(result.err).toContain('undecidable:');
+  expect(result.err).toContain('missing/**');
+  expect(db.query('SELECT * FROM proofs').all()).toHaveLength(1);
+  expect(db.query('SELECT * FROM contradictions').all()).toHaveLength(0);
+  expect(cli(['invalidate', '--task', 'a', '--all']).out).toContain('deleted 1');
+}, 30_000);
+
+test('shared deletion locks the key, reaches clones, and fails loudly after local-only deletion', async () => {
+  const postgres = await new Postgres(true).start();
+  try {
+    const { repo, env: local, db } = fixture();
+    const clone = new Repo(repo);
+    repos.push(clone);
+    const env = { ...local, PROOF_STORE: postgres.url };
+    const cloneEnv = { PROOF_STATE_DIR: directory(), PROOF_STORE: postgres.url };
+    const cli = async (args: string[]) => output(repo.spawnCli(args, env));
+    const planClone = async () => output(clone.spawnCli(['plan'], cloneEnv));
+    for (const [target, settings] of [
+      [repo, env],
+      [clone, cloneEnv],
+    ] as const)
+      expect(
+        (await output(target.spawnCli(['record', 'b', '--outcome', 'green'], settings))).code,
+      ).toBe(0);
+    const sql = postgres.connect(postgres.url);
+    const [{ key }] = await sql`SELECT key FROM proofs WHERE task = 'b'`;
+    const lock = JSON.stringify(['flakes', 'b', key]);
+    const locker = postgres.connect(postgres.url);
+    await locker`SELECT pg_advisory_lock(hashtextextended(${lock}, 0))`;
+    const child = repo.spawnCli(['invalidate', '--task', 'b'], env);
+    const done = output(child);
+    try {
+      await waitFor(
+        async () =>
+          (await sql`SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`).length ===
+          1,
+      );
+    } finally {
+      await locker`SELECT pg_advisory_unlock(hashtextextended(${lock}, 0))`;
+      expect((await done).out).toContain('deleted 1 local proof(s); deleted 1 shared proof(s)');
+    }
+    expect(await sql`SELECT * FROM proofs`).toHaveLength(0);
+    const audit =
+      await sql`SELECT c.*, r.outcome, r.seconds FROM contradictions c JOIN results r ON r.id = c.red_result`;
+    expect(audit).toHaveLength(1);
+    expect(audit[0]).toMatchObject({
+      kind: 'manual',
+      deleted_proof: 1,
+      outcome: 'manual',
+      seconds: null,
+    });
+    expect((await cli(['flakes'])).out).toContain('no contradictions');
+    expect((await planClone()).out).toContain('RUN b:');
+    postgres.stop();
+    expect((await planClone()).out).toContain('RUN b: contested:');
+    await postgres.restart();
+    expect((await cli(['run', '--tasks', 'b'])).code).toBe(0);
+    expect((await cli(['plan'])).out).toContain('PROVEN b:');
+    postgres.stop();
+    for (const count of [1, 0]) {
+      const result = await cli(['invalidate', '--task', 'b']);
+      expect(result.code).toBe(2);
+      expect(result.err).toContain(`deleted ${count} local proof(s); shared proof may survive`);
+    }
+    expect(db.query('SELECT * FROM proofs').all()).toHaveLength(0);
+    const offline = await cli(['plan']);
+    expect(offline.out).toContain('RUN b:');
+    expect(offline.err).toContain('store unreachable');
+    expect((await cli(['flakes'])).err).toContain('store unreachable');
+    await postgres.restart();
+    expect((await cli(['plan'])).out).toContain('PROVEN b:');
+    expect(db.query('SELECT * FROM unshared_reds').all()).toHaveLength(0);
+    expect((await cli(['invalidate', '--task', 'b', '--key', key])).out).toContain(
+      'deleted 0 local proof(s); deleted 1 shared proof(s)',
+    );
+    expect(await sql`SELECT * FROM proofs`).toHaveLength(0);
+    expect(
+      (await output(clone.spawnCli(['record', 'b', '--outcome', 'green'], cloneEnv))).code,
+    ).toBe(0);
+    expect((await cli(['invalidate', '--task', 'b', '--all'])).out).toContain(
+      'deleted 0 local proof(s); deleted 1 shared proof(s)',
+    );
+    expect(await sql`SELECT * FROM proofs`).toHaveLength(0);
+    for (const outcome of ['green', 'red'])
+      expect((await cli(['record', 'a', '--outcome', outcome])).code).toBe(0);
+    expect((await cli(['flakes'])).out).toBe('ordinary task super\n1 a 0\n');
+  } finally {
+    await postgres.close();
+  }
+}, 60_000);

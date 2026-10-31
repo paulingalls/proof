@@ -11,7 +11,7 @@ survives local proof deletion; incomplete results and dirty greens cannot clear
 it. A clean local green clears it, as does confirmation that the red was shared.
 Reconnection alone does not.
 
-For `plan`, `run`, `record`, `status`, `why` and `stats`, a connection attempt has a two-second timeout. If
+For `plan`, `run`, `record`, `status`, `why`, `flakes` and `stats`, a connection attempt has a two-second timeout. If
 the store is unreachable at startup, during a read, or while publishing, the
 command switches to the local replica and prints one line to stderr:
 
@@ -53,6 +53,23 @@ proof was deleted. If a remote commit is lost, the summary reports `sharing unce
 any confirmed local deletion, without claiming shared deletion. An offline fresh red's local
 veto survives deletion and blocks a still-green remote after reconnect until a clean local
 green or confirmed red share clears it.
+
+`invalidate` also writes local first, then shared. Each proof deletion, its untimed
+`manual` result (`dirty = 0`) and its `manual` contradiction (`deleted_proof = 1`)
+commit together under the existing per-key lock. The contradiction references the
+removed proof's green result and the new manual result; schema version remains 2.
+An absent proof writes no history. Counts distinguish confirmed local and shared deletions.
+If the configured store is unreachable, the local deletion remains committed and the
+command exits 2 saying `shared proof may survive`, even if no local proof existed.
+A lost connection during commit receives no special handling. Authentication, schema
+and query failures remain loud errors.
+
+Manual deletion creates no unshared-red veto and is never replayed. On reconnect a
+surviving shared proof can therefore be PROVEN again. A second clone must observe the
+deletion online before its replica stops serving its old proof offline. That observation
+uses the existing result-bound contest marker, rendered as `contested: red at <commit>`;
+a later clean local green replaces it. Offline clones cannot learn unseen deletions.
+`flakes` excludes manual history; `stats` excludes manual result rows from run counts.
 
 Nothing is queued, replayed, or uploaded on reconnect. Local proofs are never
 copied to Postgres retroactively. A missed share costs another run. Without a

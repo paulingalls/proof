@@ -191,7 +191,7 @@ provider-free tasks have no `providers` field. Neither plan form starts resource
 
 ## Commands
 
-`plan`, `run`, `why`, `status`, `record`, `stats`, `check`, `lint` and `doctor`. Every flag, output line and exit code is in [docs/commands.md](docs/commands.md).
+`plan`, `run`, `why`, `status`, `record`, `invalidate`, `flakes`, `stats`, `check`, `lint` and `doctor`. Every flag, output line and exit code is in [docs/commands.md](docs/commands.md).
 
 ## Sharing proofs across machines
 
@@ -220,7 +220,8 @@ suite. The shape, using Docker and [Tailscale](https://tailscale.com):
    Then run `bunx proof doctor` on each machine.
 
 If the store is unreachable, `proof` says so and uses that machine's own proofs; results recorded
-meanwhile aren't uploaded later. The store holds metadata only (task, key, outcome, host, timings, per-name env hashes),
+meanwhile aren't uploaded later. `invalidate` deletes locally but exits 2 if shared deletion cannot
+be confirmed, warning that the shared proof may survive. The store holds metadata only (task, key, outcome, host, timings, per-name env hashes),
 never logs or output. It's a cache: losing it costs re-runs, never correctness.
 
 ## How this repo uses proof
