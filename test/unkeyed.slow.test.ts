@@ -13,6 +13,7 @@ afterEach(() => {
 const task = (inputs: unknown[], keyed?: string[]) => ({ run: 'true', inputs, keyed });
 const imports = { 'imports-of': 'entry.ts' };
 const flow = { maestro: 'flows/main.yaml' };
+const config = { path: 'config.json', json: ['name'] };
 const reader = (input: unknown) => ({
   ...task([input]),
   run: `printf '%s' "$EXPECTED" | cmp - shared.ts`,
@@ -27,13 +28,15 @@ function fixture() {
     version: 1,
     project: 'unkeyed',
     include: 'proof.d/*.yaml',
-    unkeyed: ['shared.ts', 'flows/common.yaml'],
+    unkeyed: ['shared.ts', 'flows/common.yaml', 'config.json'],
     tasks: {
       direct: reader('shared.ts'),
       closure: reader(imports),
       flow: task([flow]),
       control: task(['control']),
       representative: task([imports], ['shared.ts']),
+      projection: task([config]),
+      configRep: task([config], ['config.json']),
     },
   };
   r.commit({
@@ -47,6 +50,7 @@ function fixture() {
     'flows/main.yaml': 'appId: x\n---\n- runFlow: common.yaml\n',
     'flows/common.yaml': 'appId: x\n---\n- runFlow: leaf.yaml\n',
     'flows/leaf.yaml': 'appId: x\n---\n- tapOn: Hello\n',
+    'config.json': '{"name":"a"}',
     control: 'ok',
   });
   const state = mkdtempSync(join(tmpdir(), 'proof-unkeyed-'));
@@ -98,8 +102,8 @@ test('unkeyed declarations validate all files and representatives before task se
   for (const [unkeyed, keyed, inputs] of [
     [['*.ts'], ['shared.ts'], ['shared.ts']],
     [['shared.ts'], ['shared.ts'], ['control']],
-    [['absent'], ['shared.ts'], ['shared.ts']],
-    [['shared.ts'], ['absent'], ['shared.ts']],
+    [['absent', 'shared.ts'], ['shared.ts'], ['shared.ts']],
+    [['shared.ts'], ['absent', 'shared.ts'], ['shared.ts']],
     [['shared.ts'], ['*.ts'], ['shared.ts']],
     [['!shared.ts'], ['!shared.ts'], ['**']],
     ['shared.ts', [], ['shared.ts']],
@@ -134,12 +138,14 @@ test('unkeyed bytes stay in sandboxes while only representatives key them', () =
   expect(why).not.toContain('changed file shared.ts');
   expect(cli(['why', 'representative'])).toContain('file shared.ts ');
   expect(cli(['why', 'control'])).not.toContain('unkeyed shared.ts');
+  expect(cli(['why', 'projection'])).toContain('unkeyed config.json');
   r.write('shared.ts', `${changed}\n`);
   expect(cli(['why', 'direct'])).toContain("dirty input 'shared.ts'");
   r.git('reset', '--hard', to);
   const cases = [{ name: 'shared.ts', from, to, expect: ['representative'] }];
   for (const [path, content, expected] of [
     ['flows/common.yaml', 'appId: x\n---\n- runFlow: leaf.yaml\n# edit', ['flowRep']],
+    ['config.json', '{"name":"b"}', ['configRep']],
     ['leaf.ts', 'export const value = 1;', ['closure', 'representative']],
     ['shared.ts', "import './other';", ['closure', 'representative']],
     ['flows/leaf.yaml', 'appId: x\n---\n- tapOn: Goodbye\n', ['flow', 'flowRep']],
