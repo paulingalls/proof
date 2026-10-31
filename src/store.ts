@@ -1,12 +1,11 @@
-import { Database } from 'bun:sqlite';
-import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
-import { redacted, statePath, storeUrl } from './config';
+import { redacted, storeUrl } from './config';
 import { postgres, UnreachableStore } from './postgres';
+import { sqlite, sqlitePath } from './sqlite';
+import { initialize } from './store-schema';
 
 export type Sharing = 'local' | 'shared' | 'not shared' | 'sharing uncertain';
 export type Outcome = 'green' | 'red' | 'incomplete';
-type Value = string | number | null;
+export type Value = string | number | null;
 export type Query = <T = Record<string, unknown>>(sql: string, ...values: Value[]) => Promise<T[]>;
 export interface Backend {
   query: Query;
@@ -23,97 +22,17 @@ type Proof = {
   red_host: string | null;
 };
 
-function sqlitePath() {
-  return join(statePath(), 'proof.db');
+export function localDay(date = new Date()) {
+  return `${String(date.getFullYear()).padStart(4, '0')}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-function sqlite(): Backend {
-  const base = statePath();
-  mkdirSync(base, { recursive: true });
-  const db = new Database(sqlitePath());
-  try {
-    db.exec('PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON;');
-  } catch (error) {
-    db.close();
-    throw error;
-  }
-  const query: Query = async <T>(sql: string, ...values: Value[]) =>
-    db.query(sql).all(...values) as T[];
-  let transactions = Promise.resolve();
-  return {
-    query,
-    remote: false,
-    async transaction(_lock, work) {
-      const previous = transactions;
-      let release = () => {};
-      transactions = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      await previous;
-      try {
-        db.exec('BEGIN IMMEDIATE');
-        try {
-          const result = await work(query);
-          db.exec('COMMIT');
-          return result;
-        } catch (error) {
-          db.exec('ROLLBACK');
-          throw error;
-        }
-      } finally {
-        release();
-      }
-    },
-    async close() {
-      db.close();
-    },
-  };
-}
-
-async function initialize(backend: Backend) {
-  return await backend.transaction('proof:schema', async (query) => {
-    await query(`CREATE TABLE IF NOT EXISTS schema_version (
-          singleton INTEGER PRIMARY KEY CHECK (singleton = 1), version INTEGER NOT NULL
-        )`);
-    const [row] = await query<{ version: number }>('SELECT version FROM schema_version');
-    if (row && row.version !== 1 && row.version !== 2)
-      throw new Error(`store schema version ${row.version}; supported version 2`);
-    const id = backend.remote
-      ? 'BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY'
-      : 'INTEGER PRIMARY KEY';
-    const reference = backend.remote ? 'BIGINT' : 'INTEGER';
-    await query(`CREATE TABLE IF NOT EXISTS results (
-          id ${id}, project TEXT NOT NULL, task TEXT NOT NULL, key TEXT NOT NULL,
-          outcome TEXT NOT NULL, seconds DOUBLE PRECISION, host TEXT NOT NULL, "commit" TEXT NOT NULL,
-          dirty INTEGER NOT NULL, finished_at TEXT NOT NULL
-        )`);
-    await query(`CREATE TABLE IF NOT EXISTS proofs (
-          project TEXT NOT NULL, task TEXT NOT NULL, key TEXT NOT NULL,
-          result_id ${reference} NOT NULL REFERENCES results(id),
-          PRIMARY KEY (project, task, key)
-        )`);
-    if (!row || row.version === 1) await query('ALTER TABLE proofs ADD COLUMN env_hashes TEXT');
-    await query(`CREATE TABLE IF NOT EXISTS contradictions (
-          id ${id}, project TEXT NOT NULL, task TEXT NOT NULL, key TEXT NOT NULL,
-          green_result ${reference} NOT NULL REFERENCES results(id),
-          red_result ${reference} NOT NULL REFERENCES results(id), kind TEXT NOT NULL,
-          deleted_proof INTEGER NOT NULL, recorded_at TEXT NOT NULL
-        )`);
-    if (!backend.remote)
-      await query(`CREATE TABLE IF NOT EXISTS observed_contests (
-        result_id INTEGER PRIMARY KEY REFERENCES results(id),
-        red_commit TEXT NOT NULL, red_host TEXT NOT NULL
-      )`);
-    if (!backend.remote)
-      await query(`CREATE TABLE IF NOT EXISTS unshared_reds (
-        project TEXT NOT NULL, task TEXT NOT NULL, key TEXT NOT NULL,
-        result_id INTEGER NOT NULL REFERENCES results(id), PRIMARY KEY (project, task, key)
-      )`);
-    if (!row) await query('INSERT INTO schema_version (singleton, version) VALUES (1, 2)');
-    else if (row.version === 1) await query('UPDATE schema_version SET version = 2');
-    return 2;
-  });
-}
+type HistoryResult = {
+  task: string;
+  outcome: Outcome;
+  seconds: number | null;
+  finished_at: string;
+};
+type Skip = { task: string; day: string; count: number };
 
 export class Store {
   private closed = false;
@@ -387,6 +306,46 @@ export class Store {
       this.fallback(error);
       return { ...result, sharing: 'sharing uncertain' };
     }
+  }
+
+  async skip(project: string, tasks: string[]) {
+    if (!tasks.length) return;
+    const day = localDay();
+    const statement = `INSERT INTO skips (project, task, day, count) VALUES
+      ${tasks.map(() => '(?, ?, ?, 1)').join(', ')}
+      ON CONFLICT (project, task, day) DO UPDATE SET count = skips.count + excluded.count`;
+    const values = tasks.flatMap((task) => [project, task, day]);
+    await this.local.query(statement, ...values);
+    if (this.remote && !this.offline) {
+      try {
+        await this.remote.query(statement, ...values);
+      } catch (error) {
+        this.fallback(error);
+      }
+    }
+  }
+
+  async history(project: string, start: string, end: string) {
+    const read = async (query: Query) => ({
+      results: await query<HistoryResult>(
+        'SELECT task, outcome, seconds, finished_at FROM results WHERE project = ?',
+        project,
+      ),
+      skips: await query<Skip>(
+        'SELECT task, day, count FROM skips WHERE project = ? AND day >= ? AND day < ?',
+        project,
+        start,
+        end,
+      ),
+    });
+    if (this.remote && !this.offline) {
+      try {
+        return await read(this.remote.query);
+      } catch (error) {
+        this.fallback(error);
+      }
+    }
+    return read(this.local.query);
   }
 
   async close() {

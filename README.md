@@ -191,7 +191,7 @@ provider-free tasks have no `providers` field. Neither plan form starts resource
 
 ## Commands
 
-`plan`, `run`, `why`, `status`, `record`, `check`, `lint` and `doctor`. Every flag, output line and exit code is in [docs/commands.md](docs/commands.md).
+`plan`, `run`, `why`, `status`, `record`, `stats`, `check`, `lint` and `doctor`. Every flag, output line and exit code is in [docs/commands.md](docs/commands.md).
 
 ## Sharing proofs across machines
 

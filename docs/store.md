@@ -11,7 +11,7 @@ survives local proof deletion; incomplete results and dirty greens cannot clear
 it. A clean local green clears it, as does confirmation that the red was shared.
 Reconnection alone does not.
 
-For `plan`, `run`, `record`, `status` and `why`, a connection attempt has a two-second timeout. If
+For `plan`, `run`, `record`, `status`, `why` and `stats`, a connection attempt has a two-second timeout. If
 the store is unreachable at startup, during a read, or while publishing, the
 command switches to the local replica and prints one line to stderr:
 
@@ -67,13 +67,29 @@ without backfilling env data.
 
 The first client at this version migrates a fresh, unversioned or schema-1 store to schema 2
 under the schema transaction/lock. Any command opening the store can migrate it, including
-`doctor`. An older pinned client then exits 2 naming the stored and supported versions until it
+`doctor`. A client predating schema 2 then exits 2 naming the stored and supported versions until it
 upgrades. Upgrade clients sharing a store together. Newer unsupported schemas are rejected
 without changing history.
 
 `why` reads the newest surviving proof across keys from the shared store when reachable,
 ordered by finish time and result id. Contested proofs remain comparison baselines. Shared reads
 do not import remote history into SQLite; offline explanations use only this machine's proofs.
+
+`run` batches its final PROVEN skips into one atomic multi-row increment per backend,
+local first and then shared when online. `skips` has one row per project, task and local
+calendar date of the recording machine, bounding rows by tasks times days. The date is
+taken when the run flushes, including runs ending after midnight. Red and interrupted
+runs retain skips already reached; a thrown sandbox failure exits 2 before flushing.
+Failed remote writes use the same loud fallback with no replay on reconnect.
+`plan` and `stats` never increment counts.
+
+The skips table is additive (`CREATE TABLE IF NOT EXISTS`); schema version stays 2.
+The v0.10.0 client can still open and write the same store, preserving skip rows.
+`stats` reads results and skips from one backend: Postgres while online, otherwise
+the local replica. Neither shared history nor skips are imported into the replica.
+It reads history after its current-plan decisions; if a decision loses the connection,
+earlier decisions remain shared and subsequent reads use the replica under the fallback
+diagnostic, as in `plan`. Authentication, schema and query errors still exit 2.
 
 ## Start the host
 

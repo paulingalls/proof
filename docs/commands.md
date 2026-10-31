@@ -9,6 +9,7 @@ proof record <task> --outcome green|red|incomplete [--seconds N]
 proof lint                   check declarations against the staged tree
 proof check <cases.yaml>     run a requirement suite
 proof doctor                 which store is in use, and whether it's reachable
+proof stats [--set <name>] [--since Nd]  timings, current RUN estimate and time saved
 ```
 
 `run` exits 0 when every task is proven or green, 1 when a task is red/incomplete or a provider fails, 130/143 when interrupted;
@@ -205,6 +206,52 @@ a task selects (even when `git status` is empty), a file hidden by `assume-uncha
 `skip-worktree`, or a linked `node_modules` escaping into tracked files. Status's `trusted links`
 suffix restates the declaration rather than reporting an inspection.
 
+`proof stats [--set <name>] [--since Nd]` reports the current declaration roster in
+its declared order. `--set` scopes every task, count, estimate and total to that set;
+an unknown set exits 2 as in `plan`. Removed or renamed tasks leave all figures.
+Each task's median uses every timed green result across keys, hosts and dates,
+including dirty results. An even sample averages its middle two values; untimed
+and non-green results do not price skips. Run counts include every result outcome,
+timed or untimed, in the current window.
+
+`--since` defaults to `30d` and accepts positive whole days with representable calendar
+boundaries. The current window includes today and the preceding N−1 local calendar days;
+the previous window is the N days before it. Both use the reading machine's timezone,
+with inclusive start and exclusive end midnights. Skips retain the recording machine's
+local date. Invalid, missing, repeated or unknown flags exit 2 with usage.
+
+For a committed `text` task in `sets: [push]`, with no earlier history:
+
+```sh
+proof record text --outcome green --seconds 20
+proof run
+proof run
+proof run
+proof stats
+proof stats --set push --since 2d
+```
+
+The last command prints:
+
+```text
+text: median 20s; 1 runs in 2d
+estimated 0m for 0 RUN tasks
+saved 1m of 1.33m in 2d (75%); previous 2d: unavailable
+```
+
+The estimate sums medians for today's selected RUN tasks, counting and naming tasks
+without a timed green as `; unpriced <count>: <tasks>`. It excludes PROVEN tasks.
+The last line measures recorded savings: each skip costs the same all-time median in
+both windows. Its total adds actual timed result seconds of every outcome. Numbers
+round to two decimal places with trailing zeroes stripped; percentages use unrounded
+totals. A zero total prints `unavailable`. Unpriced skips append
+`; unpriced skips: <count> current, <count> previous`; they never silently cost zero.
+A zero-second green is a priced sample.
+
+Only `run` records skips, at its final PROVEN decisions; `plan` and `stats` record none.
+Stats reads history from the shared store when online, or this machine's replica with
+the usual loud fallback, never adding both backends together. It runs no tasks or providers.
+
 `proof check` compares the exact RUN set between committed refs without executing the declared
 commands. After the Quickstart's `src/text.ts` edit and commit, save this as `cases.yaml`:
 
@@ -225,5 +272,4 @@ Planned, specified in [R16](2026-10-30-proof-requirements.md) and design §4.6:
 ```
 proof invalidate --task <t> [--key k|--all] delete proofs (recorded as a manual contradiction)
 proof flakes [--since 30d]                tasks ranked by contradictions
-proof stats [--set land]                  median seconds per task; estimated minutes for a plan
 ```
