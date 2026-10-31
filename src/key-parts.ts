@@ -39,13 +39,41 @@ export function keyParts(task: Task, tree: RefTree, historical = false) {
     cached = new Map();
     contents.set(tree, cached);
   }
+  function read(path: string) {
+    let text = cached?.get(path);
+    if (text === undefined) {
+      text = tree.read(path);
+      cached?.set(path, text);
+    }
+    return text;
+  }
   const projections = new Set<string>();
   const members = new Map<string, [string, string, string, string]>();
   for (const path of [...selection.paths].sort()) {
     if (selection.manifests.includes(path)) continue;
     const { mode, blob } = tree.entry(path);
-    if (mode && blob) files.push([path, mode, blob]);
-    else reasons.push(`unavailable input '${path}'`);
+    if (mode && blob) {
+      let identity = blob;
+      if (path === 'package.json' || path.endsWith('/package.json')) {
+        const text = read(path);
+        try {
+          const value = JSON.parse(text);
+          if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+            const version = JSON.stringify(value.version);
+            const literal = version?.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            // Preserve layout; the first matching nested version is an accepted rare corner.
+            identity = hash(
+              literal === undefined
+                ? text
+                : text.replace(new RegExp(`("version"\\s*:\\s*)${literal}`), '$1""'),
+            );
+          }
+        } catch (error) {
+          if (!(error instanceof SyntaxError)) throw error;
+        }
+      }
+      files.push([path, mode, identity]);
+    } else reasons.push(`unavailable input '${path}'`);
   }
   for (const input of [
     ...task.inputs,
@@ -65,12 +93,7 @@ export function keyParts(task: Task, tree: RefTree, historical = false) {
     }
     let value: unknown;
     try {
-      let text = cached.get(path);
-      if (text === undefined) {
-        text = tree.read(path);
-        cached.set(path, text);
-      }
-      value = JSON.parse(text);
+      value = JSON.parse(read(path));
     } catch (error) {
       if (!(error instanceof SyntaxError)) throw error;
       reasons.push(`input '${path}': invalid JSON`);

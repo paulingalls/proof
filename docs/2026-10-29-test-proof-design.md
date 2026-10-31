@@ -88,16 +88,19 @@ today.
 Task names below are the ones section 4 declares. Journeys include `$stack` (requirements R4, Paul
 2026-10-30), so cases 4, 7 and 10 select them. Expectations are the design's claim; the card
 that lands the suite confirms each against the declarations and Paul reviews the list.
+The app-a run cited by the version-never-keyed card corrects cases 3, 5 and 7 below: version is
+excluded on every manifest selection route; the API support-corpus stage copies mobile source;
+the worker Dockerfile copies only two JSON files from the db package.
 
 | # | Pair (A → B) | Diff | Expected RUN set | Today |
 |---|---|---|---|---|
 | 1 | `0f10aba84` → `9a798c96a` | `CHANGELOG.md` only | none | this was the 83-gate push (tree `3a2098b524`, 41.7 gate-min) |
 | 2 | `0f10aba84^` → `0f10aba84` | `scripts/verify-metrics-role.sh`, `scripts/test-ratchet.json` | `verify-metrics-role` (ratchet.json is a pre-commit input, not a cached task) | measured: 61 shared-stack, 19 static, 7 private, 13 test-all rows (branch diff vs merge-base) |
-| 3 | `3db086374^` → `3db086374` | `CHANGELOG.md`, root `package.json` version only | none (`package.json#version` is excluded by projection) | none for Docker (`effective_paths` exemption), but story-gate and push-quality rerun everything |
+| 3 | `3db086374^` → `3db086374` | `CHANGELOG.md`, root `package.json` version only | none (`package.json#version` is excluded on every selection route) | none for Docker (`effective_paths` exemption), but story-gate and push-quality rerun everything |
 | 4 | `9a7923f42^` → `9a7923f42` | `apps/worker/src/config.py` (a docstring) | `pytest:worker-unit`, `pytest:worker-acceptance`, every shared-stack gate and every journey (the `stack` set contains `apps/worker/**`), `image:worker` | same plus static, private, journeys at land |
-| 5 | `2d345da46^` → `2d345da46` | `apps/mobile/src/features/items/item-period.tsx` | `bun:mobile` (unit), native and web journeys whose import closure reaches the file (items journeys), `web-audit` cells for those routes; no Docker gate, no Python | native: smoke only (runner-literal selection); web: nothing (spec-only); Docker: everything if the push is a free branch |
+| 5 | `2d345da46^` → `2d345da46` | `apps/mobile/src/features/items/item-period.tsx` | `bun:mobile` (unit), native and web journeys whose import closure reaches the file (items journeys), `web-audit` cells for those routes, `typecheck`, `image:api` (the support-corpus stage copies mobile source); no Python | native: smoke only (runner-literal selection); web: nothing (spec-only); Docker: everything if the push is a free branch |
 | 6 | `ee9e5ec3c^` → `ee9e5ec3c` | `.maestro/flow-switcher-completions.yml` | native journeys whose `runFlow` closure includes the flow; nothing else | smoke + runners naming the flow (close); plus Docker at a free push |
-| 7 | `a0d02fc69^` → `a0d02fc69` | `packages/db/src/queries/record-entity.ts` + CHANGELOG + version | `bun:db` (DB unit), `typecheck`, every shared-stack gate and every journey (`$stack`), `pytest:worker-acceptance` (it reads the schema), `image:api`, `image:worker` | plus static, private, journeys |
+| 7 | `a0d02fc69^` → `a0d02fc69` | `packages/db/src/queries/record-entity.ts` + CHANGELOG + version | `bun:db` (DB unit), `typecheck`, every shared-stack gate and every journey (`$stack`), `pytest:worker-acceptance` (it reads the schema), `image:api` (the worker Dockerfile copies only two JSON files from this package) | plus static, private, journeys |
 | 8 | `26eec6bb0^` → `26eec6bb0` | `docs/research/*.md` | none | story-gate full; push-quality full |
 | 9 | `8a035f6dd^` → `8a035f6dd` | `lefthook.yml` comment | none | `test-all:worker-acceptance` (9.5 min: `python-leg-inputs.json` lists `lefthook.yml`) |
 | 10 | `44a631988^` → `44a631988` | base-image digests in `apps/{worker,generator}/Dockerfile` | `image:worker`, `image:generator`, every shared-stack gate and every journey, `pytest:worker-acceptance` (testcontainers build the image) | same at a sprint; everything at a free push |
