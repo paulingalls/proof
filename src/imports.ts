@@ -81,8 +81,28 @@ export function source(tree: RefTree, dirty?: string[]): Source {
   }
   return view;
 }
-const gap = String.raw`(?:\s|/\*[\s\S]*?\*/|//[^\n]*(?:\n|$))*`;
+// A lazy comment body can retry past each `*/`; that blowup hits the engine's backtrack limit,
+// which ends a global replace with no error and leaves later type-only imports erased.
+const gap = String.raw`(?:\s|/\*[^*]*(?:\*(?!/)[^*]*)*\*/|//[^\n]*(?:\n|$))*`;
 const literal = /('(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`)/.source;
+// The scanner erases type-only edges; expose them without interpreting import-looking text.
+function valueImports(text: string) {
+  const name = String.raw`[$\w\u0080-\uffff]+(?![$\w\u0080-\uffff])`;
+  const named = String.raw`\{(?:${gap}${name})*(?:${gap},(?:${gap}${name})*)*${gap}\}`;
+  const clause = String.raw`(?:${named}|\*(?:${gap}as${gap}${name})?|${name}(?:${gap},${gap}${named})?)`;
+  const statement = new RegExp(
+    String.raw`\b(import|export)${gap}(type\b${gap})?(${clause})(${gap}from${gap}${literal})`,
+    'g',
+  );
+  const inline = new RegExp(String.raw`(^|,)${gap}type\b${gap}(?!as\b)(${name})`, 'g');
+  return text.replace(statement, (_, kind, _type, clause: string, tail) => {
+    const values = clause.replace(
+      /\{([\s\S]*)\}/,
+      (_, names: string) => `{${names.replace(inline, '$1 $2')}}`,
+    );
+    return `${kind} ${values}${tail}`;
+  });
+}
 type Loader = 'ts' | 'tsx' | 'jsx' | 'js';
 function supplement(text: string, loader: Loader) {
   const edges: Edge[] = [];
@@ -107,9 +127,6 @@ function supplement(text: string, loader: Loader) {
     if (arg?.[1]) add(arg[1], match[0].startsWith('require') ? 'require' : 'import');
     else if (!reason && runs()) reason = `computed import ${tail.split(')')[0]}`;
   }
-  for (const match of text.matchAll(new RegExp(String.raw`\bfrom${gap}${literal}`, 'g'))) {
-    if (match[1]) add(match[1], 'import');
-  }
   return { edges, reason };
 }
 const scans = new Map<string, { edges: Edge[]; reason?: string }>();
@@ -123,7 +140,7 @@ function scan(text: string, loader: Loader) {
         edges: [
           ...new Map(
             [
-              ...new Bun.Transpiler({ loader }).scanImports(text).map(
+              ...new Bun.Transpiler({ loader }).scanImports(valueImports(text)).map(
                 (edge): Edge => ({
                   specifier: edge.path,
                   kind: edge.kind === 'require-call' ? 'require' : 'import',

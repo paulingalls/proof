@@ -45,7 +45,7 @@ function state() {
 function plan(r: Repo, env = state()) {
   const result = r.cli(['plan', '--json'], env);
   expect(result.code, result.err).toBe(0);
-  return JSON.parse(result.out) as { task: string; state: string; reason: string }[];
+  return JSON.parse(result.out) as { task: string; state: string; reason: string; key?: string }[];
 }
 
 test('ref closures select exactly the affected branch', () => {
@@ -392,4 +392,75 @@ test('ordered exclusions remove newly reached ignored working targets', () => {
   r.write('src/hidden.ts', 'export {};');
   const run = r.cli(['run'], state());
   expect(run.code, run.err + run.out).toBe(0);
+});
+
+test('import-looking strings and templates add no edges', () => {
+  const codes = [
+    `const s = "from './missing'";`,
+    "const s = `import { T } from './missing'`;",
+    "const s = `import type { T } from './missing'`;",
+    "const s = `import { T } from './decoy'`;",
+    "const s = `export type { T } from './decoy'`;",
+    "const a = 'taken from'; const r = /\\d/; const b = 'x';",
+    `const p = <p title="pick from" className={\`x \${y}\`} id="z" />;`,
+  ];
+  const r = fixture(
+    Object.fromEntries(codes.map((_, i) => [`case${i}`, task(`src/case${i}.tsx`)])),
+    {
+      ...Object.fromEntries(codes.map((code, i) => [`src/case${i}.tsx`, code])),
+      'src/decoy.ts': 'export type T = number;',
+    },
+  );
+  const env = state();
+  const before = plan(r, env);
+  for (const row of before) {
+    expect(row.reason).toBe('no proof for key');
+    expect(row.key).toMatch(/^[a-f0-9]{64}$/);
+  }
+  r.commit({ 'src/decoy.ts': 'export type T = string;' });
+  expect(plan(r, env)).toEqual(before);
+});
+
+test('type-only forms keep edges without breaking type identifiers or aliases', () => {
+  const codes = [
+    "import type { T } from './leaf';",
+    "import type T from './leaf';",
+    "import type * as T from './leaf';",
+    "import { type T } from './leaf';",
+    "import {\n  type T,\n  type U,\n} from './leaf';",
+    "import /* c */ type /* c */ { T } from './leaf';",
+    "export type { T } from './leaf';",
+    "export type * from './leaf';",
+    "export type * as T from './leaf';",
+    "export { type T } from './leaf';",
+    "import type from './leaf';",
+    "import type, { a } from './leaf';",
+    "import { type } from './leaf';",
+    "import { type as a } from './leaf';",
+    "export { type } from './leaf';",
+    "import d from './leaf' with { type: 'json' };",
+    "export type A = number\nimport './leaf';",
+    "import './leaf'; function f() { type L<T> = T; }",
+    'import type { T } from "./leaf"; const s = `import type X from "./missing"`;',
+    "import type { Größe } from './leaf';",
+    "import type Größe from './leaf';",
+    "import { type Größe } from './leaf';",
+    `export {\n${'  /** doc */\n  a,\n'.repeat(30)}};\nexport type { T } from './leaf';`,
+  ];
+  const r = fixture(
+    Object.fromEntries(codes.map((_, i) => [`case${i}`, task(`src/case${i}.ts`)])),
+    {
+      ...Object.fromEntries(codes.map((code, i) => [`src/case${i}.ts`, code])),
+      'src/leaf.ts': 'export type T = number; export type U = T; export default 1;',
+    },
+  );
+  const env = state();
+  const before = plan(r, env);
+  for (const row of before)
+    expect(row.key, codes[Number(row.task.slice(4))]).toMatch(/^[a-f0-9]{64}$/);
+  r.commit({ 'src/leaf.ts': 'export type T = string; export type U = T; export default 2;' });
+  for (const [i, row] of plan(r, env).entries()) {
+    expect(row.key, codes[i] + row.reason).toMatch(/^[a-f0-9]{64}$/);
+    expect(row.key, codes[i]).not.toBe(before[i]?.key);
+  }
 });

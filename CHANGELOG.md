@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.1
+
+- `plan --json` and `status --json` rows carry each decidable task's `key`, so a repo can prove a
+  change left its keys alone even with no proofs stored. Undecidable rows have no key.
+- Text inside strings and templates no longer reads as an import, which made tasks falsely
+  undecidable. Type-only imports stay keyed.
+
 ## 0.11.0
 
 - `proof run --jobs N` runs tasks concurrently. `lanes:` and a task's `lane:` cap a resource within a

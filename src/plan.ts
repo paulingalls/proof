@@ -97,22 +97,23 @@ export async function decide(
     const current = key(task, decl, tree, dirty);
     if (current.key === undefined)
       return { task, state: 'RUN', reason: `undecidable: ${current.reason}` };
-    if (inspection.escapes.length) return { task, state: 'RUN', reason: 'untrusted links' };
-    if (fresh) return { task, state: 'RUN', reason: 'fresh execution requested' };
+    const identity = { task, key: current.key };
+    if (inspection.escapes.length) return { ...identity, state: 'RUN', reason: 'untrusted links' };
+    if (fresh) return { ...identity, state: 'RUN', reason: 'fresh execution requested' };
     const proof = await store.proof(project, task, current.key);
     if (proof?.red_commit)
       return {
-        task,
+        ...identity,
         state: 'RUN',
         reason: `contested: red at ${proof.red_commit} on ${proof.red_host} after green`,
       };
     return proof
       ? {
-          task,
+          ...identity,
           state: 'PROVEN',
           reason: `proven at ${proof.commit} on ${proof.host} ${proof.finished_at}`,
         }
-      : { task, state: 'RUN', reason: 'no proof for key' };
+      : { ...identity, state: 'RUN', reason: 'no proof for key' };
   }
 }
 

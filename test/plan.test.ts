@@ -187,7 +187,8 @@ test('JSON emits the same decisions as plain plan with exactly the public fields
   const rows = JSON.parse(json.out);
   expect(rows.map((row: { task: string }) => row.task)).toEqual(['lint', 'docs-check']);
   for (const row of rows) {
-    expect(Object.keys(row).sort()).toEqual(['reason', 'state', 'task']);
+    expect(Object.keys(row).sort()).toEqual(['key', 'reason', 'state', 'task']);
+    expect(row.key).toMatch(/^[a-f0-9]{64}$/);
   }
   expect(
     rows
@@ -229,6 +230,9 @@ test('dirty root or included declarations make every task undecidable', () => {
         (id) => `RUN ${id}: undecidable: dirty declaration '${path}'`,
       ),
     );
+    const json = repo.cli(['plan', '--json'], env);
+    expect(json.code).toBe(0);
+    for (const row of JSON.parse(json.out)) expect(row).not.toHaveProperty('key');
     repo.git('restore', '.');
     if (path.endsWith('new.yaml')) rmSync(join(repo.path, path));
   }
@@ -247,4 +251,29 @@ test('a submodule moved off its gitlink is dirty even when .gitmodules ignores i
   repo.git(...sub, 'commit', '-q', '--allow-empty', '-m', 'two');
   expect(repo.cli(['plan'], env).out).toContain("RUN lint: undecidable: dirty input 'src/sub'");
   expect(record(repo, env).out).toContain("no proof published: dirty path 'src/sub'");
+});
+
+test('empty-store JSON distinguishes input changes from unrelated dirt and tags', () => {
+  const repo = fixture();
+  const env = state();
+  const rows = () => {
+    const result = repo.cli(['plan', '--json'], env);
+    expect(result.code).toBe(0);
+    return JSON.parse(result.out);
+  };
+  const baseline = rows();
+  expect(baseline[0].key).toMatch(/^[a-f0-9]{64}$/);
+  repo.write('notes/todo.md', 'todo');
+  expect(rows()).toEqual(baseline);
+  repo.git('tag', 'release');
+  expect(rows()).toEqual(baseline);
+  repo.write('src/a.ts', 'changed');
+  expect(rows()[0]).toEqual({
+    task: 'lint',
+    state: 'RUN',
+    reason: "undecidable: dirty input 'src/a.ts'",
+  });
+  repo.commit({});
+  expect(rows()[0].key).toMatch(/^[a-f0-9]{64}$/);
+  expect(rows()[0].key).not.toBe(baseline[0].key);
 });
