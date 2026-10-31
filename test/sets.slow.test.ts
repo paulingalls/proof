@@ -1,12 +1,20 @@
-import { expect, test } from 'bun:test';
+import { afterEach, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Repo } from './support/repo';
 
-test('task set boundaries, proof reuse, historical views and invalid selectors', () => {
+const cleanups: (() => void)[] = [];
+afterEach(() => {
+  for (const cleanup of cleanups.splice(0)) cleanup();
+});
+function scene() {
   const repo = new Repo();
   const state = mkdtempSync(join(tmpdir(), 'proof-sets-'));
+  cleanups.push(() => {
+    repo.close();
+    rmSync(state, { recursive: true, force: true });
+  });
   const env = { PROOF_STATE_DIR: join(state, 'store') };
   const task = (id: string, sets?: unknown) => ({
     run: `test -f input && echo ${id} >> '${state}/log'`,
@@ -37,88 +45,96 @@ test('task set boundaries, proof reuse, historical views and invalid selectors',
     const decisions: { task: string; state: string }[] = JSON.parse(result.out);
     expect(decisions.map((r) => `${r.task}:${r.state}`).join(' ')).toBe(expected);
   };
-  try {
-    declare(
-      { a: task('a', ['commit', 'commit']), b: task('b', ['push']), d: task('d', []) },
-      { c: task('c', ['commit', 'push']) },
-    );
-    for (const [command, store, delta, message] of [
-      ['run --set commit', 'cold', 'a\nc\n', 'RUN a'],
-      ['run --set commit', 'cold', '', 'PROVEN a'],
-      ['run --set push', 'other', 'b\nc\n', 'RUN b'],
-      ['run', 'all', 'a\nb\nd\nc\n', 'RUN d'],
-      ['run --fresh --set commit', 'all', 'a\nc\n', 'fresh execution requested'],
-    ] as const) {
-      env.PROOF_STATE_DIR = join(state, store);
-      const before = log();
-      const result = cli(command);
-      expect(result.out).toContain(message);
-      if (command.includes('--fresh')) expect(result.out).toContain('proof published');
-      expect(log()).toBe(before + delta);
-    }
+  return { repo, state, env, task, declare, log, cli, rejected, rows };
+}
+
+test('task sets bound what runs and proofs carry between them', () => {
+  const { state, env, task, declare, log, cli, rows } = scene();
+  declare(
+    { a: task('a', ['commit', 'commit']), b: task('b', ['push']), d: task('d', []) },
+    { c: task('c', ['commit', 'push']) },
+  );
+  for (const [command, store, delta, message] of [
+    ['run --set commit', 'cold', 'a\nc\n', 'RUN a'],
+    ['run --set commit', 'cold', '', 'PROVEN a'],
+    ['run --set push', 'other', 'b\nc\n', 'RUN b'],
+    ['run', 'all', 'a\nb\nd\nc\n', 'RUN d'],
+    ['run --fresh --set commit', 'all', 'a\nc\n', 'fresh execution requested'],
+  ] as const) {
+    env.PROOF_STATE_DIR = join(state, store);
     const before = log();
-    rows('plan', 'a:PROVEN b:PROVEN d:PROVEN c:PROVEN');
-    for (const args of [
-      '--set commit --tasks a',
-      '--tasks a --set commit',
-      '--set',
-      '--set commit --set push',
-    ])
+    const result = cli(command);
+    expect(result.out).toContain(message);
+    if (command.includes('--fresh')) expect(result.out).toContain('proof published');
+    expect(log()).toBe(before + delta);
+  }
+  rows('plan', 'a:PROVEN b:PROVEN d:PROVEN c:PROVEN');
+}, 30_000);
+
+test('historical views select from the requested ref', () => {
+  const { repo, task, declare, log, cli, rows } = scene();
+  const a = declare({ pending: task('pending', ['push']) }, { earned: task('earned', ['commit']) });
+  rows('plan --json --set push', 'pending:RUN');
+  rows('status --set push --ref HEAD', 'pending:RUN');
+  cli('run --set commit');
+  const earned = log();
+  declare({ pending: task('pending', ['commit']) }, { earned: task('earned', ['push']) });
+  rows('plan --set push', 'earned:PROVEN');
+  expect(cli('run --set push').out).toContain('PROVEN earned');
+  expect(log()).toBe(earned);
+  for (const [command, expected] of [
+    ['plan --set commit', 'pending:RUN'],
+    [`status --ref ${a} --set commit`, 'earned:PROVEN'],
+    [`status --ref ${a} --set push`, 'pending:RUN'],
+    ['status --ref HEAD --set push', 'earned:PROVEN'],
+  ] as const)
+    rows(command, expected);
+  repo.write(
+    'proof.d/tasks.yaml',
+    JSON.stringify({ tasks: { earned: task('earned', ['working']) } }),
+  );
+  rows('plan --set working', 'earned:RUN');
+  expect(cli('run --set working').out).toContain('not recorded: dirty declaration');
+  expect(log()).toBe(`${earned}earned\n`);
+  rows('status --ref HEAD --set push', 'earned:PROVEN');
+}, 30_000);
+
+test('selector usage errors run nothing', () => {
+  const { task, declare, log, rejected } = scene();
+  declare({ a: task('a', ['commit']) });
+  for (const args of [
+    '--set commit --tasks a',
+    '--tasks a --set commit',
+    '--set',
+    '--set commit --set push',
+  ])
+    rejected(
+      `run ${args}`,
+      'usage: proof run [--fresh | --staged] [--jobs N] [--tasks <id> ... | --set <name>]',
+    );
+  for (const command of ['plan', 'status --ref HEAD']) {
+    for (const args of ['--set', '--set push --set commit'])
       rejected(
-        `run ${args}`,
-        'usage: proof run [--fresh | --staged] [--jobs N] [--tasks <id> ... | --set <name>]',
+        `${command} ${args}`,
+        `usage: proof ${command.replace('HEAD', '<ref>')} [--set <name>] [--json]`,
       );
-    expect(log()).toBe(before);
-    const a = declare(
-      { pending: task('pending', ['push']) },
-      { earned: task('earned', ['commit']) },
-    );
-    rows('plan --json --set push', 'pending:RUN');
-    rows('status --set push --ref HEAD', 'pending:RUN');
-    cli('run --set commit');
-    const earned = log();
-    declare({ pending: task('pending', ['commit']) }, { earned: task('earned', ['push']) });
-    rows('plan --set push', 'earned:PROVEN');
-    expect(cli('run --set push').out).toContain('PROVEN earned');
-    expect(log()).toBe(earned);
-    for (const [command, expected] of [
-      ['plan --set commit', 'pending:RUN'],
-      [`status --ref ${a} --set commit`, 'earned:PROVEN'],
-      [`status --ref ${a} --set push`, 'pending:RUN'],
-      ['status --ref HEAD --set push', 'earned:PROVEN'],
-    ] as const)
-      rows(command, expected);
-    repo.write(
-      'proof.d/tasks.yaml',
-      JSON.stringify({ tasks: { earned: task('earned', ['working']) } }),
-    );
-    rows('plan --set working', 'earned:RUN');
-    expect(cli('run --set working').out).toContain('not recorded: dirty declaration');
-    expect(log()).toBe(`${earned}earned\n`);
-    rows('status --ref HEAD --set push', 'earned:PROVEN');
-    for (const command of ['plan', 'status --ref HEAD']) {
-      for (const args of ['--set', '--set push --set commit'])
-        rejected(
-          `${command} ${args}`,
-          `usage: proof ${command.replace('HEAD', '<ref>')} [--set <name>] [--json]`,
-        );
-    }
-    repo.git('checkout', '--', 'proof.d/tasks.yaml');
-    for (const command of ['plan', 'run', 'status --ref HEAD'])
-      rejected(`${command} --set missing`, "unknown task set 'missing'; known sets: commit, push");
-    expect(log()).toBe(`${earned}earned\n`);
-    declare({ unassigned: task('unassigned') });
-    rejected('run --set missing', "unknown task set 'missing'; known sets: none");
-    for (const [sets, message] of [
-      ['commit', ': sets must be a list'],
-      [[1], ' set name: expected a nonempty string'],
-      [[' '], ' set name: expected a nonempty string'],
-    ]) {
-      declare({ bad: task('bad', sets) });
-      rejected('run', `ref 'HEAD' proof.yaml task 'bad'${message}`);
-    }
-  } finally {
-    repo.close();
-    rmSync(state, { recursive: true, force: true });
+  }
+  expect(log()).toBe('');
+}, 30_000);
+
+test('unknown and invalid sets name what is known', () => {
+  const { task, declare, rejected } = scene();
+  declare({ a: task('a', ['commit']) }, { b: task('b', ['push']) });
+  for (const command of ['plan', 'run', 'status --ref HEAD'])
+    rejected(`${command} --set missing`, "unknown task set 'missing'; known sets: commit, push");
+  declare({ unassigned: task('unassigned') });
+  rejected('run --set missing', "unknown task set 'missing'; known sets: none");
+  for (const [sets, message] of [
+    ['commit', ': sets must be a list'],
+    [[1], ' set name: expected a nonempty string'],
+    [[' '], ' set name: expected a nonempty string'],
+  ]) {
+    declare({ bad: task('bad', sets) });
+    rejected('run', `ref 'HEAD' proof.yaml task 'bad'${message}`);
   }
 }, 30_000);
