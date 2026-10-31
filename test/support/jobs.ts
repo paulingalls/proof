@@ -32,6 +32,8 @@ export function fixture(
   mkdirSync(join(repo.path, 'scratch'));
   const rows = (table = 'results') => {
     const db = new Database(join(env.PROOF_STATE_DIR, 'proof.db'));
+    // Polling reads race the CLI's commits; a reader without a timeout fails SQLITE_BUSY.
+    db.exec('PRAGMA busy_timeout = 5000');
     try {
       return db.query(`SELECT * FROM ${table} ORDER BY rowid`).all() as {
         id: number;
