@@ -124,15 +124,19 @@ export async function run(args: string[]) {
         pending.length &&
         active.size < jobs &&
         !processes.aborted &&
+        ![...active.values()].some(({ lane }) => lane === 'solo') &&
         !(processes.interrupted && !providers.live())
       ) {
-        const next = pending.findIndex(
-          ({ lane }) =>
+        const solo = pending.findIndex(({ lane }) => lane === 'solo');
+        const next = pending.findIndex(({ lane }, index) => {
+          if (solo >= 0 && index > solo) return false;
+          if (lane === 'solo') return active.size === 0;
+          return (
             lane === undefined ||
-            lane === 'solo' ||
             [...active.values()].filter((entry) => entry.lane === lane).length <
-              (initial.lanes.get(lane) as number),
-        );
+              (initial.lanes.get(lane) as number)
+          );
+        });
         if (next < 0) break;
         const entry = pending.splice(next, 1)[0] as (typeof pending)[number];
         const done = execute(entry.index, entry.id).finally(() => active.delete(entry.index));
