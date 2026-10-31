@@ -1,5 +1,6 @@
 import {
   closeSync,
+  fstatSync,
   mkdirSync,
   openSync,
   readdirSync,
@@ -14,6 +15,8 @@ import { statePath } from './config';
 
 export type LogIdentity = { project: string; task: string; key?: string; live: boolean };
 export type LogResult = { path?: string; error?: string };
+
+const CHUNK = 65536;
 
 function segment(name: string) {
   return name === '.' || name === '..' ? name.replaceAll('.', '%2E') : encodeURIComponent(name);
@@ -38,15 +41,18 @@ export class Capture {
   constructor(private readonly identity: LogIdentity) {
     mkdirSync(this.root, { recursive: true, mode: 0o700 });
     this.fd = openSync(this.path, 'wx+', 0o600);
-    if (identity.live) this.timer = setInterval(() => this.tail(), 10);
+    if (identity.live) this.timer = setInterval(() => this.tail(this.offset + CHUNK), 10);
   }
 
-  private tail() {
+  // Stopping at `end` returns to the event loop: a writer outrunning stdout must not starve the
+  // signal handlers, and a background survivor must not hold the final drain open.
+  private tail(end: number) {
     if (this.error) return;
     try {
-      const buffer = Buffer.alloc(65536);
-      while (true) {
-        const count = readSync(this.fd, buffer, 0, buffer.length, this.offset);
+      const buffer = Buffer.alloc(CHUNK);
+      while (this.offset < end) {
+        const size = Math.min(CHUNK, end - this.offset);
+        const count = readSync(this.fd, buffer, 0, size, this.offset);
         if (!count) break;
         this.offset += count;
         let written = 0;
@@ -60,7 +66,7 @@ export class Capture {
   display() {
     clearInterval(this.timer);
     try {
-      if (this.identity.live) this.tail();
+      if (this.identity.live) this.tail(fstatSync(this.fd).size);
       else {
         const bytes = readFileSync(this.path);
         console.log(`--- ${this.identity.task}\n${bytes.toString().replace(/\n$/, '')}`);

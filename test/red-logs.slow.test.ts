@@ -66,6 +66,28 @@ test('serial stdout and stderr arrive live exactly once', async () => {
   }
 }, 15000);
 
+test('SIGTERM reaches a task while the live tail is behind a slow stdout', async () => {
+  const f = fixture({
+    a: task(
+      `trap 'touch scratch/stopped; exit 0' TERM; i=0; while [ $i -lt 500000 ]; do echo ${'x'.repeat(99)}; i=$((i+1)); done`,
+    ),
+  });
+  const child = f.repo.spawnCli(['run'], f.env);
+  const reader = child.stdout.getReader();
+  const reading = (async () => {
+    while (!(await reader.read()).done) if (!f.has('stopped')) await Bun.sleep(200);
+  })();
+  try {
+    await Bun.sleep(1000);
+    child.kill('SIGTERM');
+    await until(() => f.has('stopped'));
+    expect(await child.exited).toBe(143);
+  } finally {
+    child.kill('SIGKILL');
+    await reading;
+  }
+}, 15000);
+
 test('SIGTERM keeps incomplete bytes after the handler and skips unstarted tasks', async () => {
   const f = fixture(
     {
