@@ -86,7 +86,8 @@ The package has its own tests for its own behaviour, on synthetic repos it build
     same value is an accepted rare corner under the 99% rule. Invalid JSON and valid non-object JSON
     keep whole-byte identity only where the file already keys whole; explicit projections and
     resolver metadata retain their current failures. Sandboxes always hold exact original bytes.
-    R8 is unchanged: staged or unstaged version edits RUN, while `why` reports no inputs changed.
+    For plain `plan` and `run`, staged or unstaged version edits RUN, while `why` reports no inputs
+    changed. Under `run --staged`, a version-only index retains the key its commit will have.
 - **R4. Providers govern lifecycle, never keys.** Providers are the shared stack, a test database, the iOS app
   build and the web export. They start only when some RUN task needs them. A task's key holds the task's own
   inputs, never a provider's whole input set. A stack gate's inputs include a coarse named set `$stack` (the
@@ -121,7 +122,8 @@ The package has its own tests for its own behaviour, on synthetic repos it build
 - **R8. Fail safe, never silent.**
   - An undecidable task runs: a glob that matches nothing, an unknown adapter, a dirty tracked input. `plan`
     prints why for every task.
-  - Only clean trees publish proofs.
+  - Only clean trees publish proofs, except `run --staged`: Paul, 2026-10-30, an immutable index
+    snapshot may publish. Plain `plan` and `run` retain the clean-tree rule.
 - **R9. Red against a stored green: contested.**
   - When the newest result for a key is red, that key is never PROVEN.
   - A contested key runs once: green restores the proof, a second red deletes it.

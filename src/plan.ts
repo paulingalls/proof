@@ -7,6 +7,8 @@ import { inspectLinks } from './sandbox';
 import { Store } from './store';
 import { workspaces } from './workspaces';
 
+export const STAGED_SUFFIX = ' (staged)';
+
 export async function plan(set?: string) {
   const view = currentTree();
   return planTree({ ...view, tasks: selectTasks(view.tasks, set) });

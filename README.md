@@ -65,9 +65,10 @@ bunx proof plan    # PROVEN math ... / PROVEN text ...
 Edit `src/text.ts` (imported by `test/text.test.ts`) and commit: `plan` now says `RUN text` and
 keeps `math` PROVEN, and `run` runs only `text`.
 
-Proofs are published only from a clean tree. With uncommitted changes to a task's inputs, that task
-runs every time and publishes nothing, so a commit hook is safe. `pre-push` or CI, where the tree
-is clean, is where proofs get earned.
+Plain `run` publishes proofs only from a clean tree. With uncommitted changes to a task's inputs,
+that task runs every time and publishes nothing. A commit hook can use `proof run --staged`
+to prove the index instead: its green is reusable after committing those staged bytes, including
+at push or in CI.
 
 ## Declaring tasks
 
@@ -114,7 +115,8 @@ exempt:
   Invalid JSON and valid non-object JSON keep their whole-byte identity where the file keys whole;
   projections and resolver metadata retain their failures. Sandboxes always hold exact file bytes,
   including version. A dirty consulted manifest still runs with
-  `undecidable: dirty input '<path>'` and publishes no proof.
+  `undecidable: dirty input '<path>'` and publishes no proof in plain `run`.
+  `run --staged` consults indexed bytes, so a version-only staged edit can retain PROVEN.
   Closures no longer key `dependencies`, `devDependencies`, `scripts`, `patchedDependencies`
   or `packageManager` implicitly. Declare the members your command needs, for example
   `{path: package.json, json: [dependencies, devDependencies, patchedDependencies, packageManager, scripts]}`
@@ -181,7 +183,7 @@ its running group.
 Provider declarations and `needs` do not enter task keys. A selected file such as `proof.yaml`
 or a provider script still enters the key by its bytes. Declare the resource's relevant inputs
 on each task (a named `$stack` set can share them). Startup edits are re-evaluated before task
-execution and prevent publishing proof for the pre-start view.
+execution and prevent publishing proof for the pre-start view (under `--staged`, see below).
 
 `proof plan --json` remains an array of task decisions. RUN rows with needs also have
 `"providers":["stack"]`; their distinct union is the set a run would start. PROVEN rows and
@@ -193,7 +195,7 @@ provider-free tasks have no `providers` field. Neither plan form starts resource
 proof plan [--set <name>] [--json]  what must run, and why
 proof why <task>            current key parts and changes since the newest proof
 proof status --ref <ref> [--set <name>] [--json]  proof state at a committed ref
-proof run [--fresh] [--tasks <id> ... | --set <name>]  run tasks and record each result
+proof run [--fresh | --staged] [--tasks <id> ... | --set <name>]  run tasks and record each result
 proof record <task> --outcome green|red|incomplete [--seconds N]
 proof lint                   check declarations against the staged tree
 proof check <cases.yaml>     run a requirement suite
@@ -202,6 +204,40 @@ proof doctor                 which store is in use, and whether it's reachable
 
 `run` exits 0 when every task is proven or green, 1 when a task is red/incomplete or a provider fails, 130/143 when interrupted;
 any command exits 2 on a usage, declaration or store error.
+
+`proof run --staged` captures the index once. Declarations, includes, task selection, keys,
+workspace resolution and sandbox inputs all use that snapshot. Unstaged and untracked files
+neither enter the sandbox nor block publication, with one exception: a provider runs in the
+checkout and can see unstaged bytes, so a task with `needs` publishes nothing when a selected
+input differs from the snapshot, and its red contests no proof. Provider edits, including
+changes to the index, cannot replace the captured task view. Existing link
+escape checks still apply. Proofs keep the parent commit with a ` (staged)` marker.
+
+For the quickstart's `text` task, stage the desired edit before running the hook:
+
+```sh
+git add src/text.ts
+# Further edits to src/text.ts can remain unstaged.
+bunx proof run --staged
+# With sets: [commit] declared on the task:
+bunx proof run --staged --set commit
+git commit -m "Proven staged change"
+bunx proof plan
+bunx proof run
+bunx proof why text
+```
+
+After commit, `plan` and `run` report PROVEN for the committed inputs without executing again.
+If an unstaged input edit remains, plain `plan` reports `dirty input`; restore or commit it
+before expecting PROVEN. A different committed input gets its own key.
+
+A missing indexed input stays absent even if a file exists on disk. For example, with
+`{path: absent.json, json: [value]}` declared but absent from the index, `proof run --staged`
+reports the missing input and `not recorded`; a task reading it fails. An unmerged index exits 2
+and names the unmerged paths. Stage the resolution to run before completing the merge commit.
+`proof run --staged --fresh` and `proof run --fresh --staged` both exit 2 with usage.
+`why` prints current parts and staged provenance, then
+`historical comparison unavailable: staged proof`: the parent is not the proven tree.
 
 `proof run --fresh` executes every task even when its key is already proven, in the same
 sandboxes and with the same providers as an ordinary run. Select a subset with

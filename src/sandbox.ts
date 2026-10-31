@@ -224,14 +224,17 @@ export class Sandbox {
   readonly path = mkdtempSync(join(tmpdir(), 'proof-sandbox-'));
   private readonly files = new Map<string, File | undefined>();
 
-  materialize(paths: Set<string>, tree: RefTree, dirty: string[]) {
+  materialize(paths: Set<string>, tree: RefTree, dirty: string[], snapshotOnly = false) {
     for (const path of paths) {
       const target = join(this.path, path);
       if (relative(this.path, target).startsWith('..') || path.split('/').includes('.git'))
         throw new Error(`unsafe selected path '${path}'`);
       const mode = tree.modes.get(path);
-      const file =
-        dirty.includes(path) || mode === undefined
+      const file = snapshotOnly
+        ? mode === undefined
+          ? undefined
+          : this.committedFile(path, mode, tree)
+        : dirty.includes(path) || mode === undefined
           ? workingFile(path)
           : this.committedFile(path, mode, tree);
       this.files.set(path, file);
