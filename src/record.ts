@@ -51,6 +51,7 @@ export async function record(args: string[]) {
       tree.commit,
       dirty.length > 0,
       otherBytes !== undefined,
+      current.env,
     );
     const suffix = sharing === 'local' ? '' : `; ${sharing}`;
     if (otherBytes) return `recorded red ${id}; contests nothing: ${otherBytes}${suffix}`;

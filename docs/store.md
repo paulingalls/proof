@@ -11,7 +11,7 @@ survives local proof deletion; incomplete results and dirty greens cannot clear
 it. A clean local green clears it, as does confirmation that the red was shared.
 Reconnection alone does not.
 
-For `plan`, `run` and `record`, a connection attempt has a two-second timeout. If
+For `plan`, `run`, `record`, `status` and `why`, a connection attempt has a two-second timeout. If
 the store is unreachable at startup, during a read, or while publishing, the
 command switches to the local replica and prints one line to stderr:
 
@@ -47,6 +47,23 @@ section does not imply that command is already implemented.
 Nothing is queued, replayed, or uploaded on reconnect. Local proofs are never
 copied to Postgres retroactively. A missed share costs another run. Without a
 Postgres configuration, `plan`, `run` and `record` print no replica or sharing diagnostics.
+
+Proof metadata includes one identity per declared env name: `absent` or SHA-256 of its value.
+No env value is stored. These identities are captured with the key by both `record` and `run`;
+`why` uses them to explain env changes. Schema 2 adds nullable `proofs.env_hashes`, encoded as
+JSON name/identity pairs. NULL denotes a legacy proof whose env comparison is unavailable;
+`[]` denotes a new proof with no declared env. Migration preserves existing results and proofs
+without backfilling env data.
+
+The first client at this version migrates a fresh, unversioned or schema-1 store to schema 2
+under the schema transaction/lock. Any command opening the store can migrate it, including
+`doctor`. An older pinned client then exits 2 naming the stored and supported versions until it
+upgrades. Upgrade clients sharing a store together. Newer unsupported schemas are rejected
+without changing history.
+
+`why` reads the newest surviving proof across keys from the shared store when reachable,
+ordered by finish time and result id. Contested proofs remain comparison baselines. Shared reads
+do not import remote history into SQLite; offline explanations use only this machine's proofs.
 
 ## Start the host
 

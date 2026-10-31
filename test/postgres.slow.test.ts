@@ -298,18 +298,18 @@ for (const backend of ['postgres', 'sqlite']) {
     expect(repo.cli(['record', 'lint', '--outcome', 'green'], env).code).toBe(0);
     const local = remote ? undefined : new Database(join(localPath, 'proof.db'));
     try {
-      if (remote) await remote.sql`UPDATE schema_version SET version = 2`;
-      else local?.exec('UPDATE schema_version SET version = 2');
+      if (remote) await remote.sql`UPDATE schema_version SET version = 3`;
+      else local?.exec('UPDATE schema_version SET version = 3');
       for (const args of commands) {
         const result = repo.cli(args, env);
         expect(result.code).toBe(2);
-        expect(result.err).toContain('store schema version 2; supported version 1');
+        expect(result.err).toContain('store schema version 3; supported version 2');
         expect(result.out).not.toContain('postgres-task-marker');
       }
       const versions = remote
         ? await remote.sql`SELECT version FROM schema_version`
         : local?.query('SELECT version FROM schema_version').all();
-      expect(versions).toEqual([{ version: 2 }]);
+      expect(versions).toEqual([{ version: 3 }]);
       const rows = remote
         ? await remote.sql`SELECT outcome FROM results`
         : local?.query('SELECT outcome FROM results').all();
@@ -326,9 +326,9 @@ test('an unversioned SQLite history is adopted without losing its proof', () => 
   expect(repo.cli(['record', 'lint', '--outcome', 'green'], env).code).toBe(0);
   const db = new Database(join(env.PROOF_STATE_DIR, 'proof.db'));
   try {
-    db.exec('DROP TABLE IF EXISTS schema_version');
+    db.exec('ALTER TABLE proofs DROP COLUMN env_hashes; DROP TABLE IF EXISTS schema_version');
     expect(repo.cli(['plan'], env).out).toContain('PROVEN lint');
-    expect(db.query('SELECT version FROM schema_version').all()).toEqual([{ version: 1 }]);
+    expect(db.query('SELECT version FROM schema_version').all()).toEqual([{ version: 2 }]);
     expect(db.query('SELECT outcome FROM results').all()).toEqual([{ outcome: 'green' }]);
   } finally {
     db.close();

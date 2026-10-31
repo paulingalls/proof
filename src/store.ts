@@ -65,8 +65,8 @@ async function initialize(backend: Backend) {
           singleton INTEGER PRIMARY KEY CHECK (singleton = 1), version INTEGER NOT NULL
         )`);
     const [row] = await query<{ version: number }>('SELECT version FROM schema_version');
-    if (row && row.version !== 1)
-      throw new Error(`store schema version ${row.version}; supported version 1`);
+    if (row && row.version !== 1 && row.version !== 2)
+      throw new Error(`store schema version ${row.version}; supported version 2`);
     const id = backend.remote
       ? 'BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY'
       : 'INTEGER PRIMARY KEY';
@@ -81,6 +81,7 @@ async function initialize(backend: Backend) {
           result_id ${reference} NOT NULL REFERENCES results(id),
           PRIMARY KEY (project, task, key)
         )`);
+    if (!row || row.version === 1) await query('ALTER TABLE proofs ADD COLUMN env_hashes TEXT');
     await query(`CREATE TABLE IF NOT EXISTS contradictions (
           id ${id}, project TEXT NOT NULL, task TEXT NOT NULL, key TEXT NOT NULL,
           green_result ${reference} NOT NULL REFERENCES results(id),
@@ -97,8 +98,9 @@ async function initialize(backend: Backend) {
         project TEXT NOT NULL, task TEXT NOT NULL, key TEXT NOT NULL,
         result_id INTEGER NOT NULL REFERENCES results(id), PRIMARY KEY (project, task, key)
       )`);
-    if (!row) await query('INSERT INTO schema_version (singleton, version) VALUES (1, 1)');
-    return row?.version ?? 1;
+    if (!row) await query('INSERT INTO schema_version (singleton, version) VALUES (1, 2)');
+    else if (row.version === 1) await query('UPDATE schema_version SET version = 2');
+    return 2;
   });
 }
 
@@ -187,6 +189,35 @@ export class Store {
     return this.lookup(project, task, key, this.local.query, true);
   }
 
+  async newestProof(project: string, task: string) {
+    if (this.remote && !this.offline) {
+      try {
+        return await this.lookupNewest(project, task, this.remote.query);
+      } catch (error) {
+        this.fallback(error);
+      }
+    }
+    return this.lookupNewest(project, task, this.local.query);
+  }
+
+  private async lookupNewest(project: string, task: string, query: Query) {
+    const [proof] = await query<{
+      key: string;
+      env_hashes: string | null;
+      commit: string;
+      host: string;
+      finished_at: string;
+    }>(
+      `SELECT p.key, p.env_hashes, r."commit", r.host, r.finished_at FROM proofs p JOIN results r
+      ON r.id = p.result_id AND r.project = p.project AND r.task = p.task AND r.key = p.key
+      WHERE p.project = ? AND p.task = ?
+      ORDER BY r.finished_at DESC, p.result_id DESC LIMIT 1`,
+      project,
+      task,
+    );
+    return proof;
+  }
+
   private async observe(project: string, task: string, key: string, query: Query, proof?: Proof) {
     let red = proof;
     if (!proof) {
@@ -244,6 +275,7 @@ export class Store {
     commit: string,
     dirty: boolean,
     dirtyInputs: boolean,
+    envHashes: [string, string][],
   ): Promise<Sharing> {
     const finishedAt = new Date().toISOString();
     const write = async (backend: Backend) =>
@@ -267,13 +299,15 @@ export class Store {
         if (outcome === 'green' && !dirty)
           await query(
             `
-          INSERT INTO proofs (project, task, key, result_id) VALUES (?, ?, ?, ?)
-          ON CONFLICT (project, task, key) DO UPDATE SET result_id = excluded.result_id
+          INSERT INTO proofs (project, task, key, result_id, env_hashes) VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT (project, task, key) DO UPDATE SET
+            result_id = excluded.result_id, env_hashes = excluded.env_hashes
         `,
             project,
             task,
             key,
             result.id,
+            JSON.stringify(envHashes),
           );
         if (outcome === 'red' && !dirtyInputs) {
           const proof = await this.lookup(project, task, key, query, !backend.remote);

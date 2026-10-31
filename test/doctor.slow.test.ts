@@ -33,7 +33,7 @@ function report(out: string, store: string, state: string) {
   for (const line of [
     `Store: ${store}`,
     'Reachability: reachable',
-    'Schema version: 1',
+    'Schema version: 2',
     `Replica: ${join(state, 'proof.db')}`,
     'Project: doctor-example',
     `Bun: ${Bun.version}`,
@@ -88,8 +88,8 @@ for (const failure of ['schema', 'authentication', 'query']) {
     const { PROOF_STORE, sql } = await postgres.database();
     const env = { PROOF_STORE, PROOF_STATE_DIR: directory() };
     expect(repo.cli(['record', 'lint', '--outcome', 'green'], env).code).toBe(0);
-    let expected = 'store schema version 2; supported version 1';
-    if (failure === 'schema') await sql`UPDATE schema_version SET version = 2`;
+    let expected = 'store schema version 3; supported version 2';
+    if (failure === 'schema') await sql`UPDATE schema_version SET version = 3`;
     else if (failure === 'query') {
       await sql`ALTER TABLE schema_version RENAME COLUMN version TO missing_version`;
       expected = 'column "version" does not exist';
