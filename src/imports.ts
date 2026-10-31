@@ -81,11 +81,13 @@ export function source(tree: RefTree, dirty?: string[]): Source {
   }
   return view;
 }
-const gap = String.raw`(?:\s|/\*[\s\S]*?\*/|//[^\n]*(?:\n|$))*`;
+// A lazy comment body can retry past each `*/`; that blowup hits the engine's backtrack limit,
+// which ends a global replace with no error and leaves later type-only imports erased.
+const gap = String.raw`(?:\s|/\*[^*]*(?:\*(?!/)[^*]*)*\*/|//[^\n]*(?:\n|$))*`;
 const literal = /('(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`)/.source;
 // The scanner erases type-only edges; expose them without interpreting import-looking text.
 function valueImports(text: string) {
-  const name = String.raw`[$\w]+(?![$\w])`;
+  const name = String.raw`[$\w\u0080-\uffff]+(?![$\w\u0080-\uffff])`;
   const named = String.raw`\{(?:${gap}${name})*(?:${gap},(?:${gap}${name})*)*${gap}\}`;
   const clause = String.raw`(?:${named}|\*(?:${gap}as${gap}${name})?|${name}(?:${gap},${gap}${named})?)`;
   const statement = new RegExp(

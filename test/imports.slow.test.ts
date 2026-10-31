@@ -442,6 +442,10 @@ test('type-only forms keep edges without breaking type identifiers or aliases', 
     "export type A = number\nimport './leaf';",
     "import './leaf'; function f() { type L<T> = T; }",
     'import type { T } from "./leaf"; const s = `import type X from "./missing"`;',
+    "import type { Größe } from './leaf';",
+    "import type Größe from './leaf';",
+    "import { type Größe } from './leaf';",
+    `export {\n${'  /** doc */\n  a,\n'.repeat(30)}};\nexport type { T } from './leaf';`,
   ];
   const r = fixture(
     Object.fromEntries(codes.map((_, i) => [`case${i}`, task(`src/case${i}.ts`)])),
