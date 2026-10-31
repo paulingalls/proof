@@ -39,6 +39,7 @@ test('red bytes survive sandbox and worktree removal; green leaves no file', () 
   expect(result.out.split(bytes)).toHaveLength(2);
   expect(existsSync(sandbox)).toBe(false);
   expect(existsSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/tasks/green'))).toBe(false);
+  expect(readdirSync(join(f.env.PROOF_STATE_DIR, 'logs'))).toEqual(['jobs']);
   expect(f.rows().map((r) => r.outcome)).toEqual(['red', 'green']);
   f.repo.git('worktree', 'remove', '--force', worktree);
   expect(readFileSync(path, 'utf8')).toBe(bytes);
@@ -141,6 +142,7 @@ test('parallel captures separate a red from a green', () => {
   for (const id of ['red', 'green'])
     expect(result.out).toContain(`--- ${id}\n${id}-out${id}-err\n`);
   expect(existsSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/tasks/green'))).toBe(false);
+  expect(readdirSync(join(f.env.PROOF_STATE_DIR, 'logs'))).toEqual(['jobs']);
 });
 
 test('failed provider retains one log and no dependent captures; ready provider cleans up', () => {
@@ -168,6 +170,7 @@ test('failed provider retains one log and no dependent captures; ready provider 
   f.mark('succeed');
   expect(f.run('--jobs', '2').code).toBe(0);
   expect(readdirSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/providers/stack'))).toHaveLength(1);
+  expect(readdirSync(join(f.env.PROOF_STATE_DIR, 'logs'))).toEqual(['jobs']);
 });
 
 test('each task keeps its newest ten reds and a later green preserves them', () => {
