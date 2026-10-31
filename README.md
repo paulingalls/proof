@@ -428,8 +428,8 @@ tasks:
     run: bun run test-fast
     inputs:
       - src/**
-      - test/*.test.ts
-      - '!test/*.slow.test.ts'
+      - test/**/*.test.ts
+      - '!test/**/*.slow.test.ts'
       - test/support/repo.ts
       - test/support/suite.ts
       - package.json
@@ -440,7 +440,7 @@ tasks:
     run: bun run test-slow
     inputs:
       - src/**
-      - test/*.slow.test.ts
+      - test/**/*.slow.test.ts
       - test/support/repo.ts
       - test/support/postgres.ts
       - package.json
