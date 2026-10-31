@@ -11,6 +11,15 @@ afterEach(() => {
   for (const path of states.splice(0)) rmSync(path, { recursive: true, force: true });
 });
 const task = (inputs: unknown[], keyed?: string[]) => ({ run: 'true', inputs, keyed });
+const imports = { 'imports-of': 'entry.ts' };
+const flow = { maestro: 'flows/main.yaml' };
+const reader = (input: unknown) => ({
+  ...task([input]),
+  run: `printf '%s' "$EXPECTED" | cmp - shared.ts`,
+  env: ['EXPECTED'],
+});
+const declaration = (unkeyed: unknown, tasks: unknown) =>
+  JSON.stringify({ version: 1, project: 'unkeyed', unkeyed, tasks });
 function fixture() {
   const r = new Repo();
   repos.push(r);
@@ -20,25 +29,17 @@ function fixture() {
     include: 'proof.d/*.yaml',
     unkeyed: ['shared.ts', 'flows/common.yaml'],
     tasks: {
-      direct: {
-        ...task(['shared.ts']),
-        run: `printf '%s' "$EXPECTED" | cmp - shared.ts`,
-        env: ['EXPECTED'],
-      },
-      closure: {
-        ...task([{ 'imports-of': 'entry.ts' }]),
-        run: `printf '%s' "$EXPECTED" | cmp - shared.ts`,
-        env: ['EXPECTED'],
-      },
-      flow: task([{ maestro: 'flows/main.yaml' }]),
+      direct: reader('shared.ts'),
+      closure: reader(imports),
+      flow: task([flow]),
       control: task(['control']),
-      representative: task([{ 'imports-of': 'entry.ts' }], ['shared.ts']),
+      representative: task([imports], ['shared.ts']),
     },
   };
   r.commit({
     'proof.yaml': JSON.stringify(doc),
     'proof.d/tasks.yaml': JSON.stringify({
-      tasks: { flowRep: task([{ maestro: 'flows/main.yaml' }], ['flows/common.yaml']) },
+      tasks: { flowRep: task([flow], ['flows/common.yaml']) },
     }),
     'entry.ts': "import './shared';",
     'shared.ts': "import './leaf';",
@@ -50,15 +51,17 @@ function fixture() {
   });
   const state = mkdtempSync(join(tmpdir(), 'proof-unkeyed-'));
   states.push(state);
+  const raw = (args: string[], EXPECTED = "import './leaf';") =>
+    r.cli(args, { PROOF_STATE_DIR: state, EXPECTED });
   const cli = (args: string[], EXPECTED = "import './leaf';") => {
-    const result = r.cli(args, { PROOF_STATE_DIR: state, EXPECTED });
+    const result = raw(args, EXPECTED);
     expect(result.code, result.err + result.out).toBe(0);
     return result.out;
   };
-  return { r, doc, cli };
+  return { r, doc, cli, raw };
 }
 test('unkeyed declarations validate all files and representatives before task selection', () => {
-  const { r, doc, cli } = fixture();
+  const { r, doc, cli, raw } = fixture();
   cli(['plan']);
   for (const [unkeyed, keyed, name] of [
     [['orphan'], undefined, 'orphan'],
@@ -72,24 +75,21 @@ test('unkeyed declarations validate all files and representatives before task se
         tasks: { bad: task(['control'], keyed ? [...keyed] : undefined) },
       }),
     });
-    for (const args of [
-      ['plan'],
-      ['run', '--tasks', 'control'],
-      ['record', 'control', '--outcome', 'green'],
-      ['why', 'control'],
-      ['status', '--ref', 'HEAD'],
-      ['lint'],
-      ['doctor'],
-      ['stats'],
-      ['flakes'],
-      ['invalidate', '--task', 'control'],
-      ['check', '.git/cases.yaml'],
+    r.write('.git/cases.yaml', '[{name: bad, from: HEAD, to: HEAD, expect: []}]');
+    for (const command of [
+      'plan',
+      'run --tasks control',
+      'record control --outcome green',
+      'why control',
+      'status --ref HEAD',
+      'lint',
+      'doctor',
+      'stats',
+      'flakes',
+      'invalidate --task control',
+      'check .git/cases.yaml',
     ]) {
-      r.write(
-        '.git/cases.yaml',
-        JSON.stringify([{ name: 'bad', from: 'HEAD', to: 'HEAD', expect: [] }]),
-      );
-      const result = r.cli(args);
+      const result = raw(command.split(' '));
       expect(result.code, result.err + result.out).toBe(2);
       expect(result.err + result.out).toContain(name);
     }
@@ -101,32 +101,19 @@ test('unkeyed declarations validate all files and representatives before task se
     [['absent'], ['shared.ts'], ['shared.ts']],
     [['shared.ts'], ['absent'], ['shared.ts']],
     [['shared.ts'], ['*.ts'], ['shared.ts']],
-    [['!shared.ts'], [], ['shared.ts']],
+    [['!shared.ts'], ['!shared.ts'], ['**']],
     ['shared.ts', [], ['shared.ts']],
     [[], 'shared.ts', ['shared.ts']],
   ]) {
-    r.write(
-      'proof.yaml',
-      JSON.stringify({
-        version: 1,
-        project: 'invalid',
-        unkeyed,
-        tasks: { a: { run: 'true', inputs, keyed } },
-      }),
-    );
-    expect(r.cli(['plan']).code).toBe(2);
+    r.write('proof.yaml', declaration(unkeyed, { a: { run: 'true', inputs, keyed } }));
+    expect(raw(['plan']).code).toBe(2);
   }
   r.write('new.ts', 'export {};');
   r.write(
     'proof.yaml',
-    JSON.stringify({
-      version: 1,
-      project: 'valid',
-      unkeyed: ['*.ts'],
-      tasks: {
-        a: task(['*.ts'], ['entry.ts', 'shared.ts']),
-        b: task(['*.ts'], ['leaf.ts', 'new.ts']),
-      },
+    declaration(['*.ts'], {
+      a: task(['*.ts'], ['entry.ts', 'shared.ts']),
+      b: task(['*.ts'], ['leaf.ts', 'new.ts']),
     }),
   );
   cli(['plan']);
@@ -167,17 +154,16 @@ test('unkeyed bytes stay in sandboxes while only representatives key them', () =
   const result = r.check(cases);
   expect(result.code, result.err + result.out).toBe(0);
   r.git('reset', '--hard', from);
+  cli(['record', 'closure', '--outcome', 'green']);
   doc.unkeyed.push('leaf.ts');
   doc.tasks.representative.keyed?.push('leaf.ts');
   r.commit({ 'proof.yaml': JSON.stringify(doc) });
-  expect(cli(['why', 'closure'])).toContain('now unkeyed leaf.ts');
+  const policy = cli(['why', 'closure']);
+  expect(policy).toContain('now unkeyed leaf.ts');
+  expect(policy).not.toContain('no inputs changed');
   cli(['record', 'closure', '--outcome', 'green']);
-  r.commit({
-    'proof.yaml': JSON.stringify({
-      ...doc,
-      unkeyed: ['shared.ts', 'flows/common.yaml'],
-      tasks: { ...doc.tasks, representative: task([{ 'imports-of': 'entry.ts' }], ['shared.ts']) },
-    }),
-  });
+  doc.unkeyed.pop();
+  doc.tasks.representative.keyed?.pop();
+  r.commit({ 'proof.yaml': JSON.stringify(doc) });
   expect(cli(['why', 'closure'])).toContain('now keyed leaf.ts');
 }, 30000);

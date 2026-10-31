@@ -182,10 +182,20 @@ export function keyParts(task: Task, tree: RefTree, historical = false) {
     projections,
     declaration,
     declarationHash: hash(JSON.stringify(declaration)),
-    files,
-    members: [...members.values()].sort(
-      ([ap, , am], [bp, , bm]) => compare(ap, bp) || compare(am, bm),
-    ),
+    unkeyed: [
+      ...new Set([
+        ...selection.paths,
+        ...task.inputs.flatMap((input) =>
+          typeof input !== 'string' && 'path' in input ? [input.path] : [],
+        ),
+      ]),
+    ]
+      .filter((path) => task.unkeyed?.has(path))
+      .sort(),
+    files: files.filter(([path]) => !task.unkeyed?.has(path)),
+    members: [...members.values()]
+      .filter(([path]) => !task.unkeyed?.has(path))
+      .sort(([ap, , am], [bp, , bm]) => compare(ap, bp) || compare(am, bm)),
     env,
     reasons: [...new Set(reasons)],
   };
