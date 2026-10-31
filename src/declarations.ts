@@ -7,6 +7,8 @@ import { refuseDuplicateKeys } from './yaml-keys';
 export type Input =
   | string
   | { path: string; json: string[] }
+  | { path: string; 'dotenv-keys': true }
+  | { dotenv: string; exclude?: string[] }
   | { 'imports-of': string }
   | { maestro: string };
 export type Provider = { start: string; stop?: string };
@@ -56,7 +58,27 @@ function patterns(value: unknown, context: string): Input[] {
       fields(projection, ['imports-of'], label);
       return { 'imports-of': text(projection['imports-of'], label) };
     }
-    fields(projection, ['path', 'json'], label);
+    if ('dotenv' in projection) {
+      fields(projection, ['dotenv', 'exclude'], label);
+      const path = text(projection.dotenv, `${label} dotenv`);
+      if (isAbsolute(path) || path.split('/').some((p) => ['', '.', '..', '.git'].includes(p)))
+        throw new Error(`${label}: unsafe dotenv '${path}'`);
+      if (
+        'exclude' in projection &&
+        (!Array.isArray(projection.exclude) || !projection.exclude.length)
+      )
+        throw new Error(`${label}: exclude must be a nonempty list`);
+      const exclude = (projection.exclude as unknown[] | undefined)?.map((name) =>
+        text(name, `${label} exclude name`),
+      );
+      return { dotenv: path, ...(exclude ? { exclude: [...new Set(exclude)].sort() } : {}) };
+    }
+    fields(projection, ['path', 'json', 'dotenv-keys'], label);
+    if ('dotenv-keys' in projection) {
+      if ('json' in projection) throw new Error(`${label}: use json or dotenv-keys, not both`);
+      if (projection['dotenv-keys'] !== true) throw new Error(`${label}: dotenv-keys must be true`);
+      return { path: text(projection.path, `${label} path`), 'dotenv-keys': true };
+    }
     if (!Array.isArray(projection.json) || !projection.json.length) {
       throw new Error(`${label}: json must be a nonempty member list`);
     }
@@ -134,6 +156,8 @@ export function declarations(tree: RefTree, working = false) {
         if (!Array.isArray(task.env)) throw new Error(`${label}: env must be a list`);
         env = [...new Set(task.env.map((name) => text(name, `${label} env name`)))].sort();
       }
+      if (env?.some((name) => name.includes(':')))
+        throw new Error(`${label}: env name must not contain ':'`);
       let links: string[] | undefined;
       if ('links' in task) {
         if (!Array.isArray(task.links)) throw new Error(`${label}: links must be a list`);

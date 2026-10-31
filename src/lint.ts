@@ -12,6 +12,7 @@ export function lint() {
         if (!input.startsWith('!') && matching(tree, input).next().done)
           findings.push(`task '${id}': unmatched input '${input}'`);
       } else {
+        if ('dotenv' in input) continue;
         const path =
           'path' in input ? input.path : 'maestro' in input ? input.maestro : input['imports-of'];
         if (!tree.files.has(path)) findings.push(`task '${id}': missing input '${path}'`);
