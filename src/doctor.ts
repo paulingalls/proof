@@ -5,7 +5,7 @@ import { Store } from './store';
 
 export async function doctor() {
   const { project, dimensions } = declarations(new RefTree('HEAD'), true);
-  const diagnostic = await Store.diagnose();
+  const diagnostic = await Store.diagnose(project);
   console.log(`Store: ${diagnostic.store}`);
   console.log(
     `Reachability: ${diagnostic.reason ? `unreachable (${diagnostic.reason})` : 'reachable'}`,

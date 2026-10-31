@@ -30,7 +30,7 @@ export async function invalidate(args: string[]) {
     if (current.key === undefined) throw new Error(`undecidable: ${current.reason}`);
     selected = current.key;
   }
-  const store = await Store.open();
+  const store = await Store.open(project);
   try {
     const result = await store.invalidate(project, id, selected, hostname(), tree.commit);
     return result.shared === undefined

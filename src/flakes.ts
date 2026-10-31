@@ -14,7 +14,7 @@ export async function flakes(args: string[]) {
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1 - days);
   if (!Number.isSafeInteger(days) || !Number.isFinite(+start)) throw new Error(usage);
   const { project } = declarations(new RefTree('HEAD'));
-  const store = await Store.open();
+  const store = await Store.open(project);
   try {
     const rows = await store.flakes(project, start.toISOString());
     console.log(

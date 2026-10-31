@@ -30,7 +30,7 @@ export async function planTree(
   },
   inspect?: (task: Task) => ReturnType<typeof inspectTaskLinks>,
 ) {
-  const store = await Store.open();
+  const store = await Store.open(project);
   try {
     const rows = [];
     for (const [task, decl] of tasks)

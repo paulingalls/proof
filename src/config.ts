@@ -1,18 +1,21 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-export function storeUrl() {
+export function storeConfig(project: string): { url?: string; excluded?: string } {
   let value = process.env.PROOF_STORE;
   let source = 'PROOF_STORE';
+  let projects: string[] = [];
   if (value === undefined) {
     const { XDG_CONFIG_HOME, HOME } = process.env;
     const base = XDG_CONFIG_HOME || (HOME ? join(HOME, '.config') : undefined);
-    if (!base) return undefined;
+    if (!base) return {};
     source = join(base, 'proof/store');
     try {
-      value = readFileSync(source, 'utf8').split(/\r?\n/, 1)[0];
+      const lines = readFileSync(source, 'utf8').split(/\r?\n/);
+      value = lines[0];
+      projects = lines.slice(1).filter((name) => name.length > 0);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
       throw new Error(`cannot read store configuration from ${source}`);
     }
   }
@@ -20,7 +23,9 @@ export function storeUrl() {
     const url = new URL(value ?? '');
     if (!['postgres:', 'postgresql:'].includes(url.protocol) || !url.hostname)
       throw new Error('invalid URL');
-    return url.href;
+    if (projects.length && !projects.includes(project))
+      return { excluded: `store not used: project '${project}' is not listed in ${source}` };
+    return { url: url.href };
   } catch {
     throw new Error(`invalid store configuration from ${source}: expected a Postgres URL`);
   }

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.2
+
+- Lines after the URL in the store file name the projects allowed to use it. Any other project
+  stays on SQLite and says so once. A file with only a URL behaves as before.
+
 ## 0.12.1
 
 - `plan` and `lint` cost about a third at 413 tasks: glob matches, selectors, resolved imports and
