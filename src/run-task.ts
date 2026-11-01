@@ -85,7 +85,6 @@ export async function runTask(
     let started = false;
     if (decision.state !== 'PROVEN' && !processes.cancelled) {
       ({ slot, exhausted } = lanes.allocate(lane));
-      providers.validate(task.needs ?? [], lane);
       for (const name of exhausted ? [] : (task.needs ?? [])) {
         if (processes.cancelled) break;
         const provider = view.providers.get(name);
@@ -131,7 +130,6 @@ export async function runTask(
       summary.push(`PROVEN ${id}: ${decision.reason}`);
       return;
     }
-    providers.validate(task.needs ?? [], lane);
     const blocked =
       processes.cancelled ||
       exhausted !== undefined ||

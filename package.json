@@ -1,6 +1,6 @@
 {
   "name": "@pi-innovations/proof",
-  "version": "0.13.3",
+  "version": "0.14.0",
   "description": "Run only the tests a change can affect, and share proof across clones and machines.",
   "license": "MIT",
   "type": "module",

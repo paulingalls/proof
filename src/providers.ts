@@ -56,14 +56,6 @@ export class Providers {
     return this.lane(name) === undefined ? undefined : slot;
   }
 
-  validate(needs: string[], lane?: string) {
-    for (const name of needs) {
-      const required = this.initial.get(name)?.lane;
-      if (required !== undefined && required !== lane)
-        throw new Error(`provider '${name}' requires frozen lane '${required}'`);
-    }
-  }
-
   attemptedInstance(name: string, slot?: number) {
     return this.attempts.get(name)?.has(this.instanceSlot(name, slot)) ?? false;
   }
