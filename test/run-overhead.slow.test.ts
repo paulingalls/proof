@@ -124,6 +124,37 @@ test('a new commit reselects ignored inputs for later tasks', () => {
   expect(plan.out).toContain("RUN later: undecidable: dirty input 'cache/input.txt'");
 });
 
+test('a working declaration edit during a run reselects ignored inputs for later tasks', () => {
+  const { repo, env } = fixture({
+    edit: { run: 'true', inputs: ['a.txt'] },
+    later: { run: 'test "$(cat cache/input.txt)" = working', inputs: ['a.txt'] },
+  });
+  const doc = JSON.parse(repo.git('show', 'HEAD:proof.yaml'));
+  doc.tasks.later.inputs.push('cache/*.txt');
+  repo.write('.git/next.json', JSON.stringify(doc));
+  doc.tasks.later.inputs = ['a.txt'];
+  doc.tasks.edit.run = `cp '${join(repo.path, '.git/next.json')}' '${repo.path}/proof.yaml'`;
+  repo.commit({ 'proof.yaml': JSON.stringify(doc) });
+  repo.write('cache/input.txt', 'working');
+  const result = repo.cli(['run'], env);
+  expect(result.code, result.err + result.out).toBe(0);
+  expect(result.out).toContain('green later');
+});
+
+test('a commit that only changes .gitignore reselects ignored inputs', () => {
+  const { repo, env } = fixture({
+    move: { run: 'true', inputs: ['a.txt'] },
+    later: { run: 'test "$(cat gen/input.txt)" = working', inputs: ['a.txt', 'gen/*.txt'] },
+  });
+  const doc = JSON.parse(repo.git('show', 'HEAD:proof.yaml'));
+  doc.tasks.move.run = `echo gen/ >> '${repo.path}/.gitignore' && git -C '${repo.path}' add .gitignore && git -C '${repo.path}' commit -qm ignore`;
+  repo.commit({ 'proof.yaml': JSON.stringify(doc) });
+  repo.write('gen/input.txt', 'working');
+  const result = repo.cli(['run'], env);
+  expect(result.code, result.err + result.out).toBe(0);
+  expect(result.out).toContain('green later');
+});
+
 test('sandbox batches committed blobs and preserves bytes, modes and selected symlinks', () => {
   const { repo, trace, env } = fixture({
     a: {
