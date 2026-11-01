@@ -62,7 +62,7 @@ returns stay unchanged; empty values are allowed. A final newline is optional. T
 evaluation, interpolation, quote removal or comment syntax. Blank lines, malformed names,
 duplicate names and NUL bytes fail startup. `PATH`, `HOME`, `TMPDIR` and `PROOF_PROVIDER_ENV`
 are reserved. An export also fails if its name is in any dependent's declared `env`, including an
-unselected dependent, or another provider exports that name and any declared task needs both.
+unselected dependent, or another provider started in this run exports that name and any declared task needs both.
 Equal values still conflict; disjoint providers may export the same name. Validation uses the
 declarations read after that start returns, including startup edits.
 

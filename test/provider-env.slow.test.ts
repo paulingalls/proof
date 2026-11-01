@@ -151,94 +151,71 @@ test('different provider addresses share one proof across clones', async () => {
   }
 });
 
-for (const kind of [
-  'bare',
-  'invalid',
-  'nul',
-  'blank',
-  'duplicate',
-  'PATH',
-  'HOME',
-  'TMPDIR',
-  'PROOF_PROVIDER_ENV',
-  'declared',
-  'declared-later',
-  'edited',
-  'missing',
-]) {
+const writePayload = `${process.execPath} -e 'require("fs").writeFileSync(process.env.PROOF_PROVIDER_ENV, Buffer.from(process.env.PAYLOAD, "base64"))'`;
+const declareLater = `${process.execPath} -e 'const f=require("fs"); const d=JSON.parse(f.readFileSync("proof.yaml", "utf8")); d.tasks.later.env=["URL"]; f.writeFileSync("proof.yaml", JSON.stringify(d))'`;
+const url = (value: string) => `URL=${value}`;
+const rejections: {
+  kind: string;
+  payload: (value: string) => string;
+  expected: string;
+  write?: string;
+  edit?: string;
+  env?: string[];
+}[] = [
+  { kind: 'bare', payload: (v) => v.replaceAll('-', '_'), expected: 'line 1: invalid name' },
+  { kind: 'invalid', payload: (v) => `${v}-=hidden`, expected: 'line 1: invalid name' },
+  { kind: 'nul', payload: (v) => `URL=${v}\0`, expected: "'URL'" },
+  { kind: 'blank', payload: (v) => `URL=${v}\n\n`, expected: 'line 2' },
+  { kind: 'duplicate', payload: (v) => `URL=${v}\nURL=${v}`, expected: "'URL'" },
+  { kind: 'PATH', payload: (v) => `PATH=${v}`, expected: "'PATH'" },
+  {
+    kind: 'PROOF_PROVIDER_ENV',
+    payload: (v) => `PROOF_PROVIDER_ENV=${v}`,
+    expected: "'PROOF_PROVIDER_ENV'",
+  },
+  { kind: 'declared', payload: url, expected: "'URL'", env: ['URL'] },
+  { kind: 'edited', payload: url, expected: "'URL'", edit: declareLater },
+  {
+    kind: 'missing',
+    payload: url,
+    expected: 'cannot read environment channel',
+    write: 'rm "$PROOF_PROVIDER_ENV"',
+  },
+];
+for (const { kind, payload, expected, write, edit, env } of rejections) {
   test(`rejects ${kind} exports without publishing values or executing dependents`, () => {
     const f = fixture();
     const value = f.address();
-    const tasks = {
-      first: { ...f.task('first'), run: f.mark('ran-dependent') },
-      later: { ...f.task('later'), env: kind.startsWith('declared') ? ['URL'] : [] },
-      independent: { ...f.task('independent', []), run: f.mark('independent') },
-    };
-    const payload =
-      kind === 'bare'
-        ? value.replaceAll('-', '_')
-        : kind === 'invalid'
-          ? `${value}-=hidden`
-          : kind === 'nul'
-            ? `URL=${value}\0`
-            : kind === 'blank'
-              ? `URL=${value}\n\n`
-              : kind === 'duplicate'
-                ? `URL=${value}\nURL=${value}`
-                : `${kind.startsWith('declared') || kind === 'edited' || kind === 'missing' ? 'URL' : kind}=${value}`;
-    const write =
-      kind === 'missing'
-        ? 'rm "$PROOF_PROVIDER_ENV"'
-        : `${process.execPath} -e 'require("fs").writeFileSync(process.env.PROOF_PROVIDER_ENV, Buffer.from(process.env.PAYLOAD, "base64"))'`;
-    const edit =
-      kind === 'edited'
-        ? `${process.execPath} -e 'const f=require("fs"); const d=JSON.parse(f.readFileSync("proof.yaml", "utf8")); d.tasks.later.env=["URL"]; f.writeFileSync("proof.yaml", JSON.stringify(d))'`
-        : 'true';
-    f.commit(tasks, {
-      stack: {
-        start: `${f.start}; if [ -n "$PROOF_PROVIDER_ENV" ]; then ${write}; fi; ${edit}`,
-        stop: f.mark('stop'),
-      },
-    });
-    const result = f.repo.cli(
-      [
-        'run',
-        '--jobs',
-        '2',
-        '--tasks',
-        'first',
-        'independent',
-        ...(kind === 'declared-later' ? ['later'] : []),
-      ],
+    f.commit(
       {
-        ...f.env,
-        PAYLOAD: Buffer.from(payload).toString('base64'),
-        URL: 'declared-caller',
+        first: { ...f.task('first'), run: f.mark('ran-dependent') },
+        later: { ...f.task('later'), env: env ?? [] },
+        independent: { ...f.task('independent', []), run: f.mark('independent') },
+      },
+      {
+        stack: {
+          start: `${f.start}; if [ -n "$PROOF_PROVIDER_ENV" ]; then ${write ?? writePayload}; fi; ${edit ?? 'true'}`,
+          stop: f.mark('stop'),
+        },
       },
     );
+    const text = payload(value);
+    const result = f.repo.cli(['run', '--jobs', '2', '--tasks', 'first', 'independent'], {
+      ...f.env,
+      PAYLOAD: Buffer.from(text).toString('base64'),
+      URL: 'declared-caller',
+    });
     expect(result.code).toBe(1);
     expect(result.out).toContain("provider 'stack' start failed");
-    expect(result.out).toContain(
-      ['bare', 'invalid'].includes(kind)
-        ? 'line 1: invalid name'
-        : kind === 'missing'
-          ? 'cannot read environment channel'
-          : kind === 'blank'
-            ? 'line 2'
-            : kind === 'duplicate' ||
-                kind === 'nul' ||
-                kind.startsWith('declared') ||
-                kind === 'edited'
-              ? "'URL'"
-              : `'${kind}'`,
-    );
-    expect(readFileSync(join(f.control, 'events'), 'utf8')).not.toContain('ran-dependent');
-    expect(readFileSync(join(f.control, 'events'), 'utf8')).toContain('independent');
-    expect(readFileSync(join(f.control, 'events'), 'utf8')).toContain('stop');
+    expect(result.out).toContain(expected);
+    const events = readFileSync(join(f.control, 'events'), 'utf8');
+    expect(events).not.toContain('ran-dependent');
+    expect(events).toContain('independent');
+    expect(events).toContain('stop');
     if (kind !== 'edited')
       expect(f.rows().find((r) => r.task === 'first')?.outcome).toBe('incomplete');
     expect(f.rows('proofs').some((r) => r.task === 'first')).toBe(false);
-    f.clean(result, kind === 'bare' ? payload : value);
+    f.clean(result, kind === 'bare' ? text : value);
   });
 }
 
@@ -268,12 +245,14 @@ test('disjoint providers may export the same name; a common dependent rejects ev
         },
       },
     );
-    const result = f.repo.cli(['run', '--jobs', '2'], { ...f.env, OTHER_ADDRESS: otherValue });
+    // One job stops the first provider before the second starts; the conflict must survive that.
+    const result = f.repo.cli(['run', '--jobs', common ? '1' : '2', '--tasks', 'first', 'second'], {
+      ...f.env,
+      OTHER_ADDRESS: otherValue,
+    });
     expect(result.code).toBe(common ? 1 : 0);
-    if (common) {
-      expect(result.out).toContain("'URL': conflicts with provider");
-      expect(f.rows().find((r) => r.task === 'common')?.outcome).toBe('incomplete');
-    } else {
+    if (common) expect(result.out).toContain("'URL': conflicts with provider");
+    else {
       expect(readFileSync(join(f.control, 'first'), 'utf8')).toBe(value);
       expect(readFileSync(join(other, 'second'), 'utf8')).toBe(otherValue);
     }

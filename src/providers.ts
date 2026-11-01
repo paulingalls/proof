@@ -138,7 +138,6 @@ export class Providers {
     for (const [name, attempt] of this.attempts) {
       if (attempt.stopped || remaining.has(name)) continue;
       attempt.stopped = true;
-      attempt.env = {};
       if (!attempt.declaration.stop) continue;
       try {
         if ((await this.execute(attempt.declaration.stop, true, name)).ready) continue;
