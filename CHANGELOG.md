@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.13.2
+
+- `run` scans ignored files once rather than around every task, and builds sandboxes in one git
+  batch: on a 414-task repo with 156,000 ignored files, about 50 s per task became under 4 s.
+
 ## 0.13.1
 
 - A link from one declared root into another is no longer an escape, which rejected bun workspace
