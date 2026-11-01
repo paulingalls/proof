@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.15.0
+
+- `proof stats --by <dimension>` splits each task's median and run count by dimension value. Results
+  from before this release count under a no-value row. `proof stats --json` prints the report as one
+  JSON document.
+- Each result now stores its resolved dimension values, so a dimension must never print a secret.
+  Task env values are still never stored. Schema stays 2, and older clients keep working.
+
 ## 0.14.1
 
 - `proof`, `--help`, `-h` and `help` print the commands, `proof.yaml` fields, environment, exit codes

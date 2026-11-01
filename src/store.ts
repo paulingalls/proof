@@ -31,6 +31,7 @@ type HistoryResult = {
   outcome: Outcome;
   seconds: number | null;
   finished_at: string;
+  dimension_value: string | null;
 };
 type Skip = { task: string; day: string; count: number };
 
@@ -212,6 +213,7 @@ export class Store {
     dirty: boolean,
     dirtyInputs: boolean,
     envHashes: [string, string][],
+    dimensionValues: [string, string][],
     mode: 'ordinary' | 'super' = 'ordinary',
   ): Promise<{ sharing: Sharing; deletedLocal: boolean; deletedShared: boolean }> {
     const finishedAt = new Date().toISOString();
@@ -233,6 +235,8 @@ export class Store {
           finishedAt,
         );
         if (!result) throw new Error('store did not return the inserted result');
+        for (const [name, value] of dimensionValues)
+          await query('INSERT INTO dimension_values VALUES (?, ?, ?)', result.id, name, value);
         if (outcome === 'green' && !dirty)
           await query(
             `
@@ -432,10 +436,13 @@ export class Store {
     return read(this.local.query);
   }
 
-  async history(project: string, start: string, end: string) {
+  async history(project: string, start: string, end: string, dimension?: string) {
     const read = async (query: Query) => ({
       results: await query<HistoryResult>(
-        `SELECT task, outcome, seconds, finished_at FROM results WHERE project = ? AND outcome <> 'manual'`,
+        `SELECT r.task, r.outcome, r.seconds, r.finished_at, d.value AS dimension_value
+        FROM results r LEFT JOIN dimension_values d ON d.result_id = r.id AND d.name = ?
+        WHERE r.project = ? AND r.outcome <> 'manual'`,
+        dimension ?? null,
         project,
       ),
       skips: await query<Skip>(

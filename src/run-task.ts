@@ -216,6 +216,7 @@ export async function runTask(
             unstaged !== undefined ||
             key(id, task, tree, afterDirty).key === undefined,
           current.env,
+          current.dimensionValues,
           fresh ? 'super' : 'ordinary',
         );
         if (deletedLocal) summary.push(`deleted proof local ${id} ${current.key}`);

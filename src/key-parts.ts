@@ -145,12 +145,15 @@ export function keyParts(task: Task, tree: RefTree, historical = false) {
         name,
         process.env[name] === undefined ? 'absent' : hash(process.env[name]),
       ]);
+  const dimensionValues: [string, string][] = [];
   if (!historical) {
     const entries = new Map(env);
     for (const [name, command] of task.dimensions ?? []) {
       const resolved = dimension(name, command);
-      if (resolved.value !== undefined) entries.set(`dimension:${name}`, hash(resolved.value));
-      else reasons.push(resolved.reason);
+      if (resolved.value !== undefined) {
+        entries.set(`dimension:${name}`, hash(resolved.value));
+        dimensionValues.push([name, resolved.value]);
+      } else reasons.push(resolved.reason);
     }
     for (const input of task.inputs) {
       if (typeof input === 'string' || !('dotenv' in input)) continue;
@@ -197,6 +200,7 @@ export function keyParts(task: Task, tree: RefTree, historical = false) {
       .filter(([path]) => !task.unkeyed?.has(path))
       .sort(([ap, , am], [bp, , bm]) => compare(ap, bp) || compare(am, bm)),
     env,
+    dimensionValues,
     reasons: [...new Set(reasons)],
   };
 }

@@ -12,10 +12,12 @@ afterEach(() => {
   for (const repo of repos.splice(0)) repo.close();
   for (const path of paths.splice(0)) rmSync(path, { recursive: true, force: true });
 });
-function fixture(tasks: Record<string, Task>) {
+function fixture(tasks: Record<string, Task>, dimensions = {}) {
   const repo = Repo.from('stats', (r) => r.commit({ input: 'original', clean: 'clean' }));
   repos.push(repo);
-  repo.commit({ 'proof.yaml': JSON.stringify({ version: 1, project: 'stats', tasks }) });
+  repo.commit({
+    'proof.yaml': JSON.stringify({ version: 1, project: 'stats', tasks, dimensions }),
+  });
   const state = mkdtempSync(join(tmpdir(), 'proof-stats-'));
   paths.push(state);
   const env = { PROOF_STATE_DIR: state, TZ: 'Etc/GMT-14' };
@@ -152,6 +154,11 @@ test('calendar windows, roster scope and current RUN estimate use exactly the se
   expect(stats('--since', '2d', '--set', 'push').out.trim().split('\n').at(-1)).toBe(
     'saved 1m of 2m in 2d (50%); previous 2d: 25%; unpriced skips: 2 current, 4 previous',
   );
+  const report = JSON.parse(stats('--json', '--since', '2d', '--set', 'push').out);
+  expect(report.saved).toEqual({
+    current: { seconds: 60, totalSeconds: 120, percent: 50, unpricedSkips: 2 },
+    previous: { seconds: 120, totalSeconds: 480, percent: 25, unpricedSkips: 4 },
+  });
   history.exec("DELETE FROM skips; DELETE FROM results WHERE task != 'proven'");
   expect(stats('--since', '2d').out.trim().split('\n').at(-1)).toBe(
     'saved 0m of 0m in 2d (unavailable); previous 2d: unavailable',
@@ -161,6 +168,14 @@ test('calendar windows, roster scope and current RUN estimate use exactly the se
   expect(stats('--since', '2d').out.trim().split('\n').at(-1)).toBe(
     'saved 0m of 0m in 2d (unavailable); previous 2d: unavailable',
   );
+  const zero = JSON.parse(stats('--json', '--since', '2d').out);
+  expect(zero.tasks[0]).toEqual({ task: 'a', median: 0, runs: 1 });
+  expect(zero.saved.current).toEqual({
+    seconds: 0,
+    totalSeconds: 0,
+    percent: null,
+    unpricedSkips: 0,
+  });
   result('a', 'red', 60, boundary(-3));
   expect(stats('--since', '2d').out.trim().split('\n').at(-1)).toBe(
     'saved 0m of 0m in 2d (unavailable); previous 2d: 0%',
@@ -173,6 +188,10 @@ test('invalid stats arguments fail with usage; unknown set shares plan diagnosti
     ['--since', '0d'],
     ['--since', 'x'],
     ['--unknown'],
+    ['--by'],
+    ['--by', 'missing'],
+    ['--where', 'x'],
+    ['--json', '--json'],
     ['--since'],
     ['--set'],
     ['--since', '1d', '--since', '2d'],
@@ -182,8 +201,119 @@ test('invalid stats arguments fail with usage; unknown set shares plan diagnosti
   ]) {
     const result = cli('stats', ...args);
     expect(result.code).toBe(2);
-    expect(result.err).toBe('proof: usage: proof stats [--set <name>] [--since Nd]\n');
+    expect(result.err).toBe(
+      'proof: usage: proof stats [--set <name>] [--since Nd] [--by <dimension>] [--json]\n',
+    );
     expect(result.out).toBe('');
   }
   expect(cli('stats', '--set', 'missing')).toEqual(cli('plan', '--set', 'missing'));
+});
+
+test('every recorded outcome retains resolved dimensions', () => {
+  const { cli, db } = fixture(
+    { a: { ...task('exit 7'), dimensions: ['platform', 'arch'] } as unknown as Task, b: task() },
+    { platform: 'printf ios', arch: 'printf arm64' },
+  );
+  for (const outcome of ['green', 'red', 'incomplete'])
+    expect(cli('record', 'a', '--outcome', outcome).code).toBe(0);
+  expect(cli('run', '--fresh', '--tasks', 'a').code).toBe(1);
+  expect(cli('record', 'b', '--outcome', 'green').code).toBe(0);
+  using history = db();
+  expect(
+    history
+      .query(`SELECT r.outcome, d.name, d.value FROM results r
+    JOIN dimension_values d ON d.result_id = r.id ORDER BY r.id, d.name`)
+      .all(),
+  ).toEqual(
+    ['green', 'red', 'incomplete', 'red'].flatMap((outcome) => [
+      { outcome, name: 'arch', value: 'arm64' },
+      { outcome, name: 'platform', value: 'ios' },
+    ]),
+  );
+});
+
+test('dimension splits reconcile window runs and JSON shares text figures', () => {
+  const { cli, db } = fixture(
+    {
+      a: { ...task(), dimensions: ['platform'], sets: ['push'] } as unknown as Task,
+      b: { ...task(), sets: ['push'] },
+      excluded: { ...task(), dimensions: ['arch'] } as unknown as Task,
+    },
+    { platform: 'printf ios', arch: 'printf arm64' },
+  );
+  expect(cli('plan').code).toBe(0);
+  using history = db();
+  const samples = [
+    ['ios', 'green', 10],
+    ['ios', 'green', 30],
+    ['ios', 'red', 600],
+    ['ios', 'green', null],
+    ['ios', 'incomplete', null],
+    ['android', 'green', 50],
+    ['android', 'red', 900],
+    [null, 'green', 70],
+    [null, 'red', 800],
+    ['red-only', 'red', 0],
+  ] as const;
+  for (const [value, outcome, seconds] of [...samples, ['ios', 'green', 100] as const]) {
+    const at = seconds === 100 ? '2000-01-01T00:00:00.000Z' : new Date().toISOString();
+    const inserted = history
+      .query(`INSERT INTO results
+      (project, task, key, outcome, seconds, host, "commit", dirty, finished_at)
+      VALUES ('stats', 'a', 'seed', ?, ?, 'host', 'commit', 1, ?)`)
+      .run(outcome, seconds, at);
+    if (value !== null) {
+      history
+        .query('INSERT INTO dimension_values VALUES (?, ?, ?)')
+        .run(inserted.lastInsertRowid, 'platform', value);
+      history
+        .query('INSERT INTO dimension_values VALUES (?, ?, ?)')
+        .run(inserted.lastInsertRowid, 'arch', 'arm64');
+    }
+  }
+  const split = {
+    dimension: 'platform',
+    values: [
+      { value: 'android', median: 50, runs: 2 },
+      { value: 'ios', median: 20, runs: 5 },
+      { value: 'red-only', median: null, runs: 1 },
+      { value: null, median: 70, runs: 2 },
+    ],
+  };
+  const text = cli('stats', '--since', '2d', '--by', 'platform', '--set', 'push');
+  expect(text.code).toBe(0);
+  expect(text.out).toBe(
+    'a: median 50s; 10 runs in 2d\n' +
+      '  platform="android": median 50s; 2 runs in 2d\n' +
+      '  platform="ios": median 20s; 5 runs in 2d\n' +
+      '  platform="red-only": median unavailable; 1 runs in 2d\n' +
+      '  platform=(no recorded value): median 70s; 2 runs in 2d\n' +
+      'b: median unavailable; 0 runs in 2d\nestimated 0.83m for 2 RUN tasks; unpriced 1: b\n' +
+      'saved 0m of 41m in 2d (0%); previous 2d: unavailable\n',
+  );
+  for (const by of [[], ['--by', 'platform']])
+    for (const set of [[], ['--set', 'push']]) {
+      const result = cli('stats', '--json', ...by, '--since', '2d', ...set);
+      expect(result.code).toBe(0);
+      const report = JSON.parse(result.out);
+      expect(report).toEqual({
+        days: 2,
+        tasks: [
+          { task: 'a', median: 50, runs: 10, ...(by.length ? { split } : {}) },
+          { task: 'b', median: null, runs: 0 },
+          ...(set.length ? [] : [{ task: 'excluded', median: null, runs: 0 }]),
+        ],
+        estimate: {
+          seconds: 50,
+          runs: set.length ? 2 : 3,
+          unpriced: set.length ? ['b'] : ['b', 'excluded'],
+        },
+        saved: {
+          current: { seconds: 0, totalSeconds: 2460, percent: 0, unpricedSkips: 0 },
+          previous: { seconds: 0, totalSeconds: 0, percent: null, unpricedSkips: 0 },
+        },
+      });
+    }
+  expect(cli('stats', '--by', 'arch', '--set', 'push').code).toBe(2);
+  expect(cli('stats', '--by', 'platform', '--by', 'platform').code).toBe(2);
 });

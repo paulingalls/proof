@@ -26,7 +26,7 @@ proof flakes [--since Nd]    tasks ranked by ordinary contradictions
 proof lint                   check declarations against the staged tree
 proof check <cases.yaml>     run a requirement suite
 proof doctor                 store health and all declared dimension values
-proof stats [--set <name>] [--since Nd]  timings, current RUN estimate and time saved
+proof stats [--set <name>] [--since Nd] [--by <dimension>] [--json]  timings, current RUN estimate and time saved
 ```
 
 `run` exits 0 when every task is proven or green, 1 when a task is red/incomplete or a provider fails, 130/143 when interrupted;
@@ -342,7 +342,7 @@ a task selects, a file hidden by `assume-unchanged` or
 `skip-worktree`, or a linked `node_modules` escaping into tracked files. Status's `trusted links`
 suffix restates the declaration rather than reporting an inspection.
 
-`proof stats [--set <name>] [--since Nd]` reports the current declaration roster in
+`proof stats [--set <name>] [--since Nd] [--by <dimension>] [--json]` reports the current declaration roster in
 its declared order. `--set` scopes every task, count, estimate and total to that set;
 an unknown set exits 2 as in `plan`. Removed or renamed tasks leave all figures.
 Each task's median uses every timed green result across keys, hosts and dates,
@@ -374,6 +374,42 @@ text: median 20s; 1 runs in 2d
 estimated 0m for 0 RUN tasks
 saved 1m of 1.33m in 2d (75%); previous 2d: unavailable
 ```
+
+`--by <dimension>` adds split rows below tasks declaring that dimension. If no selected task
+uses it, or its argument is missing, exit 2 with usage. Tasks without the dimension have no split.
+Each value's median uses timed greens in the current window; its run count includes every outcome
+in that window. Actual values sort lexically and use JSON quoting. Older results have no value:
+`(no recorded value)` sorts last. Split counts sum to the task's window run count. Task medians
+remain all-time; splits change neither pricing nor savings. There is no `--where` flag.
+
+For the preceding example with root `dimensions: {platform: 'printf ios'}` and task
+`dimensions: [platform]`, run:
+
+```sh
+proof stats --by platform --set push --since 2d
+proof stats --json --by platform --set push --since 2d
+```
+
+The first command adds this row immediately below `text`:
+
+```text
+  platform="ios": median 20s; 1 runs in 2d
+```
+
+`--json` emits one JSON document, without the text trailer; diagnostics stay on stderr.
+It works with or without `--by` and `--set`, in any flag order. The shape is:
+
+```text
+{days, tasks: [{task, median, runs, split?: {dimension, values: [{value, median, runs}]}}],
+ estimate: {seconds, runs, unpriced}, saved: {current, previous}}
+```
+
+Each saved window has `{seconds, totalSeconds, percent, unpricedSkips}`. Durations and medians
+are unrounded seconds; percentages are unrounded numbers on a 0–100 scale. Unavailable medians
+and percentages are `null`, as are absent dimension values. Zero remains numeric zero.
+Estimate `runs` counts current RUN tasks and `unpriced` lists their unpriced task ids.
+Nondeclaring tasks omit `split`. Empty split histories have `values: []`.
+Dimension values are stored: commands must not print secrets, even from ambient env.
 
 The estimate sums medians for today's selected RUN tasks, counting and naming tasks
 without a timed green as `; unpriced <count>: <tasks>`. It excludes PROVEN tasks.
