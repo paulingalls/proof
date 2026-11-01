@@ -262,6 +262,8 @@ test('runtime lane overrides reject malformed values before starting even proven
     'ios=1,ios=2',
     ' ios=1',
     'ios=1 ',
+    'ios=1\n',
+    'ios=1\r\n',
     'missing=1',
     'solo=1',
   ]) {
