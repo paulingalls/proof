@@ -84,11 +84,12 @@ export async function runTask(
     let started = false;
     if (decision.state !== 'PROVEN' && !processes.cancelled) {
       slot = lanes.allocate(lane);
+      providers.validate(task.needs ?? [], lane);
       for (const name of task.needs ?? []) {
         if (processes.cancelled) break;
         const provider = view.providers.get(name);
         if (!provider) throw new Error(`unknown provider '${name}'`);
-        if (staged && !providers.attempted([name])) {
+        if (staged && !providers.attemptedInstance(name, slot)) {
           for (const dependent of ids) {
             const selected = view.tasks.get(dependent);
             if (!selected?.needs?.includes(name)) continue;
@@ -98,7 +99,7 @@ export async function runTask(
           }
         }
         started = true;
-        await providers.start(name, provider);
+        await providers.start(name, provider, slot);
       }
     }
     if (started) {
@@ -126,9 +127,10 @@ export async function runTask(
       summary.push(`PROVEN ${id}: ${decision.reason}`);
       return;
     }
+    providers.validate(task.needs ?? [], lane);
     const blocked =
       processes.cancelled ||
-      (task.needs ?? []).map((name) => providers.ready(name)).some((ready) => !ready);
+      (task.needs ?? []).map((name) => providers.ready(name, slot)).some((ready) => !ready);
     const current = declaration
       ? { reason: `dirty declaration '${declaration}'`, key: undefined }
       : key(id, task, tree);
@@ -153,7 +155,7 @@ export async function runTask(
           const value = process.env[name];
           if (value !== undefined) env[name] = value;
         }
-        Object.assign(env, providers.environment(task.needs ?? []));
+        Object.assign(env, providers.environment(task.needs ?? [], slot));
         if (slot !== undefined) env.PROOF_LANE_SLOT = String(slot);
         const started = performance.now();
         const result = await processes.execute(task.run, sandbox.path, env, false, {

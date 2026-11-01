@@ -82,6 +82,7 @@ export async function run(args: string[]) {
       summary.push(message);
     },
     () => selected.tasks.values(),
+    selected.providers,
   );
   const providerMismatches = new Map<string, string>();
   try {
