@@ -9,7 +9,7 @@ The goal: run only what a change can actually affect, and nothing extra.
 
 ## How it works
 
-- **Declarations live in the repo.** `proof.yaml` (plus optional `proof.d/*.yaml`)
+- **Declarations live in the repo.** `proof.yaml` (plus optional included or generated declarations)
   says what each task depends on. TypeScript inputs come from the import closure
   (a Python import graph is planned). You declare only what imports cannot see,
   such as fixtures, SQL, spawned scripts and env names.
@@ -130,6 +130,39 @@ exempt:
   alongside its closure input. Key scheme 4 requires fresh proof for all tasks, including
   tasks without closures. Accepted risk: a test hard-coding a version can retain proof after a
   committed version bump; the super run that executes every task fresh catches it.
+- **Generated declarations stay out of git.** Root `generate: {run, inputs, links?}` runs a
+  generator in a sandbox containing its selected inputs from the judged tree. It writes included
+  declarations (`inputs`, `tasks`, `unkeyed`) to the empty `$PROOF_DECLARATIONS` directory. Committed
+  `include` files can coexist; duplicate tasks and input sets fail. `plan` and other declaration
+  readers therefore execute repository code on a cache miss. For example, commit `source.txt`,
+  this root declaration, and `scripts/generate-proof.sh`:
+
+  ```yaml
+  version: 1
+  project: example
+  generate:
+    run: sh scripts/generate-proof.sh
+    inputs: [scripts/generate-proof.sh]
+  ```
+
+  ```sh
+  cat > "$PROOF_DECLARATIONS/tasks.yaml" <<'YAML'
+  tasks:
+    smoke:
+      run: cat source.txt
+      inputs: [source.txt]
+  YAML
+  ```
+
+  `proof plan --json` lists `smoke`. Output may contain nested `*.yaml` files and must contain at
+  least one; write `tasks: {}` for an intentionally empty declaration. Symlinks are refused.
+  To migrate committed generated files, change the generator to write to `$PROOF_DECLARATIONS`,
+  add `generate`, remove their `include` glob, untrack the old files and ignore that output directory.
+  proof never reads ignored output. [Generation details](docs/commands.md#generated-declarations)
+  cover caching, failures, dirty inputs, index and ref behavior. Run `proof check` whenever the
+  generator changes: proof cannot detect a generator bug that omits an input. Shell and Dockerfile
+  tracing remain the generator's responsibility.
+
 - **Shared files and representatives.** Root `unkeyed` removes matching files from every
   task's key; task `keyed` opts representatives back in. For example, create `shared.txt`
   containing `ready`, then use:

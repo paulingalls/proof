@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.16.0
+
+- Root `generate: {run, inputs, links?}` keeps generated declarations out of git. proof runs the
+  generator in a sandbox built from the tree it judges, including a ref or the index, and reads the
+  files it writes to `$PROOF_DECLARATIONS` as included declarations. Output is cached by the
+  generator's inputs. Failures are fatal, and declarations a dirty tree changes publish no proof.
+- A repo should run `proof check` when its generator changes: a bug that drops an input is otherwise
+  invisible until the super run.
+
 ## 0.15.0
 
 - `proof stats --by <dimension>` splits each task's median and run count by dimension value. Results

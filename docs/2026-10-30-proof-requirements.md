@@ -61,14 +61,18 @@ The package has its own tests for its own behaviour, on synthetic repos it build
 ### The model
 - **R1. Two homes.**
   - What a task depends on is declared in the repo: `proof.yaml`, plus optional `proof.d/*.yaml`, versioned
-    and reviewed.
+    and reviewed. Alternatively, root `generate: {run, inputs, links?}` produces included declarations
+    in a temporary sandbox; the generator and its inputs are versioned and reviewed instead of its
+    output (Paul, 2026-11-01).
   - What has been proven lives in one shared store.
   - "What must run" is one deterministic lookup: the same tree and environment give the same answer on any
     clone or machine.
 - **R2. No diff base.** A key is computed from the tree itself, never from a diff against a merge-base or
   branch point. This removes app-a's root cause: `scripts/static-gates.sh:2` diffs against
   `git merge-base HEAD origin/develop`, so a branch's first change re-runs on every later push. A key must
-  also be computable for any ref without a checkout (`git ls-tree`), for release freshness.
+  also be computable for any ref without a user checkout (`git ls-tree`), for release freshness.
+  A ref with generated declarations runs that ref's generator on that ref's input bytes in a temporary
+  sandbox (Paul, 2026-11-01).
 - **R3. A simple key** (Paul: "as simple as possible, so it covers the cases that make sense but not too many,
   or the key becomes useless"). It is a hash of:
   - task id

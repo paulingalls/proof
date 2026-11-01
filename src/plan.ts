@@ -1,8 +1,9 @@
 import type { Task } from './declarations';
 import { declarations, dirtyDeclaration, selectTasks } from './declarations';
+import { generate } from './generate';
 import { dirtyPaths, RefTree, resolveRef } from './git';
 import { source } from './imports';
-import { key } from './key';
+import { key, selection } from './key';
 import { inspectLinks } from './sandbox';
 import { Store } from './store';
 import { workspaces } from './workspaces';
@@ -127,9 +128,27 @@ export function currentTree() {
   const { tree } = committed;
   let document = committed.document;
   const dirty = dirtyPaths();
-  const declaration = dirtyDeclaration(dirty, document.include);
+  const declaration =
+    dirtyDeclaration(dirty, document.include) ?? dirtyGenerated(tree, document, dirty);
   if (declaration) document = declarations(tree, true);
   return { tree, ...document, dirty, declaration };
+}
+
+export function dirtyGenerated(
+  tree: RefTree,
+  document: ReturnType<typeof declarations>,
+  dirty: string[],
+) {
+  if (!document.generate || !dirty.length) return undefined;
+  const selected = selection(document.generate, tree, dirty);
+  if (!dirty.some((path) => selected.has(path))) return undefined;
+  const working = generate(document.generate, tree, dirty, document.project);
+  const before = new Map(document.generated);
+  const after = new Map(working);
+  const name = [...new Set([...before.keys(), ...after.keys()])]
+    .sort()
+    .find((name) => before.get(name) !== after.get(name));
+  return name === undefined ? undefined : `proof.yaml generate: ${name}`;
 }
 
 export function renderDecision(row: Awaited<ReturnType<typeof decide>>) {
