@@ -3,7 +3,7 @@ import { declarations, dirtyDeclaration, selectTasks } from './declarations';
 import { generate } from './generate';
 import { dirtyPaths, RefTree, resolveRef } from './git';
 import { source } from './imports';
-import { key } from './key';
+import { key, selection } from './key';
 import { inspectLinks } from './sandbox';
 import { Store } from './store';
 import { workspaces } from './workspaces';
@@ -140,6 +140,8 @@ export function dirtyGenerated(
   dirty: string[],
 ) {
   if (!document.generate || !dirty.length) return undefined;
+  const selected = selection(document.generate, tree, dirty);
+  if (!dirty.some((path) => selected.has(path))) return undefined;
   const working = generate(document.generate, tree, dirty, document.project);
   const before = new Map(document.generated);
   const after = new Map(working);
