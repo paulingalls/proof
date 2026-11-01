@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.13.1
+
+- A link from one declared root into another is no longer an escape, which rejected bun workspace
+  links. A committed symlink whose relative target is in the same selection now reaches the sandbox.
+
 ## 0.13.0
 
 - A provider `start` can write `NAME=value` lines to `$PROOF_PROVIDER_ENV`. Tasks needing that
