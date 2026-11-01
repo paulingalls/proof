@@ -41,6 +41,40 @@ blocks above one job. A failed start's summary names its retained log under
 a ready start deletes its capture. Background processes left by provider starts no longer
 send output to the terminal after startup finishes. Provider stops keep their inherited streams.
 
+### Provider environment
+
+A provider's `start` receives `PROOF_PROVIDER_ENV`, an absolute path to a precreated mode-600
+file in a private mode-700 directory under the state directory. To hand an address to its tasks:
+
+```sh
+printf 'URL=%s\n' "$ADDRESS" > "$PROOF_PROVIDER_ENV"
+```
+
+Proof reads the file after a successful, unsignalled start and validates it before accepting
+readiness. The file and private directory are removed before dependents execute, including
+on invalid content, failed startup or interruption. Do not delete the file: a missing or unreadable
+file fails startup. Writing nothing leaves the environment unchanged. `stop` keeps the caller's
+environment; it receives neither the channel path nor an implicit merge of exports.
+
+Each LF-separated line is `NAME=value`, split at the first `=`. Names match
+`[A-Za-z_][A-Za-z0-9_]*`. Values are literal: spaces, extra `=`, quotes, dollar signs and carriage
+returns stay unchanged; empty values are allowed. A final newline is optional. There is no shell
+evaluation, interpolation, quote removal or comment syntax. Blank lines, malformed names,
+duplicate names and NUL bytes fail startup. `PATH`, `HOME`, `TMPDIR` and `PROOF_PROVIDER_ENV`
+are reserved. An export also fails if its name is in any dependent's declared `env`, including an
+unselected dependent, or another provider exports that name and any declared task needs both.
+Equal values still conflict; disjoint providers may export the same name. Validation uses the
+declarations read after that start returns, including startup edits.
+
+A rejected export fails that provider's start and blocks its dependents with `incomplete`.
+Diagnostics name the provider, line and valid name, never the value; a malformed name or a line
+without `=` reports only the line number. Independent tasks still run, and teardown still happens.
+
+Only tasks naming the provider in `needs` receive its exports. Keep those names outside task
+`env`: export values remain in memory, never in keys, store records, proof-authored output or
+logs. Different clones can use different addresses and reuse the same proof. Output deliberately
+printed by a provider or task follows the usual display and capture rules; proof does not scrub it.
+
 Resource lanes add a limit within `--jobs`. For example, after creating an `input` file:
 
 ```yaml

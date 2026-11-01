@@ -140,7 +140,7 @@ export async function runTask(
       unbuilt = error instanceof Error ? error.message : String(error);
     }
     if (sandbox && !unbuilt) {
-      const env: Record<string, string> = {};
+      const env: Record<string, string> = Object.create(null);
       for (const name of [...BASE_ENV, ...(task.env ?? [])]) {
         const value = process.env[name];
         if (value !== undefined) env[name] = value;

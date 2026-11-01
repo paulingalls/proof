@@ -242,17 +242,25 @@ version: 1
 project: provider-demo
 providers:
   stack:
-    start: echo stack-ready
+    start: |
+      printf 'URL=%s\n' "$ADDRESS" > "$PROOF_PROVIDER_ENV"
+      echo stack-ready
     stop: echo stack-stopped
 tasks:
   gate:
-    run: cat input
+    run: test "$URL" = http://127.0.0.1:5432 && cat input
     inputs: [input]
     needs: [stack]
 ```
 
 With a committed `input` file, `proof plan` prints
-`RUN gate: no proof for key; providers: stack`. `proof run` prints the complete selected plan,
+`RUN gate: no proof for key; providers: stack`. Run it with:
+
+```sh
+ADDRESS=http://127.0.0.1:5432 proof run
+```
+
+This prints the complete selected plan,
 then `stack-ready`, the input contents, and `stack-stopped`. A second run reuses the proof and
 starts nothing. `proof run --tasks gate` considers only that task and its providers.
 
@@ -260,7 +268,13 @@ starts nothing. `proof run --tasks gate` considers only that task and its provid
 Each needed provider starts at most once, only for a task currently RUN. Optional `stop` runs
 once after the last selected dependent, including on task failure, startup failure or interruption.
 Providers execute through `sh -c` in the checkout with the caller's environment. Dependent tasks
-keep their sandbox and declared environment. Included tasks use the root provider names;
+keep their sandbox and declared environment, plus exports from their needed providers.
+`start` receives `PROOF_PROVIDER_ENV`, the path of a private mode-600 file in the state directory.
+It may write literal `NAME=value` lines there; proof reads and removes it after startup.
+`URL` above belongs outside task `env`: provider exports never enter keys or store records, so
+clones with different resource addresses can share proofs. Tasks without `needs: [stack]` receive
+none of its exports. Empty files preserve the existing lifecycle. See [the export rules](docs/commands.md#provider-environment)
+for names, conflicts and privacy. Included tasks use the root provider names;
 unknown names are declaration errors.
 
 A failed start prevents its dependents from executing and records `incomplete`; existing proofs

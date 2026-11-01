@@ -2,7 +2,7 @@ import { Database } from 'bun:sqlite';
 import { afterAll, afterEach, beforeAll, expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { Provider, Task } from '../src/declarations';
 import { output, Postgres, waitFor } from './support/postgres';
 import { Repo } from './support/repo';
@@ -44,7 +44,8 @@ function fixture(source?: Repo) {
       'start.ts': `import { statSync, writeFileSync, appendFileSync } from 'node:fs';
 const path = process.env.PROOF_PROVIDER_ENV;
 if (path) {
-  if ((statSync(path).mode & 0o777) !== 0o600) process.exit(9);
+  if ((statSync(path).mode & 0o777) !== 0o600 ||
+      (statSync(require('node:path').dirname(path)).mode & 0o777) !== 0o700) process.exit(9);
   if (!path.startsWith(process.env.PROOF_STATE_DIR + '/')) process.exit(10);
   writeFileSync(process.env.CONTROL + '/channel', path);
   writeFileSync(path, 'URL=' + process.env.ADDRESS + '\\n');
@@ -67,10 +68,10 @@ if (name.startsWith('independent')) {
     return value;
   };
   const cli = (...args: string[]) => repo.cli(args, env);
-  const rows = () => {
+  const rows = (table = 'results') => {
     const db = new Database(join(env.PROOF_STATE_DIR, 'proof.db'));
     try {
-      return db.query('SELECT * FROM results ORDER BY rowid').all() as {
+      return db.query(`SELECT * FROM ${table} ORDER BY rowid`).all() as {
         key: string;
         outcome: string;
         task: string;
@@ -85,8 +86,11 @@ if (name.startsWith('independent')) {
       if (file.isFile())
         expect(readFileSync(join(file.parentPath, file.name)).includes(value)).toBe(false);
     }
-    if (existsSync(join(control, 'channel')))
-      expect(existsSync(readFileSync(join(control, 'channel'), 'utf8'))).toBe(false);
+    if (existsSync(join(control, 'channel'))) {
+      const path = readFileSync(join(control, 'channel'), 'utf8');
+      expect(existsSync(path)).toBe(false);
+      expect(existsSync(dirname(path))).toBe(false);
+    }
   };
   return { repo, control, env, task, mark, start, commit, address, cli, rows, clean };
 }
@@ -138,7 +142,9 @@ test('different provider addresses share one proof across clones', async () => {
   expect(readFileSync(join(a.control, 'gate'), 'utf8')).toBe(second);
   expect(a.rows()[0]?.key).toBe(b.rows()[0]?.key);
   b.clean(fresh, second);
-  for (const table of ['results', 'proofs', 'contradictions']) {
+  a.clean(fresh, second);
+  const tables = await db.sql`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`;
+  for (const { tablename: table } of tables) {
     const rows = await db.sql.unsafe(`SELECT row_to_json(t) FROM ${table} t`);
     expect(JSON.stringify(rows)).not.toContain(first);
     expect(JSON.stringify(rows)).not.toContain(second);
@@ -156,6 +162,8 @@ for (const kind of [
   'TMPDIR',
   'PROOF_PROVIDER_ENV',
   'declared',
+  'declared-later',
+  'edited',
   'missing',
 ]) {
   test(`rejects ${kind} exports without publishing values or executing dependents`, () => {
@@ -163,7 +171,7 @@ for (const kind of [
     const value = f.address();
     const tasks = {
       first: { ...f.task('first'), run: f.mark('ran-dependent') },
-      later: { ...f.task('later'), env: kind === 'declared' ? ['URL'] : [] },
+      later: { ...f.task('later'), env: kind.startsWith('declared') ? ['URL'] : [] },
       independent: { ...f.task('independent', []), run: f.mark('independent') },
     };
     const payload =
@@ -177,22 +185,37 @@ for (const kind of [
               ? `URL=${value}\n\n`
               : kind === 'duplicate'
                 ? `URL=${value}\nURL=${value}`
-                : `${kind === 'declared' || kind === 'missing' ? 'URL' : kind}=${value}`;
+                : `${kind.startsWith('declared') || kind === 'edited' || kind === 'missing' ? 'URL' : kind}=${value}`;
     const write =
       kind === 'missing'
         ? 'rm "$PROOF_PROVIDER_ENV"'
         : `${process.execPath} -e 'require("fs").writeFileSync(process.env.PROOF_PROVIDER_ENV, Buffer.from(process.env.PAYLOAD, "base64"))'`;
+    const edit =
+      kind === 'edited'
+        ? `${process.execPath} -e 'const f=require("fs"); const d=JSON.parse(f.readFileSync("proof.yaml", "utf8")); d.tasks.later.env=["URL"]; f.writeFileSync("proof.yaml", JSON.stringify(d))'`
+        : 'true';
     f.commit(tasks, {
       stack: {
-        start: `${f.start}; if [ -n "$PROOF_PROVIDER_ENV" ]; then ${write}; fi`,
+        start: `${f.start}; if [ -n "$PROOF_PROVIDER_ENV" ]; then ${write}; fi; ${edit}`,
         stop: f.mark('stop'),
       },
     });
-    const result = f.repo.cli(['run', '--jobs', '2', '--tasks', 'first', 'independent'], {
-      ...f.env,
-      PAYLOAD: Buffer.from(payload).toString('base64'),
-      URL: 'declared-caller',
-    });
+    const result = f.repo.cli(
+      [
+        'run',
+        '--jobs',
+        '2',
+        '--tasks',
+        'first',
+        'independent',
+        ...(kind === 'declared-later' ? ['later'] : []),
+      ],
+      {
+        ...f.env,
+        PAYLOAD: Buffer.from(payload).toString('base64'),
+        URL: 'declared-caller',
+      },
+    );
     expect(result.code).toBe(1);
     expect(result.out).toContain("provider 'stack' start failed");
     expect(result.out).toContain(
@@ -202,14 +225,19 @@ for (const kind of [
           ? 'cannot read environment channel'
           : kind === 'blank'
             ? 'line 2'
-            : kind === 'duplicate' || kind === 'nul' || kind === 'declared'
+            : kind === 'duplicate' ||
+                kind === 'nul' ||
+                kind.startsWith('declared') ||
+                kind === 'edited'
               ? "'URL'"
               : `'${kind}'`,
     );
     expect(readFileSync(join(f.control, 'events'), 'utf8')).not.toContain('ran-dependent');
     expect(readFileSync(join(f.control, 'events'), 'utf8')).toContain('independent');
     expect(readFileSync(join(f.control, 'events'), 'utf8')).toContain('stop');
-    expect(f.rows().find((r) => r.task === 'first')?.outcome).toBe('incomplete');
+    if (kind !== 'edited')
+      expect(f.rows().find((r) => r.task === 'first')?.outcome).toBe('incomplete');
+    expect(f.rows('proofs').some((r) => r.task === 'first')).toBe(false);
     f.clean(result, kind === 'bare' ? payload : value);
   });
 }

@@ -119,7 +119,7 @@ export class Providers {
   }
 
   environment(needs: string[]) {
-    const env: Record<string, string> = {};
+    const env: Record<string, string> = Object.create(null);
     for (const name of needs) {
       if (!this.ready(name)) throw new Error(`provider '${name}' is not ready`);
       Object.assign(env, this.attempts.get(name)?.env);
