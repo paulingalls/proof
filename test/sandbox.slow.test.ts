@@ -449,26 +449,34 @@ for (const kind of ['absolute', 'leaves repo', 'dirty']) {
   });
 }
 
-test('staged provider tasks publish with clean committed selected symlinks', () => {
-  const { repo, env, cli } = fixture();
-  repo.commit({ target: 'selected' });
-  symlinkSync('target', join(repo.path, 'link'));
-  repo.commit({
-    'proof.yaml': JSON.stringify({
-      version: 1,
-      project: 'links',
-      providers: { stack: { start: 'true' } },
-      tasks: {
-        linked: {
-          run: 'test -L link && grep -q selected link',
-          inputs: ['link', 'target'],
-          needs: ['stack'],
+for (const retargeted of [false, true]) {
+  test(`staged provider tasks with a committed selected symlink; retargeted=${retargeted}`, () => {
+    const { repo, env, cli } = fixture();
+    repo.commit({ target: 'selected' });
+    const link = join(repo.path, 'link');
+    symlinkSync('target', link);
+    repo.commit({
+      'proof.yaml': JSON.stringify({
+        version: 1,
+        project: 'links',
+        providers: { stack: { start: 'true' } },
+        tasks: {
+          linked: {
+            run: 'test -L link && grep -q selected link',
+            inputs: ['link', 'target'],
+            needs: ['stack'],
+          },
         },
-      },
-    }),
+      }),
+    });
+    if (retargeted) {
+      rmSync(link);
+      symlinkSync('other', link);
+    }
+    const result = cli('run', '--staged', '--tasks', 'linked');
+    expect(result.code).toBe(retargeted ? 2 : 0);
+    if (retargeted) expect(result.err).toContain("selected path 'link': symlink");
+    else expect(result.out).toContain('green linked; proof published');
+    expect(rows(env, 'proofs')).toHaveLength(retargeted ? 0 : 1);
   });
-  const result = cli('run', '--staged', '--tasks', 'linked');
-  expect(result.code).toBe(0);
-  expect(result.out).toContain('green linked; proof published');
-  expect(rows(env, 'proofs')).toHaveLength(1);
-});
+}
