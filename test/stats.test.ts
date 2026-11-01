@@ -12,10 +12,12 @@ afterEach(() => {
   for (const repo of repos.splice(0)) repo.close();
   for (const path of paths.splice(0)) rmSync(path, { recursive: true, force: true });
 });
-function fixture(tasks: Record<string, Task>) {
+function fixture(tasks: Record<string, Task>, dimensions = {}) {
   const repo = Repo.from('stats', (r) => r.commit({ input: 'original', clean: 'clean' }));
   repos.push(repo);
-  repo.commit({ 'proof.yaml': JSON.stringify({ version: 1, project: 'stats', tasks }) });
+  repo.commit({
+    'proof.yaml': JSON.stringify({ version: 1, project: 'stats', tasks, dimensions }),
+  });
   const state = mkdtempSync(join(tmpdir(), 'proof-stats-'));
   paths.push(state);
   const env = { PROOF_STATE_DIR: state, TZ: 'Etc/GMT-14' };
@@ -186,4 +188,27 @@ test('invalid stats arguments fail with usage; unknown set shares plan diagnosti
     expect(result.out).toBe('');
   }
   expect(cli('stats', '--set', 'missing')).toEqual(cli('plan', '--set', 'missing'));
+});
+
+test('every recorded outcome retains resolved dimensions', () => {
+  const { cli, db } = fixture(
+    { a: { ...task('exit 7'), dimensions: ['platform', 'arch'] } as unknown as Task, b: task() },
+    { platform: 'printf ios', arch: 'printf arm64' },
+  );
+  for (const outcome of ['green', 'red', 'incomplete'])
+    expect(cli('record', 'a', '--outcome', outcome).code).toBe(0);
+  expect(cli('run', '--fresh', '--tasks', 'a').code).toBe(1);
+  expect(cli('record', 'b', '--outcome', 'green').code).toBe(0);
+  using history = db();
+  expect(
+    history
+      .query(`SELECT r.outcome, d.name, d.value FROM results r
+    JOIN dimension_values d ON d.result_id = r.id ORDER BY r.id, d.name`)
+      .all(),
+  ).toEqual(
+    ['green', 'red', 'incomplete', 'red'].flatMap((outcome) => [
+      { outcome, name: 'arch', value: 'arm64' },
+      { outcome, name: 'platform', value: 'ios' },
+    ]),
+  );
 });

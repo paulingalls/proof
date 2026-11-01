@@ -17,6 +17,10 @@ export async function initialize(backend: Backend) {
           outcome TEXT NOT NULL, seconds DOUBLE PRECISION, host TEXT NOT NULL, "commit" TEXT NOT NULL,
           dirty INTEGER NOT NULL, finished_at TEXT NOT NULL
         )`);
+    await query(`CREATE TABLE IF NOT EXISTS dimension_values (
+      result_id ${reference} NOT NULL REFERENCES results(id), name TEXT NOT NULL,
+      value TEXT NOT NULL, PRIMARY KEY (result_id, name)
+    )`);
     await query(`CREATE TABLE IF NOT EXISTS proofs (
           project TEXT NOT NULL, task TEXT NOT NULL, key TEXT NOT NULL,
           result_id ${reference} NOT NULL REFERENCES results(id),

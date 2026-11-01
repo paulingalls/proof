@@ -54,6 +54,7 @@ export async function record(args: string[]) {
       dirty.length > 0,
       otherBytes !== undefined,
       current.env,
+      current.dimensionValues,
     );
     const suffix = sharing === 'local' ? '' : `; ${sharing}`;
     if (otherBytes) return `recorded red ${id}; contests nothing: ${otherBytes}${suffix}`;

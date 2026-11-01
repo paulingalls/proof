@@ -212,6 +212,7 @@ export class Store {
     dirty: boolean,
     dirtyInputs: boolean,
     envHashes: [string, string][],
+    dimensionValues: [string, string][],
     mode: 'ordinary' | 'super' = 'ordinary',
   ): Promise<{ sharing: Sharing; deletedLocal: boolean; deletedShared: boolean }> {
     const finishedAt = new Date().toISOString();
@@ -233,6 +234,8 @@ export class Store {
           finishedAt,
         );
         if (!result) throw new Error('store did not return the inserted result');
+        for (const [name, value] of dimensionValues)
+          await query('INSERT INTO dimension_values VALUES (?, ?, ?)', result.id, name, value);
         if (outcome === 'green' && !dirty)
           await query(
             `

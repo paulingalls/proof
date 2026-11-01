@@ -5,7 +5,7 @@ import { keyParts } from './key-parts';
 import { maestro } from './maestro';
 
 type Key =
-  | { key: string; env: [string, string][]; reason?: never }
+  | { key: string; env: [string, string][]; dimensionValues: [string, string][]; reason?: never }
   | { key?: never; reason: string };
 
 const inventories = new WeakMap<RefTree, string[]>();
@@ -208,5 +208,5 @@ export function key(id: string, task: Task, tree: RefTree, dirty: string[] = [])
   const tuple: unknown[] = [4, id, parts.declaration, [...parts.files, ...parts.members]];
   if (parts.env.length) tuple.push(parts.env.map(([name, hash]) => ['env', name, hash]));
   const hash = new Bun.CryptoHasher('sha256').update(JSON.stringify(tuple)).digest('hex');
-  return { key: hash, env: parts.env };
+  return { key: hash, env: parts.env, dimensionValues: parts.dimensionValues };
 }
