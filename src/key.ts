@@ -79,8 +79,10 @@ export function select(task: Task, tree: RefTree, dirty: string[] = [], working 
         whole.add(path);
       }
     }
-    if (!matched)
-      reason ??= `${!negative && !/[(!*?[{\\]/.test(pattern) ? 'missing' : 'unmatched'} input '${pattern}'`;
+    if (!matched) {
+      const absence = !negative && literalDirectory(pattern) === pattern ? 'missing' : 'unmatched';
+      reason ??= `${absence} input '${pattern}'`;
+    }
   }
   return {
     paths,
