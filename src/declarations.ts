@@ -302,7 +302,12 @@ export function declarations(tree: RefTree, working = false) {
         throw new Error(`task '${id}': provider '${name}' requires lane '${provider.lane}'`);
     }
   }
-  resolveUnkeyed(unkeyed, tasks, tree, working);
+  try {
+    resolveUnkeyed(unkeyed, tasks, tree, working);
+  } catch (error) {
+    if (generator) throw new Error(`proof.yaml generate: ${error}`);
+    throw error;
+  }
   const context = `ref '${tree.ref}' proof.yaml`;
   const coverage: string[] = [];
   if ('coverage' in root) {

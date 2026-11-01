@@ -27,7 +27,12 @@ import { refuseDuplicateKeys } from './yaml-keys';
 export type Generator = Pick<Task, 'run' | 'inputs' | 'links'>;
 
 export function generate(decl: Generator, tree: RefTree, dirty: string[], project: string) {
-  const capture = new Capture({ project, kind: 'generators', task: 'generate', live: false });
+  let capture: Capture;
+  try {
+    capture = new Capture({ project, kind: 'generators', task: 'generate', live: false });
+  } catch (error) {
+    throw new Error(`proof.yaml generate: log failed: ${error}`);
+  }
   let sandbox: Sandbox | undefined;
   let output: string | undefined;
   let closed = false;
@@ -134,8 +139,13 @@ export function generate(decl: Generator, tree: RefTree, dirty: string[], projec
     return generated;
   } catch (error) {
     if (!closed) {
-      writeSync(capture.fd, `${error}\n`);
-      capture.close();
+      try {
+        writeSync(capture.fd, `${error}\n`);
+      } catch (logging) {
+        throw new Error(`proof.yaml generate: ${error}; log failed: ${logging}`);
+      } finally {
+        capture.close();
+      }
     }
     throw new Error(`proof.yaml generate: ${error}${logSuffix(capture.finish('red'))}`);
   } finally {
