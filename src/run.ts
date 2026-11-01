@@ -1,5 +1,6 @@
 import { declarations, selectTasks } from './declarations';
 import { RefTree, resolveRef } from './git';
+import { Lanes } from './lanes';
 import { currentTree, decide, renderDecision } from './plan';
 import { Providers } from './providers';
 import { RunProcesses } from './run-process';
@@ -37,6 +38,7 @@ export async function run(args: string[]) {
     selected = snapshot ?? currentTree();
     return selected;
   };
+  const lanes = new Lanes(selected.lanes);
   const roster = selectTasks(selected.tasks, set);
   const requested = set === undefined ? args.slice(1) : [];
   for (const id of requested) if (!roster.has(id)) throw new Error(`undeclared task '${id}'`);
@@ -104,15 +106,17 @@ export async function run(args: string[]) {
     }
     const unfinished = new Set(ids);
     const runningNeeds = new Map<string, Set<string>>();
-    const slots: string[][] = [];
+    const summaries: string[][] = [];
     const pending = ids.map((id, index) => ({ index, id, lane: initial.tasks.get(id)?.lane }));
     const active = new Map<number, { lane?: string; done: Promise<void> }>();
     let fatal: { error: unknown } | undefined;
-    async function execute(index: number, id: string) {
+    async function execute(index: number, id: string, lane?: string) {
       const taskSummary: string[] = [];
-      slots[index] = taskSummary;
+      summaries[index] = taskSummary;
       try {
         await runTask(id, {
+          lanes,
+          lane,
           view: () => selected,
           refresh,
           skipped: (id) => skipped.push(id),
@@ -170,18 +174,20 @@ export async function run(args: string[]) {
           return (
             lane === undefined ||
             [...active.values()].filter((entry) => entry.lane === lane).length <
-              (initial.lanes.get(lane) as number)
+              lanes.capacity(lane)
           );
         });
         if (next < 0) break;
         const entry = pending.splice(next, 1)[0] as (typeof pending)[number];
-        const done = execute(entry.index, entry.id).finally(() => active.delete(entry.index));
+        const done = execute(entry.index, entry.id, entry.lane).finally(() =>
+          active.delete(entry.index),
+        );
         active.set(entry.index, { lane: entry.lane, done });
       }
       if (!active.size) break;
       await Promise.race([...active.values()].map((entry) => entry.done));
     }
-    if (jobs > 1) summary.push(...slots.flat());
+    if (jobs > 1) summary.push(...summaries.flat());
     if (fatal) throw fatal.error;
     await store.skip(initial.project, skipped);
     await providers.stopExcept(new Set());
