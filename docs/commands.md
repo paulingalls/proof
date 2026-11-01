@@ -171,6 +171,14 @@ contest a green on the first red and delete it on the second. A clean fresh gree
 proof, including for a contested key. Incomplete results and interrupts delete nothing. A task whose sandbox can't be built records
 `incomplete` and the rest still run, so a scheduled run finishes; the run exits 1 and names it.
 
+Ordinary runs inventory selected ignored files at startup and after each actual provider start,
+including failed starts. Tasks execute in sandboxes; provider starts execute in the checkout.
+A commit or declaration change during a run causes another inventory for the changed scope.
+Selected ignored files first appearing between inventories, including from a task, provider stop
+or background process, may be missed until the next inventory or run. Tracked and untracked
+status changes still receive live checks after executed tasks. One-shot commands such as
+`plan`, `lint` and `why` inventory ignored files afresh.
+
 A dirty tree still executes (a dirty declaration runs without recording) and records results, but says `no proof published` with a reason.
 A red over dirty selected inputs cannot delete proof of the committed bytes; unrelated dirt
 does not prevent deletion. Offline deletions apply locally and say `not shared`; an attempted

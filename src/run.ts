@@ -1,5 +1,6 @@
-import { declarations, selectTasks } from './declarations';
-import { RefTree, resolveRef } from './git';
+import { declarationPaths, declarations, selectTasks } from './declarations';
+import { ignoredPaths, RefTree, resolveRef } from './git';
+import { scope } from './key';
 import { currentTree, decide, renderDecision } from './plan';
 import { Providers } from './providers';
 import { RunProcesses } from './run-process';
@@ -32,7 +33,27 @@ export async function run(args: string[]) {
   const snapshot = captured
     ? { tree: captured, ...declarations(captured), dirty: [], declaration: undefined }
     : undefined;
-  const selected = snapshot ?? currentTree();
+  const inventories = new Map<string, string[]>();
+  const inventory = (tree: RefTree, document: ReturnType<typeof declarations>) => {
+    const identity = JSON.stringify([
+      tree.commit,
+      document.include,
+      [...document.tasks.values()].map((task) => task.inputs),
+    ]);
+    let paths = inventories.get(identity);
+    if (!paths) {
+      paths = ignoredPaths(
+        scope(document.tasks.values(), declarationPaths(document.include), tree),
+      );
+      inventories.set(identity, paths);
+    }
+    return paths;
+  };
+  let selected = snapshot ?? currentTree(inventory);
+  const refresh = () => {
+    selected = snapshot ?? currentTree(inventory);
+    return selected;
+  };
   const roster = selectTasks(selected.tasks, set);
   const requested = set === undefined ? args.slice(1) : [];
   for (const id of requested) if (!roster.has(id)) throw new Error(`undeclared task '${id}'`);
@@ -53,12 +74,16 @@ export async function run(args: string[]) {
         stopping
           ? undefined
           : {
-              project: (snapshot ?? currentTree()).project,
+              project: selected.project,
               kind: 'providers',
               task: name,
               live: jobs === 1,
             },
       );
+      if (!stopping) {
+        inventories.clear();
+        refresh();
+      }
       const problem = result.code === 0 && !result.signal ? environment?.accept() : undefined;
       const ready = result.code === 0 && !result.signal && !problem;
       const log =
@@ -72,12 +97,12 @@ export async function run(args: string[]) {
       failed = true;
       summary.push(message);
     },
-    () => (snapshot ?? currentTree()).tasks.values(),
+    () => selected.tasks.values(),
   );
   const providerMismatches = new Map<string, string>();
   try {
     const preview = new Map<string, string>();
-    const initial = snapshot ?? currentTree();
+    const initial = selected;
     for (const id of ids) {
       const task = initial.tasks.get(id);
       if (!task) throw new Error(`undeclared task '${id}'`);
@@ -106,7 +131,8 @@ export async function run(args: string[]) {
       slots[index] = taskSummary;
       try {
         await runTask(id, {
-          snapshot,
+          view: () => selected,
+          refresh,
           skipped: (id) => skipped.push(id),
           fresh,
           live: jobs === 1,
@@ -134,7 +160,7 @@ export async function run(args: string[]) {
         unfinished.delete(id);
         runningNeeds.delete(id);
         if (processes.aborted) return;
-        const view = snapshot ?? currentTree();
+        const view = selected;
         await providers.stopExcept(
           new Set(
             [...unfinished].flatMap((later) => [

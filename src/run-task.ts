@@ -1,9 +1,7 @@
 import { hostname } from 'node:os';
-import { declarationPaths } from './declarations';
-import { dirtyPaths, resolveRef } from './git';
-import { key, scope, selection } from './key';
+import { key, selection } from './key';
 import { logSuffix } from './logs';
-import { currentTree, decide, inspectTaskLinks, renderDecision, STAGED_SUFFIX } from './plan';
+import { type currentTree, decide, inspectTaskLinks, renderDecision, STAGED_SUFFIX } from './plan';
 import { providerMismatch } from './provider-inputs';
 import { BASE_ENV, type Providers } from './providers';
 import type { RunProcesses } from './run-process';
@@ -11,7 +9,8 @@ import { Sandbox } from './sandbox';
 import type { Store } from './store';
 
 type Context = {
-  snapshot?: ReturnType<typeof currentTree>;
+  view: () => ReturnType<typeof currentTree>;
+  refresh: () => ReturnType<typeof currentTree>;
   fresh: boolean;
   live: boolean;
   logFailed: () => void;
@@ -31,7 +30,8 @@ type Context = {
 export async function runTask(
   id: string,
   {
-    snapshot,
+    view: currentView,
+    refresh,
     fresh,
     live,
     logFailed,
@@ -49,7 +49,7 @@ export async function runTask(
     retain,
   }: Context,
 ) {
-  const baseline = snapshot ?? currentTree();
+  const baseline = currentView();
   let view = baseline;
   let task = view.tasks.get(id);
   if (!task) throw new Error(`undeclared task '${id}'`);
@@ -94,7 +94,7 @@ export async function runTask(
     }
   }
   if (started) {
-    view = snapshot ?? currentTree();
+    view = currentView();
     task = view.tasks.get(id);
     if (!task) throw new Error(`undeclared task '${id}'`);
     retain(task.needs ?? []);
@@ -162,14 +162,13 @@ export async function runTask(
       log = logSuffix(retained);
     }
     if (outcome !== 'green') fail();
+    const after = refresh();
     let unpublished = baseline.dirty.length ? `dirty path '${baseline.dirty[0]}'` : undefined;
     if (!staged && !unpublished) {
-      if (resolveRef('HEAD') !== baseline.tree.commit) unpublished = 'HEAD changed';
+      if (after.tree.commit !== baseline.tree.commit) unpublished = 'HEAD changed';
       else {
         const changed = sandbox?.changed();
-        const added = dirtyPaths(
-          scope(baseline.tasks.values(), declarationPaths(baseline.include), baseline.tree),
-        ).find((path) => !baseline.dirty.includes(path));
+        const added = after.dirty.find((path) => !baseline.dirty.includes(path));
         if (changed) unpublished = `selected path changed '${changed}'`;
         else if (added) unpublished = `new dirty path '${added}'`;
       }
