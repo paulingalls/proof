@@ -15,7 +15,7 @@ import { statePath } from './config';
 
 export type LogIdentity = {
   project: string;
-  kind: 'tasks' | 'providers';
+  kind: 'tasks' | 'providers' | 'generators';
   task: string;
   key?: string;
   live: boolean;
@@ -84,11 +84,16 @@ export class Capture {
     } catch (error) {
       this.error = String(error);
     } finally {
-      try {
-        closeSync(this.fd);
-      } catch (error) {
-        this.error = String(error);
-      }
+      this.close();
+    }
+  }
+
+  close() {
+    clearInterval(this.timer);
+    try {
+      closeSync(this.fd);
+    } catch (error) {
+      this.error = String(error);
     }
   }
 

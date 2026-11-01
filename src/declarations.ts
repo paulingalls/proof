@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
+import { type Generator, generate } from './generate';
 import { dirtyPaths, type RefTree } from './git';
 import { filePatterns, resolveUnkeyed } from './unkeyed';
 import { refuseDuplicateKeys } from './yaml-keys';
@@ -93,6 +94,20 @@ function patterns(value: unknown, context: string): Input[] {
   });
 }
 
+function linkList(value: unknown, label: string): string[] {
+  if (!Array.isArray(value)) throw new Error(`${label}: links must be a list`);
+  return [
+    ...new Set(
+      value.map((value) => {
+        const path = text(value, `${label} link '${String(value)}'`);
+        if (isAbsolute(path) || path.split('/').some((p) => ['', '.', '..', '.git'].includes(p)))
+          throw new Error(`${label}: unsafe link '${path}'`);
+        return path;
+      }),
+    ),
+  ].sort();
+}
+
 export function declarations(tree: RefTree, working = false) {
   const sets = new Map<string, Input[]>();
   const tasks = new Map<string, Task>();
@@ -101,9 +116,11 @@ export function declarations(tree: RefTree, working = false) {
   const unkeyed: unknown[] = [];
   function read(path: string, root: boolean) {
     const context = `ref '${tree.ref}' ${path}`;
+    return load(working ? readFileSync(path, 'utf8') : tree.read(path), context, root);
+  }
+  function load(source: string, context: string, root: boolean) {
     let parsed: unknown;
     try {
-      const source = working ? readFileSync(path, 'utf8') : tree.read(path);
       parsed = Bun.YAML.parse(source);
       refuseDuplicateKeys(source);
     } catch (error) {
@@ -114,6 +131,7 @@ export function declarations(tree: RefTree, working = false) {
       doc,
       root
         ? [
+            'generate',
             'version',
             'project',
             'inputs',
@@ -180,23 +198,7 @@ export function declarations(tree: RefTree, working = false) {
         throw new Error(`${label}: env name must not contain ':'`);
       if (env?.includes('PROOF_LANE_SLOT'))
         throw new Error(`${label}: PROOF_LANE_SLOT is reserved`);
-      let links: string[] | undefined;
-      if ('links' in task) {
-        if (!Array.isArray(task.links)) throw new Error(`${label}: links must be a list`);
-        links = [
-          ...new Set(
-            task.links.map((value) => {
-              const path = text(value, `${label} link '${String(value)}'`);
-              if (
-                isAbsolute(path) ||
-                path.split('/').some((p) => ['', '.', '..', '.git'].includes(p))
-              )
-                throw new Error(`${label}: unsafe link '${path}'`);
-              return path;
-            }),
-          ),
-        ].sort();
-      }
+      const links = 'links' in task ? linkList(task.links, label) : undefined;
       tasks.set(id, {
         run: text(task.run, `${label} run`),
         inputs: patterns(task.inputs, label),
@@ -264,6 +266,25 @@ export function declarations(tree: RefTree, working = false) {
       return expand(set, context, [...stack, name]);
     });
   }
+  let generator: Generator | undefined;
+  let generated: [string, string][] = [];
+  if ('generate' in root) {
+    const label = 'proof.yaml generate';
+    const value = mapping(root.generate, label);
+    fields(value, ['run', 'inputs', 'links'], label);
+    generator = {
+      run: text(value.run, `${label} run`),
+      inputs: expand(patterns(value.inputs, label), label),
+      links: 'links' in value ? linkList(value.links, label) : undefined,
+    };
+    generated = generate(
+      generator,
+      tree,
+      working ? dirtyPaths() : [],
+      text(root.project, 'project'),
+    );
+    for (const [name, source] of generated) load(source, `${label}: ${name}`, false);
+  }
   for (const [name, set] of sets) expand(set, contexts.get(name) as string, [name]);
   for (const [id, task] of tasks) {
     task.dimensions = requested.get(id)?.map((name) => {
@@ -299,6 +320,8 @@ export function declarations(tree: RefTree, working = false) {
   return {
     project: text(root.project, 'proof.yaml project'),
     tasks,
+    generate: generator,
+    generated,
     providers,
     dimensions,
     lanes,
