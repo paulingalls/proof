@@ -273,8 +273,9 @@ test('runtime lane overrides reject malformed values before starting even proven
     expect(result.code, value + result.out + result.err).toBe(2);
     expect(result.err).toContain('PROOF_LANES');
     expect(f.has('start-0')).toBe(false);
-    expect(empty.repo.cli(['run'], { ...empty.env, PROOF_LANES: value }).code).toBe(2);
   }
+  for (const value of ['ios=x', 'missing=1'])
+    expect(empty.repo.cli(['run'], { ...empty.env, PROOF_LANES: value }).code).toBe(2);
 });
 
 test('keys survive actual slot changes, declared limits and runtime overrides', async () => {
@@ -335,4 +336,43 @@ test('literal provider names cannot alias slot instance identities', () => {
   expect(f.repo.cli(['run'], { ...f.env, PROOF_LANE_SLOT: '99' }).code).toBe(0);
   expect(f.has('unlaned-stop')).toBe(true);
   expect(f.rows()[0]?.outcome).toBe('green');
+});
+
+test('staged startup of a later instance remembers unstaged bytes it restored', async () => {
+  const providers = {
+    stack: {
+      lane: 'ios',
+      start: `if test "$PROOF_LANE_SLOT" = 1; then cp input scratch/seen; git show :input > input; fi; touch scratch/up-$PROOF_LANE_SLOT`,
+    },
+  };
+  const tasks = {
+    a: { ...task(wait('release'), ['stack']), lane: 'ios' },
+    held: { ...task(wait('edited')), lane: 'ios' },
+    b: { ...task('true', ['stack']), lane: 'ios' },
+  };
+  const f = fixture(tasks, providers, {
+    'proof.yaml': JSON.stringify({
+      version: 1,
+      project: 'jobs',
+      tasks,
+      providers,
+      lanes: { ios: 2 },
+    }),
+  });
+  const running = spawn(f, '--staged', '--jobs', '2');
+  try {
+    await until(() => f.has('up-0'));
+    f.repo.write('input', 'unstaged');
+    f.mark('edited');
+    await until(() => f.has('seen'));
+    await until(() => f.rows().some((r) => r.task === 'b'));
+    f.mark('release');
+    const output = await finish(running);
+    expect(f.read('seen')).toBe('unstaged');
+    expect(output).toContain("green b; no proof published: provider can see unstaged 'input'");
+  } finally {
+    f.mark('release');
+    f.mark('edited');
+    await stop(running.child);
+  }
 });
