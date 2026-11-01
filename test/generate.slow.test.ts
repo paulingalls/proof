@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test';
-import { existsSync } from 'node:fs';
+import { chmodSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Repo } from './support/repo';
 
@@ -87,8 +87,59 @@ test('generated unkeyed and coverage declarations participate in lint and check'
   );
   const checked = r.cli(['check', '.git/cases.yaml'], env);
   expect(checked.code, checked.out + checked.err).toBe(0);
-  r.commit({ declarations: 'tasks: {}\n' });
+  r.commit({ declarations: 'tasks: {}\n', 'committed/base.yaml': 'tasks: {}\n' });
   const missing = r.cli(['lint'], env);
   expect(missing.code).toBe(1);
   expect(missing.out + missing.err).toContain('source');
+});
+
+test('cache uses whole delivered bytes, modes and names, and bounds retained entries', () => {
+  const env = fixture();
+  const marker = join(r.path, '.git/invocations');
+  const command = `echo ran >> '${marker}'; sh generator.sh`;
+  const declaration = root
+    .replace('run: sh generator.sh', `run: ${command}`)
+    .replace('[generator.sh, declarations]', '[generator.sh, declarations, package.json, extra/*]');
+  r.commit({ 'proof.yaml': declaration, 'package.json': '{"version":"1"}', 'extra/a': 'same' });
+  const count = () => readFileSync(marker, 'utf8').trim().split('\n').length;
+  rows(env);
+  rows(env);
+  expect(count()).toBe(1);
+  r.commit({ unrelated: 'unrelated' });
+  rows(env);
+  expect(count()).toBe(1);
+  const cache = join(env.PROOF_STATE_DIR, 'generated');
+  for (let i = 0; i < 35; i++) writeFileSync(join(cache, `stale-${i}.json`), '[]');
+  for (const change of ['version', 'mode', 'name', 'command', 'input']) {
+    if (change === 'version') r.write('package.json', '{"version":"2"}');
+    if (change === 'mode') chmodSync(join(r.path, 'extra/a'), 0o755);
+    if (change === 'name') r.git('mv', 'extra/a', 'extra/b');
+    if (change === 'command')
+      r.write('proof.yaml', declaration.replace('run: echo', 'run: true; echo'));
+    if (change === 'input') r.write('declarations', output.replaceAll('generated', 'changed'));
+    r.commit({});
+    rows(env);
+    rows(env);
+  }
+  expect(count()).toBe(6);
+  expect(readdirSync(cache).length).toBeLessThanOrEqual(32);
+});
+
+test('concurrent cold plans publish complete cache entries', async () => {
+  const env = fixture();
+  r.commit({
+    'generator.sh':
+      'cp declarations "$PROOF_DECLARATIONS/a.yaml"; sleep 0.1; echo "tasks: {}" > "$PROOF_DECLARATIONS/b.yaml"',
+  });
+  const plans = [r.spawnCli(['plan', '--json'], env), r.spawnCli(['plan', '--json'], env)];
+  const results = await Promise.all(
+    plans.map(async (p) => ({
+      code: await p.exited,
+      out: await new Response(p.stdout).text(),
+      err: await new Response(p.stderr).text(),
+    })),
+  );
+  for (const result of results) expect(result.code, result.err).toBe(0);
+  expect(JSON.parse(results[0]?.out ?? '')).toEqual(JSON.parse(results[1]?.out ?? ''));
+  expect(rows(env)).toEqual(JSON.parse(results[0]?.out ?? ''));
 });
