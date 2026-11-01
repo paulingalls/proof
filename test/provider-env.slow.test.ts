@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Provider, Task } from '../src/declarations';
-import { Postgres } from './support/postgres';
+import { output, Postgres, waitFor } from './support/postgres';
 import { Repo } from './support/repo';
 
 const pg = new Postgres();
@@ -144,3 +144,157 @@ test('different provider addresses share one proof across clones', async () => {
     expect(JSON.stringify(rows)).not.toContain(second);
   }
 });
+
+for (const kind of [
+  'bare',
+  'invalid',
+  'nul',
+  'blank',
+  'duplicate',
+  'PATH',
+  'HOME',
+  'TMPDIR',
+  'PROOF_PROVIDER_ENV',
+  'declared',
+  'missing',
+]) {
+  test(`rejects ${kind} exports without publishing values or executing dependents`, () => {
+    const f = fixture();
+    const value = f.address();
+    const tasks = {
+      first: { ...f.task('first'), run: f.mark('ran-dependent') },
+      later: { ...f.task('later'), env: kind === 'declared' ? ['URL'] : [] },
+      independent: { ...f.task('independent', []), run: f.mark('independent') },
+    };
+    const payload =
+      kind === 'bare'
+        ? value.replaceAll('-', '_')
+        : kind === 'invalid'
+          ? `${value}-=hidden`
+          : kind === 'nul'
+            ? `URL=${value}\0`
+            : kind === 'blank'
+              ? `URL=${value}\n\n`
+              : kind === 'duplicate'
+                ? `URL=${value}\nURL=${value}`
+                : `${kind === 'declared' || kind === 'missing' ? 'URL' : kind}=${value}`;
+    const write =
+      kind === 'missing'
+        ? 'rm "$PROOF_PROVIDER_ENV"'
+        : `${process.execPath} -e 'require("fs").writeFileSync(process.env.PROOF_PROVIDER_ENV, Buffer.from(process.env.PAYLOAD, "base64"))'`;
+    f.commit(tasks, {
+      stack: {
+        start: `${f.start}; if [ -n "$PROOF_PROVIDER_ENV" ]; then ${write}; fi`,
+        stop: f.mark('stop'),
+      },
+    });
+    const result = f.repo.cli(['run', '--jobs', '2', '--tasks', 'first', 'independent'], {
+      ...f.env,
+      PAYLOAD: Buffer.from(payload).toString('base64'),
+      URL: 'declared-caller',
+    });
+    expect(result.code).toBe(1);
+    expect(result.out).toContain("provider 'stack' start failed");
+    expect(result.out).toContain(
+      ['bare', 'invalid'].includes(kind)
+        ? 'line 1: invalid name'
+        : kind === 'missing'
+          ? 'cannot read environment channel'
+          : kind === 'blank'
+            ? 'line 2'
+            : kind === 'duplicate' || kind === 'nul' || kind === 'declared'
+              ? "'URL'"
+              : `'${kind}'`,
+    );
+    expect(readFileSync(join(f.control, 'events'), 'utf8')).not.toContain('ran-dependent');
+    expect(readFileSync(join(f.control, 'events'), 'utf8')).toContain('independent');
+    expect(readFileSync(join(f.control, 'events'), 'utf8')).toContain('stop');
+    expect(f.rows().find((r) => r.task === 'first')?.outcome).toBe('incomplete');
+    f.clean(result, kind === 'bare' ? payload : value);
+  });
+}
+
+test('disjoint providers may export the same name; a common dependent rejects even equal values', () => {
+  for (const common of [false, true]) {
+    const f = fixture();
+    const value = f.address();
+    const other = directory();
+    const otherValue = common ? value : `other_${crypto.randomUUID()}`;
+    writeFileSync(join(other, 'expected'), otherValue);
+    f.commit(
+      {
+        first: f.task('first'),
+        second: {
+          ...f.task('second', ['other']),
+          run: f.task('second').run.replace(f.control, other),
+        },
+        ...(common
+          ? { common: { ...f.task('common', ['stack', 'other']), run: f.mark('common') } }
+          : {}),
+      },
+      {
+        stack: { start: f.start, stop: f.mark('stop-stack') },
+        other: {
+          start: `CONTROL='${other}' ADDRESS="$OTHER_ADDRESS" ${f.start}`,
+          stop: f.mark('stop-other'),
+        },
+      },
+    );
+    const result = f.repo.cli(['run', '--jobs', '2'], { ...f.env, OTHER_ADDRESS: otherValue });
+    expect(result.code).toBe(common ? 1 : 0);
+    if (common) {
+      expect(result.out).toContain("'URL': conflicts with provider");
+      expect(f.rows().find((r) => r.task === 'common')?.outcome).toBe('incomplete');
+    } else {
+      expect(readFileSync(join(f.control, 'first'), 'utf8')).toBe(value);
+      expect(readFileSync(join(other, 'second'), 'utf8')).toBe(otherValue);
+    }
+    f.clean(result, value);
+  }
+});
+
+test('literal values and shell-shaped names are delivered without evaluation', () => {
+  const f = fixture();
+  const value = f.address(' spaces=$HOME="literal"\r');
+  f.commit(
+    {
+      gate: {
+        ...f.task('gate'),
+        run: `${process.execPath} -e 'if (process.env.__proto__ !== "ok" || process.env.EMPTY !== "") process.exit(1)' && ${f.task('gate').run}`,
+      },
+    },
+    {
+      stack: { start: `${f.start}; printf '__proto__=ok\nEMPTY=\n' >> "$PROOF_PROVIDER_ENV"` },
+    },
+  );
+  const result = f.cli('run');
+  expect(result.code).toBe(0);
+  f.clean(result, value);
+});
+
+for (const interrupted of [false, true]) {
+  test(`cleans private channel after ${interrupted ? 'SIGTERM' : 'nonzero start'}`, async () => {
+    const f = fixture();
+    const value = f.address();
+    f.commit(
+      { gate: f.task('gate') },
+      {
+        stack: {
+          start: `${f.start}; ${interrupted ? 'touch "$CONTROL/waiting"; exec sleep 30' : 'exit 1'}`,
+          stop: f.mark('stop'),
+        },
+      },
+    );
+    const child = f.repo.spawnCli(['run'], f.env);
+    const resultPromise = output(child);
+    if (interrupted) {
+      await waitFor(async () => existsSync(join(f.control, 'waiting')));
+      child.kill('SIGTERM');
+    }
+    const result = await resultPromise;
+    expect(result.code).toBe(interrupted ? 143 : 1);
+    expect(f.rows()[0]?.outcome).toBe('incomplete');
+    expect(readFileSync(join(f.control, 'events'), 'utf8')).toContain('stop');
+    f.clean(result, value);
+  });
+}
