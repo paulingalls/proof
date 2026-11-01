@@ -72,13 +72,21 @@ export function inspectLinks(
   if (!paths.length) return { trusted, escapes, modules };
   const trackedPaths = [...tracked];
   const repo = realpathSync('.');
-  for (const path of paths) {
-    try {
-      let root: string;
+  const roots = new Map(
+    paths.map((path) => {
       try {
-        root = realpathSync(path);
+        return [path, realpathSync(path)] as const;
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [path, undefined] as const;
+        throw new Error(`link '${path}': ${error}`);
+      }
+    }),
+  );
+  const inRoots = (target: string) =>
+    [...roots.values()].some((root) => root !== undefined && within(root, target));
+  for (const [path, root] of roots) {
+    try {
+      if (root === undefined) {
         trusted.push(path);
         continue;
       }
@@ -115,7 +123,7 @@ export function inspectLinks(
           if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
           throw error;
         }
-        if (within(repo, target) && !within(root, target)) {
+        if (within(repo, target) && !inRoots(target)) {
           const mapped = packageName ? names(file)?.get(packageName) : undefined;
           if (mapped !== undefined && target === resolve(repo, mapped)) {
             const entry = layout.entries.find((entry) => entry.path === file);
@@ -207,7 +215,7 @@ export function inspectLinks(
               if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
               throw error;
             }
-            if (within(repo, target) && !within(root, target))
+            if (within(repo, target) && !inRoots(target))
               escapes.push(`link escape '${file}' -> '${target}'`);
           }
         }
@@ -233,10 +241,15 @@ export class Sandbox {
       const file = snapshotOnly
         ? mode === undefined
           ? undefined
-          : this.committedFile(path, mode, tree)
+          : this.committedFile(path, mode, tree, paths)
         : dirty.includes(path) || mode === undefined
           ? workingFile(path)
-          : this.committedFile(path, mode, tree);
+          : this.committedFile(path, mode, tree, paths);
+      if (file && 'link' in file) {
+        mkdirSync(dirname(target), { recursive: true });
+        symlinkSync(file.link, target);
+        continue;
+      }
       this.files.set(path, file);
       if (!file) continue;
       mkdirSync(dirname(target), { recursive: true });
@@ -279,11 +292,23 @@ export class Sandbox {
     }
   }
 
-  private committedFile(path: string, mode: string, tree: RefTree): File {
+  private committedFile(
+    path: string,
+    mode: string,
+    tree: RefTree,
+    paths: Set<string>,
+  ): File | { link: string } {
+    if (mode === '120000') {
+      const link = tree.raw(path).toString();
+      const target = isAbsolute(link) ? link : join(dirname(path), link);
+      if (isAbsolute(link) || !paths.has(target))
+        throw new Error(
+          `selected path '${path}': symlink target '${target}' must be relative and selected`,
+        );
+      return { link };
+    }
     if (mode !== '100644' && mode !== '100755')
-      throw new Error(
-        `selected path '${path}': ${mode === '120000' ? 'symlink' : mode === '160000' ? 'gitlink' : mode}`,
-      );
+      throw new Error(`selected path '${path}': ${mode === '160000' ? 'gitlink' : mode}`);
     return { bytes: tree.raw(path), executable: mode === '100755' };
   }
 

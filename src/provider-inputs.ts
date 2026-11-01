@@ -8,6 +8,7 @@ export function providerMismatch(task: Task, tree: RefTree) {
   const paths = new Set([...selection(task, tree), ...selection(task, tree, dirty)]);
   for (const path of paths) {
     const mode = tree.modes.get(path);
+    if (mode === '120000' && !dirty.includes(path)) continue;
     const working = workingFile(path);
     if (mode === undefined) {
       if (working) return path;
