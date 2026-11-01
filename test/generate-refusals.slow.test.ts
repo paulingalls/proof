@@ -81,6 +81,11 @@ test('generator rejects missing inputs, undeclared reads and unsafe or invalid o
     ],
     [{ data: 'tasks: [\n' }, 'YAML', true],
     [{ data: 'tasks: {}\ntasks: {}\n' }, 'duplicate', true],
+    [
+      { data: output.replace('inputs: [source]', 'inputs: [source], needs: [absent]') },
+      'unknown provider',
+      false,
+    ],
     [{ data: `${output}unkeyed: [source]\n` }, 'representative', false],
     [{ 'generator.sh': 'true' }, 'no *.yaml output', true],
     [{ 'generator.sh': 'ln -s data "$PROOF_DECLARATIONS/tasks.yaml"' }, 'symlink', true],

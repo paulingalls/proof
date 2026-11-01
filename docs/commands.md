@@ -478,3 +478,46 @@ An unreachable shared store leaves the local deletion committed but exits 2 with
 manual veto or replay on reconnect. Another clone learns the deletion when planning online;
 a locally retained proof then runs offline with `contested: red at <commit>`, using the
 existing contest representation for the manual deletion. See [store operations](store.md).
+
+
+## Generated declarations
+
+Root `generate: {run, inputs, links?}` runs `run` through `sh -c` in the same input sandbox as a
+task. `$PROOF_DECLARATIONS` names a new empty directory outside that sandbox. All nested `*.yaml`
+files are read in sorted relative-path order as included declarations (`inputs`, `tasks`, `unkeyed`).
+Other regular files are ignored; output symlinks and zero YAML files fail. An intentionally empty
+output writes one YAML file containing `tasks: {}`. Generated and committed includes combine, with
+ordinary duplicate and representative checks. Generated text has the same task-key meaning as
+committed text; adding `generate` alone does not change task keys.
+
+`inputs` uses the task input language, including named sets from the root and committed includes,
+ordered patterns, imports-of, maestro and path projections. `{dotenv}` is refused, including through
+named sets. Every selected file is delivered and hashed whole, including filenames, executable mode
+and package versions; projections do not trim generator inputs. Missing or unmatched inputs fail.
+`links` has the same explicit checkout-path trust and escape checks as task links; installed tools
+can be linked. As with tasks, absolute paths remain accessible. The environment contains `PATH`,
+`HOME`, `TMPDIR` when present, plus `PROOF_DECLARATIONS`.
+
+All declaration readers use generation: `plan`, `run`, `why`, `lint`, `check`, `doctor`, `stats`,
+`record`, `flakes`, `invalidate`, and `status --ref`. These commands can execute repository code.
+`lint` and `run --staged` use the index's bytes even when unstaged edits differ. `status --ref` and
+`check` run the chosen ref's generator on its bytes in a temporary sandbox without checking it out.
+No ignored declaration output is read from the checkout.
+
+A dirty generator input is generated from working bytes and compared with committed output. Identical
+filenames and text preserve ordinary dirty-tree decisions. Differing output is a dirty declaration;
+`run` publishes no proof and `record red` contests nothing. Any dirty path still prevents publication,
+even when generated output is unchanged.
+
+Output is cached under `PROOF_STATE_DIR/generated` (or the normal state directory), keyed by the
+expanded generator declaration and whole input identity. Unchanged inputs reuse it across refs;
+changed inputs or commands generate again. Cache entries are published atomically; concurrent cold
+misses may both execute. The newest 32 entries are retained. Deleting the cache forces regeneration.
+Failed runs, missing inputs and unparsable output exit 2 naming `proof.yaml generate` and a retained
+local generator log under the state directory's `logs/<project>/generators/generate`. No cached or
+committed fallback is used. Merged declaration errors also exit 2 and name the generator; cache hits
+need no execution log. Logs never reach the stores.
+
+See the [runnable README example](../README.md). Run `proof check` whenever the generator changes.
+proof cannot detect a generator bug that omits an input; shell and Dockerfile tracing stay in the
+repository's generator.

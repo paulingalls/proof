@@ -45,7 +45,14 @@ test('historical refs use their own generator and leave checkout and index untou
   const env = fixture();
   const a = r.git('rev-parse', 'HEAD');
   const before = rows(env);
-  r.commit({ declarations: output.replaceAll('generated', 'later') });
+  expect(r.cli(['record', 'base', '--outcome', 'green'], env).code).toBe(0);
+  r.commit({
+    declarations: `${output}# new data\n`,
+    'generator.sh': `sed 's/generated/later/g' declarations > "$PROOF_DECLARATIONS/tasks.yaml"`,
+  });
+  const why = r.cli(['why', 'base'], env);
+  expect(why.code, why.err).toBe(0);
+  expect(why.out).toContain(a);
   r.write('generator.sh', 'exit 99');
   r.write('declarations', 'invalid');
   const state = r.git('status', '--porcelain');
@@ -64,7 +71,9 @@ test('historical refs use their own generator and leave checkout and index untou
 test('staged run and lint use index declarations despite unstaged generator edits', () => {
   const env = fixture();
   r.write('declarations', output.replaceAll('generated', 'staged'));
-  r.git('add', 'declarations');
+  r.write('proof.yaml', root.replace('run: sh generator.sh', 'run: sh generator.sh; true'));
+  r.git('add', 'declarations', 'proof.yaml');
+  r.write('proof.yaml', root.replace('run: sh generator.sh', 'run: exit 98'));
   r.write('generator.sh', 'exit 99');
   r.write('declarations', 'invalid');
   const result = r.cli(['run', '--staged'], env);

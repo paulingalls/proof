@@ -285,55 +285,57 @@ export function declarations(tree: RefTree, working = false) {
     );
     for (const [name, source] of generated) load(source, `${label}: ${name}`, false);
   }
-  for (const [name, set] of sets) expand(set, contexts.get(name) as string, [name]);
-  for (const [id, task] of tasks) {
-    task.dimensions = requested.get(id)?.map((name) => {
-      const command = dimensions.get(name);
-      if (command === undefined) throw new Error(`task '${id}': unknown dimension '${name}'`);
-      return [name, command];
-    });
-    if (task.lane !== undefined && task.lane !== 'solo' && !lanes.has(task.lane))
-      throw new Error(`task '${id}': unknown lane '${task.lane}'`);
-    task.inputs = expand(task.inputs, `ref '${tree.ref}' task '${id}'`);
-    for (const name of task.needs ?? []) {
-      const provider = providers.get(name);
-      if (!provider) throw new Error(`task '${id}': unknown provider '${name}'`);
-      if (provider.lane !== undefined && provider.lane !== task.lane)
-        throw new Error(`task '${id}': provider '${name}' requires lane '${provider.lane}'`);
-    }
-  }
   try {
+    for (const [name, set] of sets) expand(set, contexts.get(name) as string, [name]);
+    for (const [id, task] of tasks) {
+      task.dimensions = requested.get(id)?.map((name) => {
+        const command = dimensions.get(name);
+        if (command === undefined) throw new Error(`task '${id}': unknown dimension '${name}'`);
+        return [name, command];
+      });
+      if (task.lane !== undefined && task.lane !== 'solo' && !lanes.has(task.lane))
+        throw new Error(`task '${id}': unknown lane '${task.lane}'`);
+      task.inputs = expand(task.inputs, `ref '${tree.ref}' task '${id}'`);
+      for (const name of task.needs ?? []) {
+        const provider = providers.get(name);
+        if (!provider) throw new Error(`task '${id}': unknown provider '${name}'`);
+        if (provider.lane !== undefined && provider.lane !== task.lane)
+          throw new Error(`task '${id}': provider '${name}' requires lane '${provider.lane}'`);
+      }
+    }
     resolveUnkeyed(unkeyed, tasks, tree, working);
+    const context = `ref '${tree.ref}' proof.yaml`;
+    const coverage: string[] = [];
+    if ('coverage' in root) {
+      if (!Array.isArray(root.coverage)) throw new Error(`${context} coverage: expected a list`);
+      coverage.push(
+        ...root.coverage.map((pattern) => text(pattern, `${context} coverage pattern`)),
+      );
+    }
+    const exempt = Object.fromEntries(
+      Object.entries(mapping('exempt' in root ? root.exempt : {}, `${context} exempt`)).map(
+        ([path, reason]) => [
+          text(path, `${context} exempt path`),
+          text(reason, `${context} exempt '${path}' reason`),
+        ],
+      ),
+    );
+    return {
+      project: text(root.project, 'proof.yaml project'),
+      tasks,
+      generate: generator,
+      generated,
+      providers,
+      dimensions,
+      lanes,
+      coverage,
+      exempt,
+      include: 'include' in root ? text(root.include, 'proof.yaml include') : undefined,
+    };
   } catch (error) {
     if (generator) throw new Error(`proof.yaml generate: ${error}`);
     throw error;
   }
-  const context = `ref '${tree.ref}' proof.yaml`;
-  const coverage: string[] = [];
-  if ('coverage' in root) {
-    if (!Array.isArray(root.coverage)) throw new Error(`${context} coverage: expected a list`);
-    coverage.push(...root.coverage.map((pattern) => text(pattern, `${context} coverage pattern`)));
-  }
-  const exempt = Object.fromEntries(
-    Object.entries(mapping('exempt' in root ? root.exempt : {}, `${context} exempt`)).map(
-      ([path, reason]) => [
-        text(path, `${context} exempt path`),
-        text(reason, `${context} exempt '${path}' reason`),
-      ],
-    ),
-  );
-  return {
-    project: text(root.project, 'proof.yaml project'),
-    tasks,
-    generate: generator,
-    generated,
-    providers,
-    dimensions,
-    lanes,
-    coverage,
-    exempt,
-    include: 'include' in root ? text(root.include, 'proof.yaml include') : undefined,
-  };
 }
 
 export function dirtyDeclaration(dirty: string[], include: string | undefined) {

@@ -52,6 +52,7 @@ proof.yaml root fields:
   version: 1 (required); project: nonempty project name (required).
   inputs: map of named input lists; tasks: map of task declarations.
   include: glob of declaration files (inputs, tasks, unkeyed only).
+  generate: {run, inputs, links?}; runs repo code in a sandbox to produce declaration YAML.
   coverage: list of globs requiring ownership; exempt: map of exact paths to reasons.
   providers: map of provider declarations; lanes: map of names to positive limits.
   dimensions: map of names to commands whose output enters keys and is stored; must not print secrets.
@@ -86,6 +87,7 @@ Configuration environment:
 Supplied environment (not configuration switches):
   PROOF_LANE_SLOT: zero-based slot for laned tasks and provider start/stop.
   PROOF_PROVIDER_ENV: start-only path to the provider environment export file.
+  PROOF_DECLARATIONS: generator-only empty output directory for *.yaml declarations.
 
 Exit codes:
   0: successful operation/help; plan may report RUN and still exit 0.
