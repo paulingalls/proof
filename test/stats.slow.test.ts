@@ -176,6 +176,10 @@ test('v0.14.1 stores remain schema 2 and both real clients preserve proof and sk
   expect(await sql`SELECT tablename FROM pg_tables WHERE tablename = 'dimension_values'`).toEqual(
     [],
   );
+  using legacy = new Database(join(env.PROOF_STATE_DIR, 'proof.db'));
+  expect(
+    legacy.query("SELECT name FROM sqlite_master WHERE name = 'dimension_values'").all(),
+  ).toEqual([]);
   const before = await sql`SELECT key, env_hashes FROM proofs`;
   expect(cli('record', 'a', '--outcome', 'green', '--seconds', '20').code).toBe(0);
   expect(await sql`SELECT key, env_hashes FROM proofs`).toEqual(before);
@@ -192,6 +196,8 @@ test('v0.14.1 stores remain schema 2 and both real clients preserve proof and sk
   for (const query of [
     'SELECT version FROM schema_version',
     'SELECT task, count FROM skips',
+    'SELECT key, env_hashes FROM proofs',
+    'SELECT name, value FROM dimension_values ORDER BY name',
     'SELECT outcome, seconds FROM results ORDER BY id',
   ])
     expect(db.query(query).all()).toEqual(await sql.unsafe(query));

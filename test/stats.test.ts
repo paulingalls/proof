@@ -154,6 +154,11 @@ test('calendar windows, roster scope and current RUN estimate use exactly the se
   expect(stats('--since', '2d', '--set', 'push').out.trim().split('\n').at(-1)).toBe(
     'saved 1m of 2m in 2d (50%); previous 2d: 25%; unpriced skips: 2 current, 4 previous',
   );
+  const report = JSON.parse(stats('--json', '--since', '2d', '--set', 'push').out);
+  expect(report.saved).toEqual({
+    current: { seconds: 60, totalSeconds: 120, percent: 50, unpricedSkips: 2 },
+    previous: { seconds: 120, totalSeconds: 480, percent: 25, unpricedSkips: 4 },
+  });
   history.exec("DELETE FROM skips; DELETE FROM results WHERE task != 'proven'");
   expect(stats('--since', '2d').out.trim().split('\n').at(-1)).toBe(
     'saved 0m of 0m in 2d (unavailable); previous 2d: unavailable',
@@ -163,6 +168,14 @@ test('calendar windows, roster scope and current RUN estimate use exactly the se
   expect(stats('--since', '2d').out.trim().split('\n').at(-1)).toBe(
     'saved 0m of 0m in 2d (unavailable); previous 2d: unavailable',
   );
+  const zero = JSON.parse(stats('--json', '--since', '2d').out);
+  expect(zero.tasks[0]).toEqual({ task: 'a', median: 0, runs: 1 });
+  expect(zero.saved.current).toEqual({
+    seconds: 0,
+    totalSeconds: 0,
+    percent: null,
+    unpricedSkips: 0,
+  });
   result('a', 'red', 60, boundary(-3));
   expect(stats('--since', '2d').out.trim().split('\n').at(-1)).toBe(
     'saved 0m of 0m in 2d (unavailable); previous 2d: 0%',
@@ -225,7 +238,7 @@ test('dimension splits reconcile window runs and JSON shares text figures', () =
     {
       a: { ...task(), dimensions: ['platform'], sets: ['push'] } as unknown as Task,
       b: { ...task(), sets: ['push'] },
-      excluded: task(),
+      excluded: { ...task(), dimensions: ['arch'] } as unknown as Task,
     },
     { platform: 'printf ios', arch: 'printf arm64' },
   );
@@ -302,5 +315,5 @@ test('dimension splits reconcile window runs and JSON shares text figures', () =
         },
       });
     }
-  expect(cli('stats', '--by', 'arch').code).toBe(2);
+  expect(cli('stats', '--by', 'arch', '--set', 'push').code).toBe(2);
 });
