@@ -2,21 +2,30 @@ import { selectTasks } from './declarations';
 import { currentTree, decide } from './plan';
 import { localDay, Store } from './store';
 
-export const statsUsage = 'usage: proof stats [--set <name>] [--since Nd]';
+export const statsUsage =
+  'usage: proof stats [--set <name>] [--since Nd] [--by <dimension>] [--json]';
 
 const format = (value: number) => String(Number(value.toFixed(2)));
 
 export async function stats(args: string[]) {
   let set: string | undefined;
   let days: number | undefined;
-  for (let i = 0; i < args.length; i += 2) {
-    const value = args[i + 1];
+  let by: string | undefined;
+  let json = false;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--json' && !json) {
+      json = true;
+      continue;
+    }
+    const flag = args[i];
+    const value = args[++i];
     if (!value || value.startsWith('-')) throw new Error(statsUsage);
-    if (args[i] === '--set' && set === undefined) set = value;
-    else if (args[i] === '--since' && days === undefined && /^[1-9]\d*d$/.test(value)) {
+    if (flag === '--set' && set === undefined) set = value;
+    else if (flag === '--since' && days === undefined && /^[1-9]\d*d$/.test(value)) {
       days = Number(value.slice(0, -1));
       if (!Number.isSafeInteger(days)) throw new Error(statsUsage);
-    } else throw new Error(statsUsage);
+    } else if (flag === '--by' && by === undefined) by = value;
+    else throw new Error(statsUsage);
   }
   days ??= 30;
   const now = new Date();
@@ -28,6 +37,8 @@ export async function stats(args: string[]) {
   if ([start, end, previous].some((date) => !Number.isFinite(+date))) throw new Error(statsUsage);
   const view = currentTree();
   const tasks = selectTasks(view.tasks, set);
+  if (by && ![...tasks.values()].some((task) => task.dimensions?.some(([name]) => name === by)))
+    throw new Error(statsUsage);
   const store = await Store.open(view.project);
   try {
     const running: string[] = [];
@@ -43,29 +54,56 @@ export async function stats(args: string[]) {
       );
       if (decision.state === 'RUN') running.push(id);
     }
-    const history = await store.history(view.project, localDay(previous), localDay(end));
+    const history = await store.history(view.project, localDay(previous), localDay(end), by);
     const results = history.results.filter((row) => tasks.has(row.task));
     const prices = new Map<string, number>();
     const lines: string[] = [];
+    const reports = [];
+    const inWindow = (row: (typeof results)[number]) =>
+      +new Date(row.finished_at) >= +start && +new Date(row.finished_at) < +end;
+    function median(rows: typeof results) {
+      const samples = rows
+        .filter((r) => r.outcome === 'green' && r.seconds !== null)
+        .map((r) => r.seconds as number)
+        .sort((a, b) => a - b);
+      return samples.length
+        ? ((samples[Math.floor(samples.length / 2)] as number) +
+            (samples[Math.floor((samples.length - 1) / 2)] as number)) /
+            2
+        : null;
+    }
+    const timing = (value: number | null) => (value === null ? 'unavailable' : `${format(value)}s`);
     for (const id of tasks.keys()) {
       const rows = results.filter((row) => row.task === id);
-      const samples = rows
-        .filter((row) => row.outcome === 'green' && row.seconds !== null)
-        .map((row) => row.seconds as number)
-        .sort((a, b) => a - b);
-      const middle = Math.floor(samples.length / 2);
-      const price = samples.length
-        ? ((samples[middle] as number) +
-            (samples[Math.floor((samples.length - 1) / 2)] as number)) /
-          2
-        : undefined;
-      if (price !== undefined) prices.set(id, price);
-      const count = rows.filter(
-        (row) => +new Date(row.finished_at) >= +start && +new Date(row.finished_at) < +end,
-      ).length;
-      lines.push(
-        `${id}: median ${price === undefined ? 'unavailable' : `${format(price)}s`}; ${count} runs in ${days}d`,
-      );
+      const price = median(rows);
+      if (price !== null) prices.set(id, price);
+      const count = rows.filter(inWindow).length;
+      const report: {
+        task: string;
+        median: number | null;
+        runs: number;
+        split?: {
+          dimension: string;
+          values: { value: string | null; median: number | null; runs: number }[];
+        };
+      } = { task: id, median: price, runs: count };
+      reports.push(report);
+      lines.push(`${id}: median ${timing(price)}; ${count} runs in ${days}d`);
+      if (by && tasks.get(id)?.dimensions?.some(([name]) => name === by)) {
+        const groups = new Map<string | null, typeof rows>();
+        for (const row of rows.filter(inWindow)) {
+          const value = row.dimension_value;
+          groups.set(value, [...(groups.get(value) ?? []), row]);
+        }
+        const values = [...groups]
+          .sort(([a], [b]) => (a === b ? 0 : a === null ? 1 : b === null ? -1 : a < b ? -1 : 1))
+          .map(([value, rows]) => ({ value, median: median(rows), runs: rows.length }));
+        report.split = { dimension: by, values };
+        for (const value of values)
+          lines.push(
+            `  ${by}=${value.value === null ? '(no recorded value)' : JSON.stringify(value.value)}: median ${timing(value.median)}; ${value.runs} runs in ${days}d`,
+          );
+      }
     }
     const unpriced = running.filter((id) => !prices.has(id));
     const estimate = running.reduce((sum, id) => sum + (prices.get(id) ?? 0), 0);
@@ -87,18 +125,29 @@ export async function stats(args: string[]) {
         .reduce((sum, row) => sum + (row.seconds ?? 0), 0);
       const total = saved + actual;
       return {
-        saved,
-        total,
-        unpriced,
-        percent: total === 0 ? 'unavailable' : `${format((100 * saved) / total)}%`,
+        seconds: saved,
+        totalSeconds: total,
+        unpricedSkips: unpriced,
+        percent: total === 0 ? null : (100 * saved) / total,
       };
     }
     const current = window(start, end);
     const prior = window(previous, start);
+    const percentage = (value: number | null) =>
+      value === null ? 'unavailable' : `${format(value)}%`;
     lines.push(
-      `saved ${format(current.saved / 60)}m of ${format(current.total / 60)}m in ${days}d (${current.percent}); previous ${days}d: ${prior.percent}${current.unpriced || prior.unpriced ? `; unpriced skips: ${current.unpriced} current, ${prior.unpriced} previous` : ''}`,
+      `saved ${format(current.seconds / 60)}m of ${format(current.totalSeconds / 60)}m in ${days}d (${percentage(current.percent)}); previous ${days}d: ${percentage(prior.percent)}${current.unpricedSkips || prior.unpricedSkips ? `; unpriced skips: ${current.unpricedSkips} current, ${prior.unpricedSkips} previous` : ''}`,
     );
-    console.log(lines.join('\n'));
+    console.log(
+      json
+        ? JSON.stringify({
+            days,
+            tasks: reports,
+            estimate: { seconds: estimate, runs: running.length, unpriced },
+            saved: { current, previous: prior },
+          })
+        : lines.join('\n'),
+    );
   } catch (error) {
     try {
       await store.close();

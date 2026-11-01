@@ -30,8 +30,14 @@ async function setup() {
       'proof.yaml': JSON.stringify({
         version: 1,
         project: 'stats',
+        dimensions: { platform: 'printf ios', arch: 'printf arm64' },
         tasks: {
-          a: { run: 'exit 0', inputs: ['input'] },
+          a: {
+            run: 'exit 0',
+            inputs: ['input'],
+            dimensions: ['platform', 'arch'],
+            env: ['STATS_SECRET'],
+          },
         },
       }),
       input: 'input',
@@ -39,7 +45,11 @@ async function setup() {
   );
   repos.push(repo);
   const { PROOF_STORE, sql } = await postgres.database();
-  const env = { PROOF_STORE, PROOF_STATE_DIR: directory() };
+  const env = {
+    PROOF_STORE,
+    PROOF_STATE_DIR: directory(),
+    STATS_SECRET: 'stats-private-sentinel-394827',
+  };
   return { repo, sql, env, cli: (...args: string[]) => repo.cli(args, env) };
 }
 
@@ -51,6 +61,25 @@ test('shared skips report once across clones and offline history stays local', a
   expect(db.query('SELECT project, task, day, count FROM skips').all()).toEqual(
     await sql`SELECT project, task, day, count FROM skips`,
   );
+  const query = `SELECT r.outcome, d.name, d.value FROM results r
+    JOIN dimension_values d ON d.result_id = r.id ORDER BY r.id, d.name`;
+  expect(db.query(query).all()).toEqual(await sql.unsafe(query));
+  expect(db.query(query).all()).toEqual([
+    { outcome: 'green', name: 'arch', value: 'arm64' },
+    { outcome: 'green', name: 'platform', value: 'ios' },
+  ]);
+  for (const { name } of db
+    .query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE type = 'table'")
+    .all())
+    expect(JSON.stringify(db.query(`SELECT * FROM "${name}"`).all())).not.toContain(
+      env.STATS_SECRET,
+    );
+  for (const {
+    tablename,
+  } of await sql`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`)
+    expect(JSON.stringify(await sql.unsafe(`SELECT * FROM "${tablename}"`))).not.toContain(
+      env.STATS_SECRET,
+    );
   const clone = new Repo(repo);
   repos.push(clone);
   const shared = clone.cli(['stats'], { ...env, PROOF_STATE_DIR: directory() });
@@ -59,12 +88,21 @@ test('shared skips report once across clones and offline history stays local', a
     err: '',
     out: 'a: median 20s; 1 runs in 30d\nestimated 0m for 0 RUN tasks\nsaved 1m of 1.33m in 30d (75%); previous 30d: unavailable\n',
   });
+  const report = (r: Repo, state: string) =>
+    r.cli(['stats', '--by', 'platform', '--json'], { ...env, PROOF_STATE_DIR: state });
+  const online = JSON.parse(report(clone, directory()).out);
+  expect(online.tasks[0].split.values).toEqual([{ value: 'ios', median: 20, runs: 1 }]);
   postgres.stop();
   try {
     expect(cli('record', 'a', '--outcome', 'green', '--seconds', '100').code).toBe(0);
     const run = cli('run');
     expect(run.code).toBe(0);
     expect(run.err).toContain('store unreachable');
+    const split = report(repo, env.PROOF_STATE_DIR);
+    expect(split.err).toContain('store unreachable');
+    expect(JSON.parse(split.out).tasks[0].split.values).toEqual([
+      { value: 'ios', median: 60, runs: 2 },
+    ]);
     const offline = cli('stats');
     expect(offline.code).toBe(0);
     expect(offline.err).toContain("using this machine's own proofs");
@@ -75,6 +113,7 @@ test('shared skips report once across clones and offline history stays local', a
     await postgres.restart();
   }
   expect(cli('stats')).toEqual(shared);
+  expect(JSON.parse(report(repo, env.PROOF_STATE_DIR).out)).toEqual(online);
   expect(await sql`SELECT count FROM skips`).toEqual([{ count: 3 }]);
 }, 30_000);
 
@@ -121,7 +160,7 @@ test('a lost remote skip write keeps the local increment and task exit without r
   expect(await sql`SELECT * FROM skips`).toEqual([]);
 }, 30_000);
 
-test('v0.10.0 stores remain schema 2 and both real clients preserve proof and skips', async () => {
+test('v0.14.1 stores remain schema 2 and both real clients preserve proof and skips', async () => {
   const { repo, sql, env, cli } = await setup();
   const oldCli = new URL('../node_modules/proof-last/src/cli.ts', import.meta.url).pathname;
   const old = (...args: string[]) => {
@@ -132,13 +171,23 @@ test('v0.10.0 stores remain schema 2 and both real clients preserve proof and sk
     expect(result.exitCode).toBe(0);
     return result.stdout.toString();
   };
-  expect(old('--version').trim()).toBe('0.10.0');
+  expect(old('--version').trim()).toBe('0.14.1');
   old('record', 'a', '--outcome', 'green', '--seconds', '20');
+  expect(await sql`SELECT tablename FROM pg_tables WHERE tablename = 'dimension_values'`).toEqual(
+    [],
+  );
+  const before = await sql`SELECT key, env_hashes FROM proofs`;
+  expect(cli('record', 'a', '--outcome', 'green', '--seconds', '20').code).toBe(0);
+  expect(await sql`SELECT key, env_hashes FROM proofs`).toEqual(before);
+  expect(await sql`SELECT name, value FROM dimension_values ORDER BY name`).toEqual([
+    { name: 'arch', value: 'arm64' },
+    { name: 'platform', value: 'ios' },
+  ]);
   expect(cli('run').out).toContain('PROVEN a');
-  expect(cli('stats').out).toContain('saved 0.33m of 0.67m');
+  expect(cli('stats').out).toContain('saved 0.33m of 1m');
   expect(old('plan')).toContain('PROVEN a');
   old('record', 'a', '--outcome', 'green', '--seconds', '40');
-  expect(cli('stats').out).toContain('a: median 30s; 2 runs');
+  expect(cli('stats').out).toContain('a: median 20s; 3 runs');
   using db = new Database(join(env.PROOF_STATE_DIR, 'proof.db'));
   for (const query of [
     'SELECT version FROM schema_version',
@@ -146,6 +195,10 @@ test('v0.10.0 stores remain schema 2 and both real clients preserve proof and sk
     'SELECT outcome, seconds FROM results ORDER BY id',
   ])
     expect(db.query(query).all()).toEqual(await sql.unsafe(query));
+  expect(JSON.parse(cli('stats', '--by', 'platform', '--json').out).tasks[0].split.values).toEqual([
+    { value: 'ios', median: 20, runs: 1 },
+    { value: null, median: 30, runs: 2 },
+  ]);
   expect(await sql`SELECT version FROM schema_version`).toEqual([{ version: 2 }]);
   expect(await sql`SELECT task, count FROM skips`).toEqual([{ task: 'a', count: 1 }]);
 }, 30_000);

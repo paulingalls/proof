@@ -28,7 +28,7 @@ const usages: Record<string, string> = {
   doctor: 'usage: proof doctor',
   status: 'usage: proof status --ref <ref> [--set <name>] [--json]',
   why: 'usage: proof why <task>',
-  stats: 'usage: proof stats [--set <name>] [--since Nd]',
+  stats: 'usage: proof stats [--set <name>] [--since Nd] [--by <dimension>] [--json]',
   flakes: 'usage: proof flakes [--since Nd]',
   invalidate: 'usage: proof invalidate --task <t> [--key k | --all]',
   help: 'usage: proof help [<command>]',

@@ -8,7 +8,7 @@
         "@biomejs/biome": "2.4.15",
         "@types/bun": "1.4.4",
         "lefthook": "2.2.2",
-        "proof-last": "git+https://github.com/paulingalls/proof.git#v0.10.0",
+        "proof-last": "git+https://github.com/paulingalls/proof.git#v0.14.1",
         "typescript": "^5.7.0",
       },
     },
@@ -62,7 +62,7 @@
 
     "lefthook-windows-x64": ["lefthook-windows-x64@2.2.2", "", { "os": "win32", "cpu": "x64" }, "sha512-9Ck4zancQilBfXT3ZeRipm7Lcq4RQfxyMpy8SAVINw0t/BrbjsT25V46ZuziERcwdajnE4myfMzC33GoCBwr7g=="],
 
-    "proof-last": ["@pi-innovations/proof@github:paulingalls/proof#679f738", { "hasInstallScript": true, "bin": { "proof": "src/cli.ts" } }, "paulingalls-proof-679f738", "sha512-3dNiAbVF4oPYnFbPNAJfAnyMJRpiVP/Ss5Dh5jkFfd4I4yH90zEILp5A1sVdcDUMiwfzooa92wuE558qRvPA5Q=="],
+    "proof-last": ["@pi-innovations/proof@github:paulingalls/proof#d48e0d0", { "hasInstallScript": true, "bin": { "proof": "src/cli.ts" } }, "paulingalls-proof-d48e0d0", "sha512-icPgOUmMx29wQLpqhIrpJa7/r0yNgKaYXtYnhjYyAc4Dmgdjx6XKX4cfRsyMBq3HnUiWOawrNJrWB05S9PfSgg=="],
 
     "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 

@@ -31,6 +31,7 @@ type HistoryResult = {
   outcome: Outcome;
   seconds: number | null;
   finished_at: string;
+  dimension_value: string | null;
 };
 type Skip = { task: string; day: string; count: number };
 
@@ -435,10 +436,13 @@ export class Store {
     return read(this.local.query);
   }
 
-  async history(project: string, start: string, end: string) {
+  async history(project: string, start: string, end: string, dimension?: string) {
     const read = async (query: Query) => ({
       results: await query<HistoryResult>(
-        `SELECT task, outcome, seconds, finished_at FROM results WHERE project = ? AND outcome <> 'manual'`,
+        `SELECT r.task, r.outcome, r.seconds, r.finished_at, d.value AS dimension_value
+        FROM results r LEFT JOIN dimension_values d ON d.result_id = r.id AND d.name = ?
+        WHERE r.project = ? AND r.outcome <> 'manual'`,
+        dimension ?? null,
         project,
       ),
       skips: await query<Skip>(

@@ -24,7 +24,10 @@ const commands: Record<string, [string, string]> = {
   record: [recordUsage, 'Record an externally obtained task result.'],
   invalidate: [invalidateUsage, 'Delete proofs with a manual audit record.'],
   flakes: [flakesUsage, 'Report tasks ranked by contradictions.'],
-  stats: [statsUsage, 'Report timings, the current RUN estimate and time saved.'],
+  stats: [
+    statsUsage,
+    'Report timings, optional dimension splits, the RUN estimate and time saved; supports JSON.',
+  ],
   why: [whyUsage, 'Explain current key parts and changes since the newest proof.'],
   help: [helpUsage, 'Show general help or help for one command.'],
 };
@@ -51,7 +54,7 @@ proof.yaml root fields:
   include: glob of declaration files (inputs, tasks, unkeyed only).
   coverage: list of globs requiring ownership; exempt: map of exact paths to reasons.
   providers: map of provider declarations; lanes: map of names to positive limits.
-  dimensions: map of names to commands whose output enters keys.
+  dimensions: map of names to commands whose output enters keys and is stored; must not print secrets.
   unkeyed: ordered file patterns excluding shared files from nonrepresentative keys.
 
 Task fields:

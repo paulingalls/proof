@@ -175,6 +175,11 @@ test('invalid stats arguments fail with usage; unknown set shares plan diagnosti
     ['--since', '0d'],
     ['--since', 'x'],
     ['--unknown'],
+    ['--by'],
+    ['--by', 'missing'],
+    ['--where', 'x'],
+    ['--by', 'platform', '--by', 'platform'],
+    ['--json', '--json'],
     ['--since'],
     ['--set'],
     ['--since', '1d', '--since', '2d'],
@@ -184,7 +189,9 @@ test('invalid stats arguments fail with usage; unknown set shares plan diagnosti
   ]) {
     const result = cli('stats', ...args);
     expect(result.code).toBe(2);
-    expect(result.err).toBe('proof: usage: proof stats [--set <name>] [--since Nd]\n');
+    expect(result.err).toBe(
+      'proof: usage: proof stats [--set <name>] [--since Nd] [--by <dimension>] [--json]\n',
+    );
     expect(result.out).toBe('');
   }
   expect(cli('stats', '--set', 'missing')).toEqual(cli('plan', '--set', 'missing'));
@@ -211,4 +218,89 @@ test('every recorded outcome retains resolved dimensions', () => {
       { outcome, name: 'platform', value: 'ios' },
     ]),
   );
+});
+
+test('dimension splits reconcile window runs and JSON shares text figures', () => {
+  const { cli, db } = fixture(
+    {
+      a: { ...task(), dimensions: ['platform'], sets: ['push'] } as unknown as Task,
+      b: { ...task(), sets: ['push'] },
+      excluded: task(),
+    },
+    { platform: 'printf ios', arch: 'printf arm64' },
+  );
+  expect(cli('plan').code).toBe(0);
+  using history = db();
+  const samples = [
+    ['ios', 'green', 10],
+    ['ios', 'green', 30],
+    ['ios', 'red', 600],
+    ['ios', 'green', null],
+    ['ios', 'incomplete', null],
+    ['android', 'green', 50],
+    ['android', 'red', 900],
+    [null, 'green', 70],
+    [null, 'red', 800],
+    ['red-only', 'red', 0],
+  ] as const;
+  for (const [value, outcome, seconds] of [...samples, ['ios', 'green', 100] as const]) {
+    const at = seconds === 100 ? '2000-01-01T00:00:00.000Z' : new Date().toISOString();
+    const inserted = history
+      .query(`INSERT INTO results
+      (project, task, key, outcome, seconds, host, "commit", dirty, finished_at)
+      VALUES ('stats', 'a', 'seed', ?, ?, 'host', 'commit', 1, ?)`)
+      .run(outcome, seconds, at);
+    if (value !== null) {
+      history
+        .query('INSERT INTO dimension_values VALUES (?, ?, ?)')
+        .run(inserted.lastInsertRowid, 'platform', value);
+      history
+        .query('INSERT INTO dimension_values VALUES (?, ?, ?)')
+        .run(inserted.lastInsertRowid, 'arch', 'arm64');
+    }
+  }
+  const split = {
+    dimension: 'platform',
+    values: [
+      { value: 'android', median: 50, runs: 2 },
+      { value: 'ios', median: 20, runs: 5 },
+      { value: 'red-only', median: null, runs: 1 },
+      { value: null, median: 70, runs: 2 },
+    ],
+  };
+  const text = cli('stats', '--since', '2d', '--by', 'platform', '--set', 'push');
+  expect(text.code).toBe(0);
+  expect(text.out).toBe(
+    'a: median 50s; 10 runs in 2d\n' +
+      '  platform="android": median 50s; 2 runs in 2d\n' +
+      '  platform="ios": median 20s; 5 runs in 2d\n' +
+      '  platform="red-only": median unavailable; 1 runs in 2d\n' +
+      '  platform=(no recorded value): median 70s; 2 runs in 2d\n' +
+      'b: median unavailable; 0 runs in 2d\nestimated 0.83m for 2 RUN tasks; unpriced 1: b\n' +
+      'saved 0m of 41m in 2d (0%); previous 2d: unavailable\n',
+  );
+  for (const by of [[], ['--by', 'platform']])
+    for (const set of [[], ['--set', 'push']]) {
+      const result = cli('stats', '--json', ...by, '--since', '2d', ...set);
+      expect(result.code).toBe(0);
+      const report = JSON.parse(result.out);
+      expect(report).toEqual({
+        days: 2,
+        tasks: [
+          { task: 'a', median: 50, runs: 10, ...(by.length ? { split } : {}) },
+          { task: 'b', median: null, runs: 0 },
+          ...(set.length ? [] : [{ task: 'excluded', median: null, runs: 0 }]),
+        ],
+        estimate: {
+          seconds: 50,
+          runs: set.length ? 2 : 3,
+          unpriced: set.length ? ['b'] : ['b', 'excluded'],
+        },
+        saved: {
+          current: { seconds: 0, totalSeconds: 2460, percent: 0, unpricedSkips: 0 },
+          previous: { seconds: 0, totalSeconds: 0, percent: null, unpricedSkips: 0 },
+        },
+      });
+    }
+  expect(cli('stats', '--by', 'arch').code).toBe(2);
 });
