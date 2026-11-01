@@ -191,7 +191,6 @@ test('invalid stats arguments fail with usage; unknown set shares plan diagnosti
     ['--by'],
     ['--by', 'missing'],
     ['--where', 'x'],
-    ['--by', 'platform', '--by', 'platform'],
     ['--json', '--json'],
     ['--since'],
     ['--set'],
@@ -316,4 +315,5 @@ test('dimension splits reconcile window runs and JSON shares text figures', () =
       });
     }
   expect(cli('stats', '--by', 'arch', '--set', 'push').code).toBe(2);
+  expect(cli('stats', '--by', 'platform', '--by', 'platform').code).toBe(2);
 });

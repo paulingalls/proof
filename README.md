@@ -19,7 +19,8 @@ The goal: run only what a change can actually affect, and nothing extra.
   machine (OS, CPU and Bun version are deliberately not in the key), and a key can
   be computed for any ref without a checkout.
 - **Proofs live in one shared store.** Postgres (optional) stores metadata only:
-  task, key, outcome, host, timings, per-name env hashes and contradictions, never logs. Each machine
+  task, key, outcome, host, timings, per-name env hashes, declared dimension values and
+  contradictions, never logs. Each machine
   keeps a local SQLite copy of its own results.
 - **Declarations are enforced, not trusted.** Tasks run in a sandbox holding only
   their inputs, so a missing input fails loudly. An undecidable task always runs.
@@ -359,8 +360,8 @@ suite. The shape, using Docker and [Tailscale](https://tailscale.com):
 
 If the store is unreachable, `proof` says so and uses that machine's own proofs; results recorded
 meanwhile aren't uploaded later. `invalidate` deletes locally but exits 2 if shared deletion cannot
-be confirmed, warning that the shared proof may survive. The store holds metadata only (task, key, outcome, host, timings, per-name env hashes),
-never logs or output. It's a cache: losing it costs re-runs, never correctness.
+be confirmed, warning that the shared proof may survive. The store holds metadata only (task, key, outcome, host, timings, per-name env hashes, declared
+dimension values), never logs or general command output. It's a cache: losing it costs re-runs, never correctness.
 
 ## How this repo uses proof
 
