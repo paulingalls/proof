@@ -4,7 +4,16 @@ import pkg from '../package.json';
 import { check } from './check';
 import { doctor } from './doctor';
 import { flakes } from './flakes';
-import { checkUsage, doctorUsage, lintUsage, planUsage, statusUsage } from './help';
+import {
+  checkUsage,
+  commandHelp,
+  doctorUsage,
+  generalHelp,
+  helpUsage,
+  lintUsage,
+  planUsage,
+  statusUsage,
+} from './help';
 import { invalidate } from './invalidate';
 import { lint } from './lint';
 import { plan, renderDecision } from './plan';
@@ -16,24 +25,39 @@ import { why } from './why';
 
 const [command, ...args] = Bun.argv.slice(2);
 
+const commands = [
+  'check',
+  'plan',
+  'record',
+  'lint',
+  'run',
+  'doctor',
+  'status',
+  'why',
+  'stats',
+  'flakes',
+  'invalidate',
+  'help',
+];
+const helpFlag = (value: string | undefined) => value === '--help' || value === '-h';
+const unknown = (name: string) => `unknown command '${name}'\ncommands: ${commands.join(', ')}`;
+
 if (command === '--version') {
   console.log(pkg.version);
 } else if (
-  [
-    'check',
-    'plan',
-    'record',
-    'lint',
-    'run',
-    'doctor',
-    'status',
-    'why',
-    'stats',
-    'flakes',
-    'invalidate',
-  ].includes(command ?? '')
+  command === undefined ||
+  (args.length === 0 && (helpFlag(command) || command === 'help'))
 ) {
+  console.log(generalHelp());
+} else if (commands.includes(command)) {
   try {
+    if (command === 'help' || (args.length === 1 && helpFlag(args[0]))) {
+      if (args.length !== 1) throw new Error(helpUsage);
+      const name = command === 'help' && !helpFlag(args[0]) ? (args[0] as string) : command;
+      if (!commands.includes(name)) throw new Error(unknown(name));
+      console.log(commandHelp(name));
+      process.exit(0);
+    }
     // git reports root-relative paths, and the working-tree reads resolve against cwd.
     if (command === 'check' && args[0]) args[0] = resolve(args[0]);
     const top = Bun.spawnSync(['git', 'rev-parse', '--show-toplevel']);
@@ -114,6 +138,6 @@ if (command === '--version') {
     process.exitCode = 2;
   }
 } else {
-  console.error(`proof: unknown command '${command ?? ''}'`);
+  console.error(`proof: ${unknown(command)}`);
   process.exit(2);
 }
