@@ -13,7 +13,7 @@ function fixture() {
     'proof.yaml': root,
     'committed/base.yaml': 'tasks:\n  base: {run: cat source, inputs: [source]}\n',
     'generator.sh':
-      'echo stdout; echo stderr >&2; mkdir "$PROOF_DECLARATIONS/nested"; cp declarations "$PROOF_DECLARATIONS/nested/tasks.yaml"\n',
+      'test -z "$LEAKED" || exit 9; echo stdout; echo stderr >&2; mkdir "$PROOF_DECLARATIONS/nested"; cp declarations "$PROOF_DECLARATIONS/nested/tasks.yaml"\n',
     declarations: output,
     source: 'hello\n',
     '.gitignore': 'proof.d/\n',
@@ -29,7 +29,7 @@ function rows(env: Record<string, string>) {
 test('generated nested declarations coexist with includes and keep committed keys', () => {
   const env = fixture();
   r.write('proof.d/decoy.yaml', 'tasks: {decoy: {run: false, inputs: [missing]}}');
-  const generated = rows(env);
+  const generated = rows({ ...env, LEAKED: 'not in the generator environment' });
   expect(generated.map((row: { task: string }) => row.task)).toEqual(['base', 'generated']);
   expect(existsSync(join(r.path, 'nested/tasks.yaml'))).toBe(false);
   r.commit({
@@ -119,18 +119,23 @@ test('cache uses whole delivered bytes, modes and names, and bounds retained ent
   expect(count()).toBe(1);
   const cache = join(env.PROOF_STATE_DIR, 'generated');
   for (let i = 0; i < 35; i++) writeFileSync(join(cache, `stale-${i}.json`), '[]');
-  for (const change of ['version', 'mode', 'name', 'command', 'input']) {
+  for (const change of ['version', 'mode', 'name', 'command', 'links', 'input']) {
     if (change === 'version') r.write('package.json', '{"version":"2"}');
     if (change === 'mode') chmodSync(join(r.path, 'extra/a'), 0o755);
     if (change === 'name') r.git('mv', 'extra/a', 'extra/b');
     if (change === 'command')
       r.write('proof.yaml', declaration.replace('run: echo', 'run: true; echo'));
+    if (change === 'links')
+      r.write(
+        'proof.yaml',
+        `${declaration.replace('run: echo', 'run: true; echo')}  links: [node_modules/example]\n`,
+      );
     if (change === 'input') r.write('declarations', output.replaceAll('generated', 'changed'));
     r.commit({});
     rows(env);
     rows(env);
   }
-  expect(count()).toBe(6);
+  expect(count()).toBe(7);
   expect(readdirSync(cache).length).toBeLessThanOrEqual(32);
 });
 
