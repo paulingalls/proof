@@ -11,7 +11,7 @@ export type Input =
   | { dotenv: string; exclude?: string[] }
   | { 'imports-of': string }
   | { maestro: string };
-export type Provider = { start: string; stop?: string };
+export type Provider = { start: string; stop?: string; lane?: string };
 export type Task = {
   run: string;
   inputs: Input[];
@@ -178,6 +178,8 @@ export function declarations(tree: RefTree, working = false) {
       }
       if (env?.some((name) => name.includes(':')))
         throw new Error(`${label}: env name must not contain ':'`);
+      if (env?.includes('PROOF_LANE_SLOT'))
+        throw new Error(`${label}: PROOF_LANE_SLOT is reserved`);
       let links: string[] | undefined;
       if ('links' in task) {
         if (!Array.isArray(task.links)) throw new Error(`${label}: links must be a list`);
@@ -233,9 +235,12 @@ export function declarations(tree: RefTree, working = false) {
   )) {
     const label = `proof.yaml provider '${text(name, 'provider name')}'`;
     const provider = mapping(value, label);
-    fields(provider, ['start', 'stop'], label);
+    fields(provider, ['start', 'stop', 'lane'], label);
+    const lane = 'lane' in provider ? text(provider.lane, `${label} lane`) : undefined;
+    if (lane !== undefined && !lanes.has(lane)) throw new Error(`${label}: unknown lane '${lane}'`);
     providers.set(name, {
       start: text(provider.start, `${label} start`),
+      lane,
       ...('stop' in provider ? { stop: text(provider.stop, `${label} stop`) } : {}),
     });
   }
@@ -269,8 +274,12 @@ export function declarations(tree: RefTree, working = false) {
     if (task.lane !== undefined && task.lane !== 'solo' && !lanes.has(task.lane))
       throw new Error(`task '${id}': unknown lane '${task.lane}'`);
     task.inputs = expand(task.inputs, `ref '${tree.ref}' task '${id}'`);
-    for (const name of task.needs ?? [])
-      if (!providers.has(name)) throw new Error(`task '${id}': unknown provider '${name}'`);
+    for (const name of task.needs ?? []) {
+      const provider = providers.get(name);
+      if (!provider) throw new Error(`task '${id}': unknown provider '${name}'`);
+      if (provider.lane !== undefined && provider.lane !== task.lane)
+        throw new Error(`task '${id}': provider '${name}' requires lane '${provider.lane}'`);
+    }
   }
   resolveUnkeyed(unkeyed, tasks, tree, working);
   const context = `ref '${tree.ref}' proof.yaml`;
