@@ -41,6 +41,7 @@ export class Capture {
   private readonly root = resolve(statePath(), 'logs');
   private readonly id = crypto.randomUUID();
   private readonly path = join(this.root, `${this.id}.capture`);
+  private readonly buffer = Buffer.alloc(CHUNK);
   private offset = 0;
   private error?: string;
   private timer?: ReturnType<typeof setInterval>;
@@ -56,7 +57,7 @@ export class Capture {
   private tail(end: number) {
     if (this.error) return;
     try {
-      const buffer = Buffer.alloc(CHUNK);
+      const buffer = this.buffer;
       while (this.offset < end) {
         const size = Math.min(CHUNK, end - this.offset);
         const count = readSync(this.fd, buffer, 0, size, this.offset);

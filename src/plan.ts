@@ -119,18 +119,26 @@ export async function decide(
 
 let committed: { tree: RefTree; document: ReturnType<typeof declarations> } | undefined;
 
-export function currentTree() {
+export function currentTree(
+  ignored?: (tree: RefTree, document: ReturnType<typeof declarations>) => string[],
+) {
   if (committed?.tree.commit !== resolveRef('HEAD')) {
     const tree = new RefTree('HEAD');
     committed = { tree, document: declarations(tree) };
   }
   const { tree } = committed;
   let document = committed.document;
-  let dirty = dirtyPaths(scope(document.tasks.values(), declarationPaths(document.include), tree));
+  let dirty = dirtyPaths(
+    scope(document.tasks.values(), declarationPaths(document.include), tree),
+    ignored?.(tree, document),
+  );
   const declaration = dirtyDeclaration(dirty, document.include);
   if (declaration) {
     document = declarations(tree, true);
-    dirty = dirtyPaths(scope(document.tasks.values(), declarationPaths(document.include), tree));
+    dirty = dirtyPaths(
+      scope(document.tasks.values(), declarationPaths(document.include), tree),
+      ignored?.(tree, document),
+    );
   }
   return { tree, ...document, dirty, declaration };
 }

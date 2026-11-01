@@ -12,7 +12,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import type { RefTree } from './git';
+import { type RefTree, readBlobs } from './git';
 
 type File = { bytes: Buffer; executable: boolean };
 
@@ -233,6 +233,17 @@ export class Sandbox {
   private readonly files = new Map<string, File | undefined>();
 
   materialize(paths: Set<string>, tree: RefTree, dirty: string[], snapshotOnly = false) {
+    const ids = new Set<string>();
+    for (const path of paths) {
+      const { mode, blob } = tree.entry(path);
+      if (
+        blob &&
+        (mode === '100644' || mode === '100755' || mode === '120000') &&
+        (snapshotOnly || !dirty.includes(path))
+      )
+        ids.add(blob);
+    }
+    const blobs = ids.size ? new Map(readBlobs(ids)) : new Map<string, Buffer>();
     for (const path of paths) {
       const target = join(this.path, path);
       if (relative(this.path, target).startsWith('..') || path.split('/').includes('.git'))
@@ -241,10 +252,10 @@ export class Sandbox {
       const file = snapshotOnly
         ? mode === undefined
           ? undefined
-          : this.committedFile(path, mode, tree, paths)
+          : this.committedFile(path, mode, blobs.get(tree.files.get(path) ?? ''), paths)
         : dirty.includes(path) || mode === undefined
           ? workingFile(path)
-          : this.committedFile(path, mode, tree, paths);
+          : this.committedFile(path, mode, blobs.get(tree.files.get(path) ?? ''), paths);
       if (file && 'link' in file) {
         mkdirSync(dirname(target), { recursive: true });
         symlinkSync(file.link, target);
@@ -295,11 +306,14 @@ export class Sandbox {
   private committedFile(
     path: string,
     mode: string,
-    tree: RefTree,
+    bytes: Buffer | undefined,
     paths: Set<string>,
   ): File | { link: string } {
+    if (mode !== '100644' && mode !== '100755' && mode !== '120000')
+      throw new Error(`selected path '${path}': ${mode === '160000' ? 'gitlink' : mode}`);
+    if (!bytes) throw new Error(`selected path '${path}': missing committed blob`);
     if (mode === '120000') {
-      const link = tree.raw(path).toString();
+      const link = bytes.toString();
       const target = isAbsolute(link) ? link : join(dirname(path), link);
       if (isAbsolute(link) || !paths.has(target))
         throw new Error(
@@ -307,9 +321,7 @@ export class Sandbox {
         );
       return { link };
     }
-    if (mode !== '100644' && mode !== '100755')
-      throw new Error(`selected path '${path}': ${mode === '160000' ? 'gitlink' : mode}`);
-    return { bytes: tree.raw(path), executable: mode === '100755' };
+    return { bytes, executable: mode === '100755' };
   }
 
   changed() {
