@@ -1,5 +1,5 @@
 import type { Task } from './declarations';
-import { type RefTree, type Scope, WorkingTree } from './git';
+import { type RefTree, WorkingTree } from './git';
 import { closure, source } from './imports';
 import { keyParts } from './key-parts';
 import { maestro } from './maestro';
@@ -79,7 +79,10 @@ export function select(task: Task, tree: RefTree, dirty: string[] = [], working 
         whole.add(path);
       }
     }
-    if (!matched) reason ??= `unmatched input '${pattern}'`;
+    if (!matched) {
+      const absence = !negative && literalDirectory(pattern) === pattern ? 'missing' : 'unmatched';
+      reason ??= `${absence} input '${pattern}'`;
+    }
   }
   return {
     paths,
@@ -94,7 +97,11 @@ export function selection(task: Task, tree: RefTree, dirty: string[] = []) {
   return new Set([
     ...selected.paths,
     ...task.inputs.flatMap((input) =>
-      typeof input !== 'string' && 'path' in input ? [input.path] : [],
+      typeof input !== 'string' &&
+      'path' in input &&
+      (tree.files.has(input.path) || dirty.includes(input.path))
+        ? [input.path]
+        : [],
     ),
   ]);
 }
@@ -166,57 +173,6 @@ function literalDirectory(pattern: string) {
   const glob = pattern.search(/[(!*?[{\\]/);
   if (glob === -1) return pattern;
   return pattern.slice(0, pattern.lastIndexOf('/', glob) + 1) || undefined;
-}
-
-export function scope(tasks: Iterable<Task>, declarations: string[], tree: RefTree): Scope {
-  const list = [...tasks];
-  const matchers = list.map((task) => {
-    let matches: ReturnType<typeof selector> | undefined;
-    return (path: string) => {
-      matches ??= selector(task, tree);
-      return matches(path);
-    };
-  });
-  const patterns = [...declarations, ...list.flatMap((t) => t.inputs)].filter(
-    (p): p is string => typeof p === 'string' && !p.startsWith('!'),
-  );
-  const positive = [...new Set(patterns)].map((pattern) => new Bun.Glob(pattern));
-  const declared = declarations.map((pattern) => new Bun.Glob(pattern));
-  let derived: Set<string> | undefined;
-  function closurePaths() {
-    if (derived) return derived;
-    derived = new Set<string>();
-    const view = source(tree);
-    for (const task of list)
-      for (const input of task.inputs) {
-        if (typeof input === 'string') continue;
-        const paths =
-          'imports-of' in input
-            ? closure(input['imports-of'], view).paths
-            : 'maestro' in input
-              ? maestro(input.maestro, view).paths
-              : 'path' in input
-                ? [input.path]
-                : [];
-        for (const path of paths) derived.add(path);
-      }
-    return derived;
-  }
-  const prefixes = [
-    ...patterns.map(literalDirectory),
-    ...list.flatMap((t) =>
-      t.inputs.flatMap((input) =>
-        typeof input !== 'string' && 'path' in input ? [input.path] : [],
-      ),
-    ),
-  ];
-  return {
-    selects: (path) =>
-      declared.some((glob) => glob.match(path)) ||
-      ((positive.some((glob) => glob.match(path)) || closurePaths().has(path)) &&
-        matchers.some((matches) => matches(path))),
-    prefixes: prefixes.includes(undefined) ? undefined : [...new Set(prefixes as string[])],
-  };
 }
 
 export function key(id: string, task: Task, tree: RefTree, dirty: string[] = []): Key {

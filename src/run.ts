@@ -1,6 +1,5 @@
-import { declarationPaths, declarations, selectTasks } from './declarations';
-import { ignoredPaths, RefTree, resolveRef } from './git';
-import { scope } from './key';
+import { declarations, selectTasks } from './declarations';
+import { RefTree, resolveRef } from './git';
 import { currentTree, decide, renderDecision } from './plan';
 import { Providers } from './providers';
 import { RunProcesses } from './run-process';
@@ -33,25 +32,9 @@ export async function run(args: string[]) {
   const snapshot = captured
     ? { tree: captured, ...declarations(captured), dirty: [], declaration: undefined }
     : undefined;
-  const inventories = new Map<string, string[]>();
-  const inventory = (tree: RefTree, document: ReturnType<typeof declarations>) => {
-    const identity = JSON.stringify([
-      tree.commit,
-      document.include,
-      [...document.tasks.values()].map((task) => task.inputs),
-    ]);
-    let paths = inventories.get(identity);
-    if (!paths) {
-      paths = ignoredPaths(
-        scope(document.tasks.values(), declarationPaths(document.include), tree),
-      );
-      inventories.set(identity, paths);
-    }
-    return paths;
-  };
-  let selected = snapshot ?? currentTree(inventory);
+  let selected = snapshot ?? currentTree();
   const refresh = () => {
-    selected = snapshot ?? currentTree(inventory);
+    selected = snapshot ?? currentTree();
     return selected;
   };
   const roster = selectTasks(selected.tasks, set);
@@ -81,7 +64,6 @@ export async function run(args: string[]) {
             },
       );
       if (!stopping) {
-        inventories.clear();
         refresh();
       }
       const problem = result.code === 0 && !result.signal ? environment?.accept() : undefined;

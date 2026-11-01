@@ -34,126 +34,86 @@ const ignored = /git ls-files .*--ignored/g;
 const status = /git status --porcelain=v1/g;
 
 for (const jobs of [1, 2]) {
-  test(`run inventories ignored paths once and checks status per executed task, jobs=${jobs}`, () => {
+  test(`run never lists ignored paths and checks status per executed task, jobs=${jobs}`, () => {
     const { repo, trace, env } = fixture({
       a: { run: 'true', inputs },
       b: { run: 'true', inputs },
       c: { run: 'true', inputs },
     });
-    for (let i = 0; i < 256; i++) repo.write(`cache/${i % 8}/${i}.txt`, 'ignored');
+    for (let i = 0; i < 4; i++) repo.write(`cache/${i % 8}/${i}.txt`, 'ignored');
     const result = repo.cli(['run', '--jobs', String(jobs)], env);
     expect(result.code, result.err + result.out).toBe(0);
     for (const id of ['a', 'b', 'c']) expect(result.out).toContain(`green ${id}; proof published`);
-    expect(calls(trace, ignored)).toHaveLength(1);
+    expect(calls(trace, ignored)).toHaveLength(0);
     expect(calls(trace, status)).toHaveLength(4);
     writeFileSync(trace, '');
     const warm = repo.cli(['run', '--jobs', String(jobs)], env);
     expect(warm.code, warm.err + warm.out).toBe(0);
     for (const id of ['a', 'b', 'c']) expect(warm.out).toContain(`PROVEN ${id}`);
-    expect(calls(trace, ignored)).toHaveLength(1);
+    expect(calls(trace, ignored)).toHaveLength(0);
     expect(calls(trace, status)).toHaveLength(1);
+    expect(calls(trace, /git ls-files -v/g).length).toBeGreaterThan(0);
   });
 }
 
-test('startup ignored selection matches plan and supplies working bytes', () => {
-  const { repo, trace, env } = fixture({
-    a: { run: 'test "$(cat cache/input.txt)" = working', inputs: ['a.txt', 'cache/*.txt'] },
+test('ignored glob matches leave keys, publication and sandbox unchanged', () => {
+  const { repo, env } = fixture({
+    a: {
+      run: 'test "$(cat cache/keep.txt)" = excluded && test ! -e cache/input.txt',
+      inputs: ['a.txt', 'cache/*.txt'],
+    },
   });
-  repo.write('cache/input.txt', 'working');
-  repo.write('cache/excluded.bin', 'irrelevant');
-  const plan = repo.cli(['plan'], env);
-  expect(plan.code, plan.err).toBe(0);
-  expect(plan.out).toContain("dirty input 'cache/input.txt'");
-  writeFileSync(trace, '');
+  const rows = () => JSON.parse(repo.cli(['plan', '--json'], env).out);
+  const baseline = rows();
+  repo.write('cache/input.txt', 'ignored');
+  expect(rows()).toEqual(baseline);
   const result = repo.cli(['run'], env);
   expect(result.code, result.err + result.out).toBe(0);
-  expect(result.out.startsWith(plan.out)).toBe(true);
-  expect(result.out).toContain('green a; no proof published:');
-  expect(calls(trace, ignored)).toHaveLength(1);
+  expect(result.out).toContain('green a; proof published');
+  repo.write('cache/input.txt', 'changed');
+  expect(rows()[0]).toMatchObject({ state: 'PROVEN', key: baseline[0].key });
+  expect(repo.cli(['run'], env).out).toContain('PROVEN a');
+  expect(repo.cli(['record', 'a', '--outcome', 'green'], env).out).toContain('proof published');
+  expect(rows()[0].key).toBe(baseline[0].key);
 });
 
-for (const jobs of [1, 2]) {
-  for (const fail of [false, true]) {
-    test(`provider refreshes ignored selection once, jobs=${jobs}, failed=${fail}`, () => {
-      const task = {
-        run: 'test "$(cat cache/input.txt)" = provider',
-        inputs: ['a.txt', 'cache/*.txt'],
-        needs: ['setup'],
-      };
-      const { repo, trace, env } = fixture(
-        { a: task, b: task },
-        {
-          providers: {
-            setup: { start: `echo provider > cache/input.txt; ${fail ? 'false' : 'true'}` },
-          },
+test('ignored literals are missing while extglobs remain unmatched globs', () => {
+  const { repo, env } = fixture({
+    literal: { run: 'test ! -e cache/input.txt', inputs: ['cache/input.txt'] },
+    glob: { run: 'true', inputs: ['cache/@(absent|other).txt'] },
+  });
+  repo.write('cache/input.txt', 'ignored');
+  const rows = JSON.parse(repo.cli(['plan', '--json'], env).out);
+  expect(rows[0]).toEqual({
+    task: 'literal',
+    state: 'RUN',
+    reason: "undecidable: missing input 'cache/input.txt'",
+  });
+  expect(rows[1].reason).toBe("undecidable: unmatched input 'cache/@(absent|other).txt'");
+  const result = repo.cli(['run', '--tasks', 'literal'], env);
+  expect(result.code, result.err + result.out).toBe(0);
+  expect(result.out).toContain("green literal; not recorded: missing input 'cache/input.txt'");
+});
+
+for (const fail of [false, true]) {
+  test(`provider ignored output stays outside the sandbox, failed=${fail}`, () => {
+    const { repo, trace, env } = fixture(
+      {
+        a: { run: 'test ! -e cache/input.txt', inputs: ['a.txt', 'cache/*.txt'], needs: ['setup'] },
+      },
+      {
+        providers: {
+          setup: { start: `echo provider > cache/input.txt; ${fail ? 'false' : 'true'}` },
         },
-      );
-      const result = repo.cli(['run', '--jobs', String(jobs)], env);
-      expect(result.code, result.err + result.out).toBe(fail ? 1 : 0);
-      for (const id of ['a', 'b']) {
-        expect(result.out).toContain(`RUN ${id}: undecidable: dirty input 'cache/input.txt'`);
-        expect(result.out).toContain(`${fail ? 'incomplete' : 'green'} ${id}; no proof published:`);
-      }
-      expect(result.out).not.toContain('; proof published');
-      expect(calls(trace, ignored)).toHaveLength(2);
-    });
-  }
+      },
+    );
+    const result = repo.cli(['run'], env);
+    expect(result.code, result.err + result.out).toBe(fail ? 1 : 0);
+    expect(result.out).toContain(fail ? 'incomplete a' : 'green a; proof published');
+    if (fail) expect(result.out).not.toContain('; proof published');
+    expect(calls(trace, ignored)).toHaveLength(0);
+  });
 }
-
-test('a new commit reselects ignored inputs for later tasks', () => {
-  const { repo, trace, env } = fixture({
-    move: { run: 'true', inputs: ['a.txt'] },
-    later: { run: 'test "$(cat cache/input.txt)" = working', inputs: ['a.txt'] },
-  });
-  const doc = JSON.parse(repo.git('show', 'HEAD:proof.yaml'));
-  doc.tasks.later.inputs.push('cache/*.txt');
-  repo.write('.git/next.json', JSON.stringify(doc));
-  const next = join(repo.path, '.git/next.json');
-  doc.tasks.later.inputs = ['a.txt'];
-  doc.tasks.move.run = `git -C '${repo.path}' show HEAD:a.txt >/dev/null && cp '${next}' '${repo.path}/proof.yaml' && git -C '${repo.path}' add proof.yaml && git -C '${repo.path}' commit -qm scope`;
-  repo.commit({ 'proof.yaml': JSON.stringify(doc) });
-  repo.write('cache/input.txt', 'working');
-  const result = repo.cli(['run'], env);
-  expect(result.code, result.err + result.out).toBe(0);
-  expect(result.out).toContain('green move; no proof published: HEAD changed');
-  expect(result.out).toContain("RUN later: undecidable: dirty input 'cache/input.txt'");
-  expect(result.out).toContain('green later; no proof published:');
-  expect(calls(trace, ignored)).toHaveLength(2);
-  const plan = repo.cli(['plan'], env);
-  expect(plan.code, plan.err).toBe(0);
-  expect(plan.out).toContain("RUN later: undecidable: dirty input 'cache/input.txt'");
-});
-
-test('a working declaration edit during a run reselects ignored inputs for later tasks', () => {
-  const { repo, env } = fixture({
-    edit: { run: 'true', inputs: ['a.txt'] },
-    later: { run: 'test "$(cat cache/input.txt)" = working', inputs: ['a.txt'] },
-  });
-  const doc = JSON.parse(repo.git('show', 'HEAD:proof.yaml'));
-  doc.tasks.later.inputs.push('cache/*.txt');
-  repo.write('.git/next.json', JSON.stringify(doc));
-  doc.tasks.later.inputs = ['a.txt'];
-  doc.tasks.edit.run = `cp '${join(repo.path, '.git/next.json')}' '${repo.path}/proof.yaml'`;
-  repo.commit({ 'proof.yaml': JSON.stringify(doc) });
-  repo.write('cache/input.txt', 'working');
-  const result = repo.cli(['run'], env);
-  expect(result.code, result.err + result.out).toBe(0);
-  expect(result.out).toContain('green later');
-});
-
-test('a commit that only changes .gitignore reselects ignored inputs', () => {
-  const { repo, env } = fixture({
-    move: { run: 'true', inputs: ['a.txt'] },
-    later: { run: 'test "$(cat gen/input.txt)" = working', inputs: ['a.txt', 'gen/*.txt'] },
-  });
-  const doc = JSON.parse(repo.git('show', 'HEAD:proof.yaml'));
-  doc.tasks.move.run = `echo gen/ >> '${repo.path}/.gitignore' && git -C '${repo.path}' add .gitignore && git -C '${repo.path}' commit -qm ignore`;
-  repo.commit({ 'proof.yaml': JSON.stringify(doc) });
-  repo.write('gen/input.txt', 'working');
-  const result = repo.cli(['run'], env);
-  expect(result.code, result.err + result.out).toBe(0);
-  expect(result.out).toContain('green later');
-});
 
 test('sandbox batches committed blobs and preserves bytes, modes and selected symlinks', () => {
   const { repo, trace, env } = fixture({

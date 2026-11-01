@@ -32,7 +32,7 @@ The goal: run only what a change can actually affect, and nothing extra.
 tagged release from GitHub:
 
 ```sh
-bun add -d "git+https://github.com/paulingalls/proof.git#v0.13.2"
+bun add -d "git+https://github.com/paulingalls/proof.git#v0.13.3"
 bunx proof --version
 ```
 
@@ -103,6 +103,10 @@ exempt:
   the task undecidable, so it always runs and says why. Text in strings, templates and comments
   is not an import. A computed call inside a template's `${}` is not seen and leaves the task
   decidable; literal imports there are still followed.
+
+  Ordinary globs consider tracked paths and untracked paths that Git does not ignore. An ignored literal
+  input is missing: it stays outside the sandbox and prevents recording, with its path reported.
+  Use `links` for ignored file access and `{dotenv: path}` for dotenv value identities.
 - **Closure manifests**: a `package.json` reached only as import resolver metadata keys
   `name`, `main`, `module`, `type`, `exports`, `imports`, `workspaces`, `extends` and
   `compilerOptions`. A committed `version` bump or changelog edit therefore preserves the closure

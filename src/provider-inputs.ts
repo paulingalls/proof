@@ -1,10 +1,10 @@
 import type { Task } from './declarations';
 import { dirtyPaths, type RefTree } from './git';
-import { scope, selection } from './key';
+import { selection } from './key';
 import { workingFile } from './sandbox';
 
 export function providerMismatch(task: Task, tree: RefTree) {
-  const dirty = dirtyPaths(scope([task], [], tree));
+  const dirty = dirtyPaths();
   const paths = new Set([...selection(task, tree), ...selection(task, tree, dirty)]);
   for (const path of paths) {
     const mode = tree.modes.get(path);

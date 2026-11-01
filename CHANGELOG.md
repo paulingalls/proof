@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.13.3
+
+- Git-ignored files no longer count: globs see what git sees, and proof no longer lists them. An
+  ignored literal input is a missing input; use `links` or `{dotenv}` for ignored files a task needs.
+
 ## 0.13.2
 
 - `run` scans ignored files once rather than around every task, and builds sandboxes in one git

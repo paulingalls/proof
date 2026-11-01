@@ -1,7 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { dirtyPaths, type RefTree } from './git';
-import { scope } from './key';
 import { filePatterns, resolveUnkeyed } from './unkeyed';
 import { refuseDuplicateKeys } from './yaml-keys';
 
@@ -243,10 +242,7 @@ export function declarations(tree: RefTree, working = false) {
   if ('include' in root) {
     const pattern = text(root.include, 'proof.yaml include');
     const glob = new Bun.Glob(pattern);
-    const available = new Set([
-      ...tree.files.keys(),
-      ...(working ? dirtyPaths(scope([], [pattern], tree)) : []),
-    ]);
+    const available = new Set([...tree.files.keys(), ...(working ? dirtyPaths() : [])]);
     const paths = [...available]
       .filter((path) => glob.match(path) && (!working || existsSync(path)))
       .sort();
@@ -301,10 +297,6 @@ export function declarations(tree: RefTree, working = false) {
     exempt,
     include: 'include' in root ? text(root.include, 'proof.yaml include') : undefined,
   };
-}
-
-export function declarationPaths(include: string | undefined) {
-  return include === undefined ? ['proof.yaml'] : ['proof.yaml', include];
 }
 
 export function dirtyDeclaration(dirty: string[], include: string | undefined) {

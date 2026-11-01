@@ -38,7 +38,7 @@ function changes(out: string) {
   return out.split('\n').filter((line) => /^(added|removed|changed) /.test(line));
 }
 
-test('working bytes include staged/unstaged edits, ignored additions, deletion and binary bytes', () => {
+test('working bytes include staged/unstaged edits, untracked additions, deletion and binary bytes', () => {
   const { repo, env } = fixture(['src/**', { path: 'config.json', json: ['selected'] }]);
   repo.write('src/a.ts', 'staged');
   repo.git('add', 'src/a.ts');
@@ -57,7 +57,6 @@ test('working bytes include staged/unstaged edits, ignored additions, deletion a
     'removed file src/b.ts',
     'added file src/binary',
     'added file src/c.ts',
-    'added file src/ignored',
     'changed member config.json selected',
   ]);
   expect(result.out).toContain(

@@ -130,22 +130,6 @@ test('plan gates selected dirty inputs but ignores unrelated files and tags', ()
   }
 });
 
-test('extglob inputs detect selected ignored dirtiness', () => {
-  const repo = fixture();
-  const doc = JSON.parse(repo.git('show', 'HEAD:proof.yaml'));
-  doc.tasks.lint.inputs = ['src/@(a|b).ts'];
-  repo.commit({
-    'proof.yaml': JSON.stringify(doc),
-    '.gitignore': 'src/b.ts\n',
-  });
-  const env = state();
-  expect(record(repo, env).out).toContain('proof published');
-  repo.write('src/b.ts', 'ignored input');
-  const result = repo.cli(['plan'], env);
-  expect(result.code).toBe(0);
-  expect(result.out).toContain("RUN lint: undecidable: dirty input 'src/b.ts'");
-});
-
 test('restored historical bytes are undecidable until committed', () => {
   const repo = fixture();
   const env = state();
@@ -206,7 +190,6 @@ test('dirty root or included declarations make every task undecidable', () => {
   root.include = 'proof.d/*.yaml';
   repo.commit({
     'proof.yaml': JSON.stringify(root),
-    '.gitignore': 'proof.d/new.yaml\n',
     'proof.d/extra.yaml': JSON.stringify({
       tasks: {
         missing: { run: 'exit 99', inputs: ['absent/**'] },
@@ -296,13 +279,12 @@ test('shared globs keep dirty selection and negation task-local in either order'
     r.commit({
       'proof.yaml': JSON.stringify({ version: 1, project: 'shared', tasks }),
       'src/gen/x.ts': 'generated',
-      '.gitignore': 'src/gen/new.ts\n',
     });
     const env = state();
     for (const id of order) expect(r.cli(['record', id, '--outcome', 'green'], env).code).toBe(0);
     const rows = () => JSON.parse(r.cli(['plan', '--json'], env).out);
     const clean = rows();
-    r.write('src/gen/new.ts', 'ignored');
+    r.write('src/gen/new.ts', 'untracked');
     expect(rows()).toEqual(
       clean.map((row: { task: string }) =>
         row.task === 'all'
@@ -324,34 +306,26 @@ test('shared globs keep dirty selection and negation task-local in either order'
   }
 });
 
-test('an ignored path negated by its only task never blocks publication', () => {
-  const repo = fixture('prefilter-negated');
-  repo.commit({
-    '.gitignore': 'src/gen/new.ts\n',
-    'src/gen/tracked.ts': 'tracked',
-    'proof.yaml': JSON.stringify({
-      version: 1,
-      project: 'prefilter-negated',
-      tasks: { gate: { run: 'true', inputs: ['src/**', '!src/gen/**'] } },
-    }),
-  });
-  repo.write('src/gen/new.ts', 'ignored');
-  const env = state();
-  expect(repo.cli(['run', '--tasks', 'gate'], env).code).toBe(0);
-  expect(repo.cli(['plan'], env).out).toStartWith('PROVEN gate');
-});
-
-test('an ignored projection stays a dirty input', () => {
+test('an ignored projection is missing and stays outside the sandbox', () => {
   const repo = fixture('prefilter-projection');
   repo.commit({
     '.gitignore': 'config.json\n',
     'proof.yaml': JSON.stringify({
       version: 1,
       project: 'prefilter-projection',
-      tasks: { gate: { run: 'true', inputs: [{ path: 'config.json', json: ['key'] }] } },
+      tasks: {
+        gate: { run: 'test ! -e config.json', inputs: [{ path: 'config.json', json: ['key'] }] },
+      },
     }),
   });
   repo.write('config.json', '{"key":1}');
-  const [row] = JSON.parse(repo.cli(['plan', '--json'], state()).out);
-  expect(row.reason).toBe("undecidable: dirty input 'config.json'");
+  const env = state();
+  const [row] = JSON.parse(repo.cli(['plan', '--json'], env).out);
+  expect(row.reason).toBe("undecidable: missing input 'config.json'");
+  const why = repo.cli(['why', 'gate'], env);
+  expect(why.out).toContain("missing input 'config.json'");
+  expect(why.out).not.toContain('member config.json');
+  const result = repo.cli(['run'], env);
+  expect(result.code, result.err + result.out).toBe(0);
+  expect(result.out).toContain("green gate; not recorded: missing input 'config.json'");
 });

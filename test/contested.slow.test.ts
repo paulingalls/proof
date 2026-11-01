@@ -210,23 +210,6 @@ test('a failed contradiction insert rolls back its red result', () => {
   plan('PROVEN lint');
 });
 
-test('ignored selected files block proof reuse and publication without contesting clean proof', () => {
-  const { repo, record, plan, proof, contradictions, db } = setup();
-  repo.commit({ '.gitignore': 'src/generated.ts\nnotes/\nproof.d/new.yaml\n' });
-  repo.write('notes/todo.md', 'unrelated ignored file');
-  plan('PROVEN lint');
-  repo.write('src/generated.ts', 'ignored input');
-  plan("RUN lint: undecidable: dirty input 'src/generated.ts'");
-  expect(record('green').out).toContain('no proof published: dirty path');
-  expect(record('red').out).toContain("contests nothing: dirty input 'src/generated.ts'");
-  expect(proof()).toEqual([{ result_id: 1 }]);
-  expect(contradictions()).toEqual([]);
-  expect(db.query('SELECT outcome, dirty FROM results WHERE id > 1').all()).toEqual([
-    { outcome: 'green', dirty: 1 },
-    { outcome: 'red', dirty: 1 },
-  ]);
-});
-
 for (const flag of ['assume-unchanged', 'skip-worktree']) {
   for (const path of ['src/a.ts', 'proof.yaml', 'proof.d/tasks.yaml']) {
     test(`${flag} on ${path} blocks proof reuse, publication and contests without changing the index`, () => {
