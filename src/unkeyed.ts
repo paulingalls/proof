@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { type Task, text } from './declarations';
 import { dirtyPaths, type RefTree } from './git';
-import { scope, selection } from './key';
+import { selection } from './key';
 
 export function filePatterns(value: unknown, context: string): string[] {
   if (!Array.isArray(value)) throw new Error(`${context}: expected a list`);
@@ -23,7 +23,7 @@ export function resolveUnkeyed(
   const patterns = filePatterns(value, `${context} unkeyed`);
   const entries = [...patterns, ...[...tasks.values()].flatMap((task) => task.keyed ?? [])];
   if (!entries.length) return;
-  const dirty = working ? dirtyPaths(scope([], entries, tree)) : [];
+  const dirty = working ? dirtyPaths() : [];
   const available = [...new Set([...tree.files.keys(), ...dirty])].filter(
     (path) => !working || existsSync(path),
   );

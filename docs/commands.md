@@ -107,7 +107,7 @@ that task incomplete and finishes the remaining tasks.
 workspace resolution and sandbox inputs all use that snapshot. Unstaged and untracked files
 neither enter the sandbox nor block publication, with one exception: a provider runs in the
 checkout and can see unstaged bytes, so a task with `needs` publishes nothing when a selected
-input differs from the snapshot (including untracked or ignored glob matches), and its red
+input differs from the snapshot (including untracked, unignored glob matches), and its red
 contests no proof. This comparison runs before provider startup for every selected dependent,
 including later tasks sharing that provider, and again after execution. A startup mismatch still
 blocks publication and contests after the checkout is restored. Provider edits, including
@@ -171,13 +171,9 @@ contest a green on the first red and delete it on the second. A clean fresh gree
 proof, including for a contested key. Incomplete results and interrupts delete nothing. A task whose sandbox can't be built records
 `incomplete` and the rest still run, so a scheduled run finishes; the run exits 1 and names it.
 
-Ordinary runs inventory selected ignored files at startup and after each actual provider start,
-including failed starts. Tasks execute in sandboxes; provider starts execute in the checkout.
-A commit or declaration change during a run causes another inventory for the changed scope.
-Selected ignored files first appearing between inventories, including from a task, provider stop
-or background process, may be missed until the next inventory or run. Tracked and untracked
-status changes still receive live checks after executed tasks. One-shot commands such as
-`plan`, `lint` and `why` inventory ignored files afresh.
+Ordinary globs consider tracked paths and untracked paths that Git does not ignore. An ignored literal
+input is missing: it stays outside the sandbox and prevents recording, with its path reported.
+Use `links` for ignored file access and `{dotenv: path}` for dotenv value identities.
 
 A dirty tree still executes (a dirty declaration runs without recording) and records results, but says `no proof published` with a reason.
 A red over dirty selected inputs cannot delete proof of the committed bytes; unrelated dirt
@@ -217,7 +213,7 @@ status exits 1 here because the task has no proof.
 `proof why <task>` starts with the task's `plan` decision, then prints its current key
 parts: selected paths with file identities and modes, JSON member identities, declared env and dimension names
 (without values), and the declaration hash. These parts use the files on disk, including staged
-and unstaged edits, additions, deletions and selected ignored files. Git decides whether a
+and unstaged edits, deletions and untracked additions that Git does not ignore. Git decides whether a
 tracked path is clean, so a line-ending or LFS filter never reads as a change; blob ids of
 dirty paths hash their raw bytes. Whole-selected object manifests instead print a SHA-256 identity
 of their bytes with the version value blanked, rather than a Git blob id.
@@ -290,8 +286,8 @@ stdout parseable.
 Status reads the ref's committed files and declarations, declared env, checkout dotenv values,
 and dimension commands evaluated on the current machine. `plan` also looks at this checkout,
 so `status --ref HEAD` can say PROVEN where
-`plan` says RUN when the checkout has something the commit doesn't: an uncommitted or ignored file
-a task selects (even when `git status` is empty), a file hidden by `assume-unchanged` or
+`plan` says RUN when the checkout has something the commit doesn't: an uncommitted, unignored file
+a task selects, a file hidden by `assume-unchanged` or
 `skip-worktree`, or a linked `node_modules` escaping into tracked files. Status's `trusted links`
 suffix restates the declaration rather than reporting an inspection.
 

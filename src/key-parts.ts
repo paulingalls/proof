@@ -86,11 +86,11 @@ export function keyParts(task: Task, tree: RefTree, historical = false) {
     const { path } = input;
     const json = 'json' in input ? input.json : [];
     for (const member of json) projections.add(JSON.stringify([path, member]));
-    const { mode } = tree.entry(path);
     if (!tree.files.has(path)) {
       reasons.push(`missing input '${path}'`);
       continue;
     }
+    const { mode } = tree.entry(path);
     if (!mode) {
       reasons.push(`unavailable input '${path}'`);
       continue;

@@ -1,8 +1,8 @@
 import type { Task } from './declarations';
-import { declarationPaths, declarations, dirtyDeclaration, selectTasks } from './declarations';
+import { declarations, dirtyDeclaration, selectTasks } from './declarations';
 import { dirtyPaths, RefTree, resolveRef } from './git';
 import { source } from './imports';
-import { key, scope } from './key';
+import { key } from './key';
 import { inspectLinks } from './sandbox';
 import { Store } from './store';
 import { workspaces } from './workspaces';
@@ -119,27 +119,16 @@ export async function decide(
 
 let committed: { tree: RefTree; document: ReturnType<typeof declarations> } | undefined;
 
-export function currentTree(
-  ignored?: (tree: RefTree, document: ReturnType<typeof declarations>) => string[],
-) {
+export function currentTree() {
   if (committed?.tree.commit !== resolveRef('HEAD')) {
     const tree = new RefTree('HEAD');
     committed = { tree, document: declarations(tree) };
   }
   const { tree } = committed;
   let document = committed.document;
-  let dirty = dirtyPaths(
-    scope(document.tasks.values(), declarationPaths(document.include), tree),
-    ignored?.(tree, document),
-  );
+  const dirty = dirtyPaths();
   const declaration = dirtyDeclaration(dirty, document.include);
-  if (declaration) {
-    document = declarations(tree, true);
-    dirty = dirtyPaths(
-      scope(document.tasks.values(), declarationPaths(document.include), tree),
-      ignored?.(tree, document),
-    );
-  }
+  if (declaration) document = declarations(tree, true);
   return { tree, ...document, dirty, declaration };
 }
 

@@ -327,45 +327,42 @@ test('a provider reading unstaged bytes neither earns a proof nor contests one',
   expect(f.rows('proofs')).toHaveLength(1);
 });
 
-for (const ignored of [false, true]) {
-  test(`provider checkout-only glob matches cannot publish or contest; ignored=${ignored}`, () => {
-    const f = fixture();
-    const gate = {
-      run: `test "$(cat '${f.control}/served')" = good`,
-      inputs: ['input*'],
-      needs: ['service'],
-      sets: ['commit', 'push'],
-    };
-    f.repo.commit({
-      'proof.yaml': f.document(
-        { gate },
-        {
-          providers: { service: { start: `cat input* > '${f.control}/served'` } },
-        },
-      ),
-      '.gitignore': ignored ? 'input-extra\n' : '',
-      input: '',
-    });
-    f.repo.write('input-extra', 'good');
-    const earned = f.cli('run', '--staged', '--set', 'commit');
-    expect(earned.code, earned.err).toBe(0);
-    expect(earned.out).toContain("no proof published: provider can see unstaged 'input-extra'");
-    expect(f.rows('proofs')).toEqual([]);
-    rmSync(join(f.repo.path, 'input-extra'));
-    expect(f.cli('run', '--set', 'push').code).toBe(1);
-
-    f.repo.commit({ input: 'good' });
-    expect(f.cli('run').code).toBe(0);
-    expect(f.cli('record', 'gate', '--outcome', 'red').code).toBe(0);
-    f.repo.write('input-extra', 'bad');
-    expect(f.cli('run', '--staged').code).toBe(1);
-    expect(f.rows('proofs')).toHaveLength(1);
-    expect(f.rows('contradictions')).toHaveLength(1);
-    rmSync(join(f.repo.path, 'input-extra'));
-    expect(f.cli('run', '--set', 'push').out).toContain('green gate; proof published');
-    expect(f.cli('plan', '--set', 'push').out).toContain('PROVEN gate');
+test('provider checkout-only unignored glob matches cannot publish or contest', () => {
+  const f = fixture();
+  const gate = {
+    run: `test "$(cat '${f.control}/served')" = good`,
+    inputs: ['input*'],
+    needs: ['service'],
+    sets: ['commit', 'push'],
+  };
+  f.repo.commit({
+    'proof.yaml': f.document(
+      { gate },
+      {
+        providers: { service: { start: `cat input* > '${f.control}/served'` } },
+      },
+    ),
+    input: '',
   });
-}
+  f.repo.write('input-extra', 'good');
+  const earned = f.cli('run', '--staged', '--set', 'commit');
+  expect(earned.code, earned.err).toBe(0);
+  expect(earned.out).toContain("no proof published: provider can see unstaged 'input-extra'");
+  expect(f.rows('proofs')).toEqual([]);
+  rmSync(join(f.repo.path, 'input-extra'));
+  expect(f.cli('run', '--set', 'push').code).toBe(1);
+
+  f.repo.commit({ input: 'good' });
+  expect(f.cli('run').code).toBe(0);
+  expect(f.cli('record', 'gate', '--outcome', 'red').code).toBe(0);
+  f.repo.write('input-extra', 'bad');
+  expect(f.cli('run', '--staged').code).toBe(1);
+  expect(f.rows('proofs')).toHaveLength(1);
+  expect(f.rows('contradictions')).toHaveLength(1);
+  rmSync(join(f.repo.path, 'input-extra'));
+  expect(f.cli('run', '--set', 'push').out).toContain('green gate; proof published');
+  expect(f.cli('plan', '--set', 'push').out).toContain('PROVEN gate');
+});
 
 for (const shared of [false, true]) {
   test(`provider startup mismatch survives restoration; later dependent=${shared}`, () => {
