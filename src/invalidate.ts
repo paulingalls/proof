@@ -4,8 +4,9 @@ import { RefTree } from './git';
 import { key } from './key';
 import { Store } from './store';
 
+export const invalidateUsage = 'usage: proof invalidate --task <t> [--key k | --all]';
+
 export async function invalidate(args: string[]) {
-  const usage = 'usage: proof invalidate --task <t> [--key k | --all]';
   let id: string | undefined;
   let selected: string | undefined;
   let all = false;
@@ -14,13 +15,13 @@ export async function invalidate(args: string[]) {
     if (flag === '--all' && !all) all = true;
     else {
       const value = args[++i];
-      if (!value || value.startsWith('-')) throw new Error(usage);
+      if (!value || value.startsWith('-')) throw new Error(invalidateUsage);
       if (flag === '--task' && id === undefined) id = value;
       else if (flag === '--key' && selected === undefined) selected = value;
-      else throw new Error(usage);
+      else throw new Error(invalidateUsage);
     }
   }
-  if (!id || (all && selected !== undefined)) throw new Error(usage);
+  if (!id || (all && selected !== undefined)) throw new Error(invalidateUsage);
   const tree = new RefTree('HEAD');
   const { project, tasks } = declarations(tree);
   if (!all && selected === undefined) {

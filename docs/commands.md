@@ -1,6 +1,21 @@
 # Commands
 
+`proof`, `proof --help`, `proof -h` and `proof help` print general help: commands,
+`proof.yaml` fields, environment variables, exit codes and absolute paths to the installed
+README and this command reference. Help exits 0, needs no `proof.yaml` or store configuration,
+and works outside a git repository.
+
+```sh
+proof run --help
+proof help run
 ```
+
+These print identical usage and description text. Every command accepts `--help` or `-h`,
+and `proof help <command>` is equivalent. Help recognizes these exact forms; extra arguments
+retain the command's normal errors. An unknown command exits 2 and lists valid commands.
+
+```
+proof help [<command>]       general help or one command's usage
 proof plan [--set <name>] [--json]  what must run, and why
 proof why <task>            current key parts and changes since the newest proof
 proof status --ref <ref> [--set <name>] [--json]  proof state at a committed ref

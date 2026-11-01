@@ -4,9 +4,11 @@ import { keyParts } from './key-parts';
 import { currentTree, decide, renderDecision, STAGED_SUFFIX } from './plan';
 import { Store } from './store';
 
+export const whyUsage = 'usage: proof why <task>';
+
 export async function why(args: string[]) {
   const [id] = args;
-  if (args.length !== 1 || !id || id.startsWith('-')) throw new Error('usage: proof why <task>');
+  if (args.length !== 1 || !id || id.startsWith('-')) throw new Error(whyUsage);
   const view = currentTree();
   const task = view.tasks.get(id);
   if (!task) throw new Error(`undeclared task '${id}'`);

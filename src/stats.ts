@@ -2,7 +2,8 @@ import { selectTasks } from './declarations';
 import { currentTree, decide } from './plan';
 import { localDay, Store } from './store';
 
-const usage = 'usage: proof stats [--set <name>] [--since Nd]';
+export const statsUsage = 'usage: proof stats [--set <name>] [--since Nd]';
+
 const format = (value: number) => String(Number(value.toFixed(2)));
 
 export async function stats(args: string[]) {
@@ -10,12 +11,12 @@ export async function stats(args: string[]) {
   let days: number | undefined;
   for (let i = 0; i < args.length; i += 2) {
     const value = args[i + 1];
-    if (!value || value.startsWith('-')) throw new Error(usage);
+    if (!value || value.startsWith('-')) throw new Error(statsUsage);
     if (args[i] === '--set' && set === undefined) set = value;
     else if (args[i] === '--since' && days === undefined && /^[1-9]\d*d$/.test(value)) {
       days = Number(value.slice(0, -1));
-      if (!Number.isSafeInteger(days)) throw new Error(usage);
-    } else throw new Error(usage);
+      if (!Number.isSafeInteger(days)) throw new Error(statsUsage);
+    } else throw new Error(statsUsage);
   }
   days ??= 30;
   const now = new Date();
@@ -24,7 +25,7 @@ export async function stats(args: string[]) {
   const start = boundary(1 - days);
   const end = boundary(1);
   const previous = boundary(1 - 2 * days);
-  if ([start, end, previous].some((date) => !Number.isFinite(+date))) throw new Error(usage);
+  if ([start, end, previous].some((date) => !Number.isFinite(+date))) throw new Error(statsUsage);
   const view = currentTree();
   const tasks = selectTasks(view.tasks, set);
   const store = await Store.open(view.project);

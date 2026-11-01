@@ -309,7 +309,20 @@ provider-free tasks have no `providers` field. Neither plan form starts resource
 
 ## Commands
 
-`plan`, `run`, `why`, `status`, `record`, `invalidate`, `flakes`, `stats`, `check`, `lint` and `doctor`. Every flag, output line and exit code is in [docs/commands.md](docs/commands.md).
+Run `proof` (or `proof --help`, `proof -h`, `proof help`) to list commands,
+`proof.yaml` fields, environment variables, exit codes and absolute paths to the installed
+README and command reference. Help exits 0 and works outside a git repo without `proof.yaml`.
+
+```sh
+proof run --help
+proof help run
+```
+
+Both print the same usage and description; `proof run -h` also works. Every command supports
+these help forms.
+
+`plan`, `run`, `why`, `status`, `record`, `invalidate`, `flakes`, `stats`, `check`, `lint`,
+`doctor` and `help`. Every flag, output line and exit code is in [docs/commands.md](docs/commands.md).
 
 ## Sharing proofs across machines
 
