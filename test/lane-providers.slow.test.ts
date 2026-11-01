@@ -129,3 +129,81 @@ test('exports from distinct providers conflict even across lane instances', () =
   expect(f.has('a')).toBe(false);
   expect(f.rows()[0]?.outcome).toBe('incomplete');
 });
+
+test('failed slot retires capacity while healthy slot serves later tasks', async () => {
+  const f = setup(
+    {
+      a: `${addressed('a')}; ${wait('release')}`,
+      b: addressed('b'),
+      c: addressed('c'),
+      d: addressed('d'),
+    },
+    {
+      stack: {
+        ...stack,
+        start: `${stack.start}; if test "$PROOF_LANE_SLOT" = 1; then ${wait('a')}; touch scratch/failed; exit 1; fi`,
+      },
+    },
+  );
+  const running = spawn(f, '--jobs', '2');
+  try {
+    await until(() => f.has('failed') && f.rows().some((r) => r.task === 'b'));
+    await Bun.sleep(300);
+    expect(f.rows().map((r) => r.task)).toEqual(['b']);
+    expect(f.has('c') || f.has('d')).toBe(false);
+    expect(f.read('start-1')).toBe('start\n');
+    f.mark('release');
+    expect(await finish(running, 1)).toContain("provider 'stack[1]' start failed");
+    expect(f.read('c').trim()).toBe('0');
+    expect(f.read('d').trim()).toBe('0');
+    expect(
+      f
+        .rows()
+        .map((r) => [r.task, r.outcome])
+        .sort(),
+    ).toEqual([
+      ['a', 'green'],
+      ['b', 'incomplete'],
+      ['c', 'green'],
+      ['d', 'green'],
+    ]);
+    expect(f.read('stop-0')).toBe('stop\n');
+    expect(f.read('stop-1')).toBe('stop\n');
+  } finally {
+    f.mark('release');
+    await stop(running.child);
+  }
+});
+
+for (const limit of [1, 2]) {
+  test(`exhausted lane records incomplete, limit=${limit}`, () => {
+    const tasks = Object.fromEntries(
+      ['a', 'b', 'c'].map((id) => [
+        id,
+        {
+          ...task(mark(id), id === 'c' ? [] : ['stack']),
+          lane: 'ios',
+        },
+      ]),
+    );
+    const providers = { stack: { ...stack, start: `${stack.start}; exit 1` } };
+    const f = fixture(tasks, providers, {
+      'proof.yaml': JSON.stringify({
+        version: 1,
+        project: 'jobs',
+        tasks,
+        providers,
+        lanes: { ios: limit },
+      }),
+    });
+    const result = f.run('--jobs', '2');
+    expect(result.code).toBe(1);
+    expect(result.out).toContain("lane 'ios' exhausted");
+    expect(['a', 'b', 'c'].some(f.has)).toBe(false);
+    expect(f.rows().map((r) => r.outcome)).toEqual(['incomplete', 'incomplete', 'incomplete']);
+    for (let slot = 0; slot < limit; slot++) {
+      expect(f.read(`start-${slot}`)).toBe('start\n');
+      expect(f.read(`stop-${slot}`)).toBe('stop\n');
+    }
+  });
+}
