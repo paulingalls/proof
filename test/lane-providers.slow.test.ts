@@ -178,10 +178,11 @@ test('failed slot retires capacity while healthy slot serves later tasks', async
 for (const limit of [1, 2]) {
   test(`exhausted lane records incomplete, limit=${limit}`, () => {
     const tasks = Object.fromEntries(
-      ['a', 'b', 'c'].map((id) => [
+      ['a', 'b', 'c', 'd'].map((id) => [
         id,
         {
-          ...task(mark(id), id === 'c' ? [] : ['stack']),
+          ...task(mark(id), ['c', 'd'].includes(id) ? [] : ['stack']),
+          inputs: [id === 'd' ? 'missing' : 'input'],
           lane: 'ios',
         },
       ]),
@@ -199,7 +200,8 @@ for (const limit of [1, 2]) {
     const result = f.run('--jobs', '2');
     expect(result.code).toBe(1);
     expect(result.out).toContain("lane 'ios' exhausted");
-    expect(['a', 'b', 'c'].some(f.has)).toBe(false);
+    expect(['a', 'b', 'c', 'd'].some(f.has)).toBe(false);
+    expect(result.out).toMatch(/incomplete d;.*lane 'ios' exhausted/);
     expect(f.rows().map((r) => r.outcome)).toEqual(['incomplete', 'incomplete', 'incomplete']);
     for (let slot = 0; slot < limit; slot++) {
       expect(f.read(`start-${slot}`)).toBe('start\n');
