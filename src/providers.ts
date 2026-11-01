@@ -46,10 +46,14 @@ export class Providers {
     return [...this.attempts.values()].flatMap((instances) => [...instances.values()]);
   }
 
-  private instanceSlot(name: string, slot?: number) {
+  lane(name: string) {
     const provider = this.initial.get(name);
     if (!provider) throw new Error(`unknown provider '${name}' at run entry`);
-    return provider.lane === undefined ? undefined : slot;
+    return provider.lane;
+  }
+
+  private instanceSlot(name: string, slot?: number) {
+    return this.lane(name) === undefined ? undefined : slot;
   }
 
   validate(needs: string[], lane?: string) {

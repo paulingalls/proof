@@ -80,12 +80,13 @@ export async function runTask(
   };
   printRevision();
   let slot: number | undefined;
+  let exhausted: string | undefined;
   try {
     let started = false;
     if (decision.state !== 'PROVEN' && !processes.cancelled) {
-      slot = lanes.allocate(lane);
+      ({ slot, exhausted } = lanes.allocate(lane));
       providers.validate(task.needs ?? [], lane);
-      for (const name of task.needs ?? []) {
+      for (const name of exhausted ? [] : (task.needs ?? [])) {
         if (processes.cancelled) break;
         const provider = view.providers.get(name);
         if (!provider) throw new Error(`unknown provider '${name}'`);
@@ -99,7 +100,10 @@ export async function runTask(
           }
         }
         started = true;
-        await providers.start(name, provider, slot);
+        const ready = await providers.start(name, provider, slot);
+        const providerLane = providers.lane(name);
+        if (!ready && providerLane !== undefined && slot !== undefined)
+          lanes.retire(providerLane, slot);
       }
     }
     if (started) {
@@ -130,6 +134,7 @@ export async function runTask(
     providers.validate(task.needs ?? [], lane);
     const blocked =
       processes.cancelled ||
+      exhausted !== undefined ||
       (task.needs ?? []).map((name) => providers.ready(name, slot)).some((ready) => !ready);
     const current = declaration
       ? { reason: `dirty declaration '${declaration}'`, key: undefined }
@@ -218,7 +223,7 @@ export async function runTask(
         if (deletedLocal) summary.push(`deleted proof local ${id} ${current.key}`);
         if (deletedShared) summary.push(`deleted proof shared ${id} ${current.key}`);
         summary.push(
-          `${outcome} ${id}${unbuilt ? `; sandbox failed: ${unbuilt}` : unpublished ? `; no proof published: ${unpublished}` : outcome === 'green' ? '; proof published' : ''}${sharing === 'local' ? '' : `; ${sharing}`}${log}`,
+          `${outcome} ${id}${exhausted ? `; ${exhausted}` : unbuilt ? `; sandbox failed: ${unbuilt}` : unpublished ? `; no proof published: ${unpublished}` : outcome === 'green' ? '; proof published' : ''}${sharing === 'local' ? '' : `; ${sharing}`}${log}`,
         );
       } else
         summary.push(

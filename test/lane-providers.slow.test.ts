@@ -81,7 +81,7 @@ for (const jobs of [1, 2]) {
     );
     const running = spawn(f, '--jobs', String(jobs));
     try {
-      await until(() => f.has('b') || running.child.exitCode !== null);
+      await until(() => (f.has('a') && f.has('b')) || running.child.exitCode !== null);
       expect(f.has('b')).toBe(true);
       expect(f.read('a').trim()).toBe('0');
       expect(f.read('b').trim()).toBe(jobs === 1 ? '0' : '1');
