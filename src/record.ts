@@ -4,24 +4,26 @@ import { dirtyPaths, RefTree } from './git';
 import { key } from './key';
 import { Store } from './store';
 
+export const recordUsage =
+  'usage: proof record <task> --outcome green|red|incomplete [--seconds N]';
+
 export async function record(args: string[]) {
   const [id, ...flags] = args;
-  const usage = 'usage: proof record <task> --outcome green|red|incomplete [--seconds N]';
-  if (!id || id.startsWith('--')) throw new Error(usage);
+  if (!id || id.startsWith('--')) throw new Error(recordUsage);
   let outcome: string | undefined;
   let seconds: number | null = null;
   for (let i = 0; i < flags.length; i += 2) {
     const flag = flags[i];
     const value = flags[i + 1];
-    if (value === undefined) throw new Error(usage);
+    if (value === undefined) throw new Error(recordUsage);
     if (flag === '--outcome' && outcome === undefined) outcome = value;
     else if (flag === '--seconds' && seconds === null) {
       seconds = Number(value);
       if (!value.trim() || !Number.isFinite(seconds) || seconds < 0)
         throw new Error('--seconds must be a finite nonnegative number');
-    } else throw new Error(usage);
+    } else throw new Error(recordUsage);
   }
-  if (outcome === undefined) throw new Error(usage);
+  if (outcome === undefined) throw new Error(recordUsage);
   if (outcome !== 'green' && outcome !== 'red' && outcome !== 'incomplete')
     throw new Error(`unknown outcome '${outcome}'`);
   const tree = new RefTree('HEAD');

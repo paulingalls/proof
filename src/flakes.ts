@@ -2,17 +2,18 @@ import { declarations } from './declarations';
 import { RefTree } from './git';
 import { Store } from './store';
 
+export const flakesUsage = 'usage: proof flakes [--since Nd]';
+
 export async function flakes(args: string[]) {
-  const usage = 'usage: proof flakes [--since Nd]';
   let days = 30;
   if (args.length) {
     if (args.length !== 2 || args[0] !== '--since' || !/^[1-9]\d*d$/.test(args[1] ?? ''))
-      throw new Error(usage);
+      throw new Error(flakesUsage);
     days = Number(args[1]?.slice(0, -1));
   }
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1 - days);
-  if (!Number.isSafeInteger(days) || !Number.isFinite(+start)) throw new Error(usage);
+  if (!Number.isSafeInteger(days) || !Number.isFinite(+start)) throw new Error(flakesUsage);
   const { project } = declarations(new RefTree('HEAD'));
   const store = await Store.open(project);
   try {

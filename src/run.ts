@@ -7,17 +7,18 @@ import { RunProcesses } from './run-process';
 import { runTask } from './run-task';
 import { Store } from './store';
 
+export const runUsage =
+  'usage: proof run [--fresh | --staged] [--jobs N] [--tasks <id> ... | --set <name>]';
+
 export async function run(args: string[]) {
   const fresh = args[0] === '--fresh';
   const staged = args[0] === '--staged';
   if (fresh || staged) args = args.slice(1);
-  const usage =
-    'usage: proof run [--fresh | --staged] [--jobs N] [--tasks <id> ... | --set <name>]';
   let jobs = 1;
   if (args[0] === '--jobs') {
     const value = args[1] ?? '';
     jobs = Number(value);
-    if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(jobs)) throw new Error(usage);
+    if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(jobs)) throw new Error(runUsage);
     args = args.slice(2);
   }
   const set =
@@ -27,7 +28,7 @@ export async function run(args: string[]) {
     set === undefined &&
     (args[0] !== '--tasks' || args.length < 2 || args.slice(1).some((id) => id.startsWith('--')))
   )
-    throw new Error(usage);
+    throw new Error(runUsage);
   const parent = staged ? resolveRef('HEAD') : undefined;
   const captured = staged ? RefTree.index() : undefined;
   const snapshot = captured

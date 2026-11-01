@@ -4,6 +4,7 @@ import pkg from '../package.json';
 import { check } from './check';
 import { doctor } from './doctor';
 import { flakes } from './flakes';
+import { checkUsage, doctorUsage, lintUsage, planUsage, statusUsage } from './help';
 import { invalidate } from './invalidate';
 import { lint } from './lint';
 import { plan, renderDecision } from './plan';
@@ -47,12 +48,12 @@ if (command === '--version') {
     } else if (command === 'why') {
       await why(args);
     } else if (command === 'doctor') {
-      if (args.length) throw new Error('usage: proof doctor');
+      if (args.length) throw new Error(doctorUsage);
       process.exitCode = await doctor();
     } else if (command === 'run') {
       process.exitCode = await run(args);
     } else if (command === 'lint') {
-      if (args.length) throw new Error('usage: proof lint');
+      if (args.length) throw new Error(lintUsage);
       const findings = lint();
       for (const finding of findings) console.log(finding);
       process.exitCode = findings.length ? 1 : 0;
@@ -79,9 +80,9 @@ if (command === '--version') {
           !args[i + 1]?.startsWith('-')
         )
           set = args[++i];
-        else throw new Error('usage: proof status --ref <ref> [--set <name>] [--json]');
+        else throw new Error(statusUsage);
       }
-      if (!ref) throw new Error('usage: proof status --ref <ref> [--set <name>] [--json]');
+      if (!ref) throw new Error(statusUsage);
       const rows = await status(ref, set);
       if (json) console.log(JSON.stringify(rows));
       else for (const row of rows) console.log(renderDecision(row));
@@ -99,13 +100,13 @@ if (command === '--version') {
           !args[i + 1]?.startsWith('-')
         )
           set = args[++i];
-        else throw new Error('usage: proof plan [--set <name>] [--json]');
+        else throw new Error(planUsage);
       }
       const rows = await plan(set);
       if (json) console.log(JSON.stringify(rows));
       else for (const row of rows) console.log(renderDecision(row));
     } else {
-      if (args.length !== 1 || !args[0]) throw new Error('usage: proof check <cases.yaml>');
+      if (args.length !== 1 || !args[0]) throw new Error(checkUsage);
       process.exitCode = await check(args[0]);
     }
   } catch (error) {
