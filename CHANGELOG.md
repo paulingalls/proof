@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.14.0
+
+- A provider can declare `lane: <name>`. proof starts one instance per lane slot in use, only for
+  RUN tasks, so tasks that would wipe each other's stack can run in parallel. Tasks needing it must
+  declare that lane. A failed start retires its slot.
+- Every RUN task in a declared lane, and a laned provider's `start` and `stop`, receive
+  `PROOF_LANE_SLOT`. The name is reserved.
+- `PROOF_LANES=name=N,...` replaces declared lane limits for a run. Slots and limits stay out of keys.
+
 ## 0.13.3
 
 - Git-ignored files no longer count: globs see what git sees, and proof no longer lists them. An

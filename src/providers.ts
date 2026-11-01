@@ -14,6 +14,8 @@ export type ProviderEnvironment = {
 };
 
 type Attempt = {
+  name: string;
+  slot?: number;
   env: Record<string, string>;
   declaration: Provider;
   ready: boolean;
@@ -22,7 +24,7 @@ type Attempt = {
 };
 
 export class Providers {
-  private readonly attempts = new Map<string, Attempt>();
+  private readonly attempts = new Map<string, Map<number | undefined, Attempt>>();
 
   constructor(
     private readonly execute: (
@@ -33,29 +35,65 @@ export class Providers {
     ) => Promise<LogResult & { ready: boolean; problem?: string }>,
     private readonly report: (message: string) => void,
     private readonly tasks: () => Iterable<Task>,
+    private readonly initial: Map<string, Provider>,
   ) {}
 
   attempted(needs: string[]) {
     return needs.some((name) => this.attempts.has(name));
   }
 
-  live() {
-    return [...this.attempts.values()].some((attempt) => !attempt.stopped);
+  private instances() {
+    return [...this.attempts.values()].flatMap((instances) => [...instances.values()]);
   }
 
-  async start(name: string, declaration: Provider) {
-    const previous = this.attempts.get(name);
+  lane(name: string) {
+    const provider = this.initial.get(name);
+    if (!provider) throw new Error(`unknown provider '${name}' at run entry`);
+    return provider.lane;
+  }
+
+  private instanceSlot(name: string, slot?: number) {
+    return this.lane(name) === undefined ? undefined : slot;
+  }
+
+  attemptedInstance(name: string, slot?: number) {
+    return this.attempts.get(name)?.has(this.instanceSlot(name, slot)) ?? false;
+  }
+
+  live() {
+    return this.instances().some((attempt) => !attempt.stopped);
+  }
+
+  async start(name: string, declaration: Provider, slot?: number) {
+    slot = this.instanceSlot(name, slot);
+    const instances = this.attempts.get(name) ?? new Map<number | undefined, Attempt>();
+    const previous = instances.get(slot);
     if (previous) return previous.starting;
     const attempt: Attempt = {
+      name,
+      slot,
       declaration,
       env: {},
       ready: false,
       stopped: false,
       starting: Promise.resolve(false),
     };
-    this.attempts.set(name, attempt);
-    attempt.starting = this.startAttempt(name, attempt);
+    this.attempts.set(name, instances);
+    instances.set(slot, attempt);
+    attempt.starting = this.startAttempt(this.display(attempt), attempt);
     return attempt.starting;
+  }
+
+  private display(attempt: Attempt) {
+    return attempt.slot === undefined ? attempt.name : `${attempt.name}[${attempt.slot}]`;
+  }
+
+  private processEnv(attempt: Attempt) {
+    const env = { ...process.env };
+    delete env.PROOF_LANE_SLOT;
+    delete env[CHANNEL];
+    if (attempt.slot !== undefined) env.PROOF_LANE_SLOT = String(attempt.slot);
+    return env;
   }
 
   private async startAttempt(name: string, attempt: Attempt) {
@@ -71,8 +109,8 @@ export class Providers {
         return false;
       }
       const result = await this.execute(attempt.declaration.start, false, name, {
-        env: { ...process.env, [CHANNEL]: path },
-        accept: () => this.accept(name, attempt, path),
+        env: { ...this.processEnv(attempt), [CHANNEL]: path },
+        accept: () => this.accept(attempt.name, attempt, path),
       });
       attempt.ready = result.ready;
       if (!result.ready || result.error)
@@ -102,14 +140,20 @@ export class Providers {
       const where = `environment line ${index + 1}`;
       if (equals < 0 || !NAME.test(name)) return `${where}: invalid name`;
       const named = `${where} '${name}'`;
-      if ([...BASE_ENV, CHANNEL].includes(name)) return `${named}: reserved name`;
+      if ([...BASE_ENV, CHANNEL, 'PROOF_LANE_SLOT'].includes(name))
+        return `${named}: reserved name`;
       if (Object.hasOwn(env, name)) return `${named}: duplicate name`;
       // Bun's spawn error includes the value when an environment string contains NUL.
       if (line.includes('\0')) return `${named}: NUL is not allowed`;
       for (const task of tasks) {
         if (task.env?.includes(name)) return `${named}: conflicts with declared env`;
         for (const other of task.needs ?? []) {
-          if (other !== provider && Object.hasOwn(this.attempts.get(other)?.env ?? {}, name))
+          if (
+            other !== provider &&
+            [...(this.attempts.get(other)?.values() ?? [])].some((instance) =>
+              Object.hasOwn(instance.env, name),
+            )
+          )
             return `${named}: conflicts with provider '${other}'`;
         }
       }
@@ -118,29 +162,38 @@ export class Providers {
     attempt.env = env;
   }
 
-  environment(needs: string[]) {
+  environment(needs: string[], slot?: number) {
     const env: Record<string, string> = Object.create(null);
     for (const name of needs) {
-      if (!this.ready(name)) throw new Error(`provider '${name}' is not ready`);
-      Object.assign(env, this.attempts.get(name)?.env);
+      if (!this.ready(name, slot)) throw new Error(`provider '${name}' is not ready`);
+      Object.assign(env, this.attempts.get(name)?.get(this.instanceSlot(name, slot))?.env);
     }
     return env;
   }
 
-  ready(name: string) {
-    const attempt = this.attempts.get(name);
+  ready(name: string, slot?: number) {
+    const attempt = this.attempts.get(name)?.get(this.instanceSlot(name, slot));
     if (!attempt || attempt.stopped)
       throw new Error(`provider '${name}' is ${attempt ? 'already stopped' : 'not started'}`);
     return attempt.ready;
   }
 
   async stopExcept(remaining: Set<string>) {
-    for (const [name, attempt] of this.attempts) {
-      if (attempt.stopped || remaining.has(name)) continue;
+    for (const attempt of this.instances()) {
+      const name = this.display(attempt);
+      if (attempt.stopped || remaining.has(attempt.name)) continue;
       attempt.stopped = true;
       if (!attempt.declaration.stop) continue;
       try {
-        if ((await this.execute(attempt.declaration.stop, true, name)).ready) continue;
+        if (
+          (
+            await this.execute(attempt.declaration.stop, true, name, {
+              env: this.processEnv(attempt),
+              accept: () => undefined,
+            })
+          ).ready
+        )
+          continue;
       } catch (error) {
         this.report(`provider '${name}' stop failed: ${error}`);
         continue;

@@ -46,6 +46,63 @@ test('lane declaration errors reach every declaration reader', () => {
   expect(f.repo.cli(['lint'], f.env).err).toContain("task 't': unknown lane 'missing'");
 }, 30000);
 
+test('provider lanes and reserved slot env reach every reader', () => {
+  const f = fixture({ t: task('true') });
+  const commands = [
+    'plan',
+    'run --tasks t',
+    'record t --outcome green',
+    'why t',
+    'status --ref HEAD',
+    'lint',
+    'doctor',
+    'check .git/cases.yaml',
+  ];
+  for (const [providerLane, lane, env, message] of [
+    ['ios', undefined, [], "requires lane 'ios'"],
+    ['ios', 'other', [], "requires lane 'ios'"],
+    ['missing', 'ios', [], "unknown lane 'missing'"],
+    ['solo', 'ios', [], "unknown lane 'solo'"],
+    ['ios', 'ios', ['PROOF_LANE_SLOT'], 'PROOF_LANE_SLOT is reserved'],
+  ] as const) {
+    f.repo.commit({
+      'proof.yaml': declaration(
+        { t: task('true') },
+        {
+          lanes: { ios: 2, other: 1 },
+          providers: { stack: { start: 'true', lane: providerLane } },
+          include: 'proof.d/*.yaml',
+        },
+      ),
+      'proof.d/tasks.yaml': JSON.stringify({
+        tasks: {
+          dependent: {
+            ...task('true', ['stack']),
+            lane,
+            env,
+          },
+        },
+      }),
+    });
+    f.repo.write('.git/cases.yaml', '[{"name":"same","from":"HEAD","to":"HEAD","expect":[]}]');
+    for (const command of commands) {
+      const result = f.repo.cli(command.split(' '), f.env);
+      expect(result.code, command + result.err).toBe(2);
+      expect(result.err).toContain(message);
+    }
+  }
+  f.repo.commit({
+    'proof.yaml': declaration(
+      { t: { ...task('true', ['stack']), lane: 'ios' } },
+      {
+        lanes: { ios: 2 },
+        providers: { stack: { start: 'true', lane: 'ios' } },
+      },
+    ),
+  });
+  expect(f.repo.cli(['plan'], f.env).code).toBe(0);
+});
+
 test('included lanes and solo parse; scheduling metadata preserves existing proof', () => {
   const f = fixture({ t: task('true') });
   expect(f.repo.cli(['record', 't', '--outcome', 'green'], f.env).code).toBe(0);

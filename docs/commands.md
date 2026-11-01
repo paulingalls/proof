@@ -34,10 +34,11 @@ one as the local replica, outside checkouts by default. A `PROOF_STATE_DIR` over
 a checkout also puts logs there, so removing that checkout removes those logs. Logs stay
 local and never enter either store: they may contain private data.
 
-Providers start once, all dependents await readiness, and teardown waits for their running
-and pending users. Starts use the same capture and display rules, with `--- provider-<name>`
+Providers without `lane` start once; laned providers start once per used slot. Dependents
+await their instance’s readiness, and teardown waits for all running and pending users. Starts use the same capture and display rules, with `--- provider-<name>`
 blocks above one job. A failed start's summary names its retained log under
-`logs/<project>/providers/<name>/`, with its own ten-log budget;
+`logs/<project>/providers/<name>/`, with its own ten-log budget. Laned instances use
+`stack[0]`, `stack[1]`, etc. in diagnostics, headers and encoded log paths;
 a ready start deletes its capture. Background processes left by provider starts no longer
 send output to the terminal after startup finishes. Provider stops keep their inherited streams.
 
@@ -54,16 +55,18 @@ Proof reads the file after a successful, unsignalled start and validates it befo
 readiness. The file and private directory are removed before dependents execute, including
 on invalid content, failed startup or interruption. Do not delete the file: a missing or unreadable
 file fails startup. Writing nothing leaves the environment unchanged. `stop` keeps the caller's
-environment; it receives neither the channel path nor an implicit merge of exports.
+environment with its own `PROOF_LANE_SLOT` when laned; it receives neither the channel path
+nor an implicit merge of exports. Unlaned starts and stops receive no inherited lane slot.
 
 Each LF-separated line is `NAME=value`, split at the first `=`. Names match
 `[A-Za-z_][A-Za-z0-9_]*`. Values are literal: spaces, extra `=`, quotes, dollar signs and carriage
 returns stay unchanged; empty values are allowed. A final newline is optional. There is no shell
 evaluation, interpolation, quote removal or comment syntax. Blank lines, malformed names,
-duplicate names and NUL bytes fail startup. `PATH`, `HOME`, `TMPDIR` and `PROOF_PROVIDER_ENV`
-are reserved. An export also fails if its name is in any dependent's declared `env`, including an
+duplicate names and NUL bytes fail startup. `PATH`, `HOME`, `TMPDIR`, `PROOF_PROVIDER_ENV` and
+`PROOF_LANE_SLOT` are reserved. An export also fails if its name is in any dependent's declared `env`, including an
 unselected dependent, or another provider started in this run exports that name and any declared task needs both.
-Equal values still conflict; disjoint providers may export the same name. Validation uses the
+Equal values still conflict; disjoint providers may export the same name. Different slots of
+the same provider may export the same name, and each task receives only its instance’s values. Validation uses the
 declarations read after that start returns, including startup edits.
 
 A rejected export fails that provider's start and blocks its dependents with `incomplete`.
@@ -81,8 +84,14 @@ Resource lanes add a limit within `--jobs`. For example, after creating an `inpu
 version: 1
 project: lane-example
 lanes: {ios: 2}
+providers:
+  stack:
+    lane: ios
+    start: printf "ADDRESS=instance-%s\n" "$PROOF_LANE_SLOT" > "$PROOF_PROVIDER_ENV"
+    stop: echo stopped-$PROOF_LANE_SLOT
 tasks:
-  simulator: {run: echo simulator, inputs: [input], lane: ios}
+  simulator-a: {run: echo "$PROOF_LANE_SLOT $ADDRESS", inputs: [input], lane: ios, needs: [stack]}
+  simulator-b: {run: echo "$PROOF_LANE_SLOT $ADDRESS", inputs: [input], lane: ios, needs: [stack]}
   exclusive: {run: echo exclusive, inputs: [input], lane: solo}
 ```
 
@@ -93,8 +102,35 @@ of later tasks until earlier tasks drain, then occupies the run alone. `solo` is
 and needs no declaration. Declaring it in root `lanes`, naming an undeclared lane, or
 using a limit other than a positive safe integer is a declaration error (exit 2).
 
-Lanes and limits are read once when the run starts. Like task sets, they do not enter
-proof identity: changing them preserves proofs, except for a task selecting `proof.yaml`,
+Only RUN tasks take slots: each receives the lowest free nonretired index, starting at 0,
+in `PROOF_LANE_SLOT`, even without a provider. The slot is released when the task ends.
+PROVEN tasks take none. Unlaned and `solo` tasks receive no slot, even if the caller set it.
+A laned provider starts at most once per slot used; sequential tasks reuse its instance.
+Every instance stops together when no unfinished task needs the provider. A dependent must
+use its provider's declared lane; a provider on an unknown lane or `solo` is invalid.
+Task `env` cannot declare `PROOF_LANE_SLOT`.
+
+A failed laned start (including rejected exports) retires its slot and records that task
+incomplete. Later RUN tasks use healthy slots; admission capacity drops by one per retired
+slot, never below 1. If every slot fails, remaining RUN tasks in that lane record incomplete
+with an exhausted-lane reason, including tasks without providers. Existing active tasks finish.
+An ordinary red task releases its slot without retiring it.
+
+Override limits up or down for one run:
+
+```sh
+PROOF_LANES=ios=1 proof run --fresh --jobs 3
+PROOF_LANES=ios=3 proof run --fresh --jobs 3
+```
+
+The first example reuses one instance; the second permits up to three slots (this example
+has two simulator tasks). Unspecified lanes retain their declared limits. `PROOF_LANES`
+accepts comma-separated `name=N` entries with positive safe decimal integers. Empty values,
+whitespace, leading zeros, duplicate or unknown names (including `solo`), fractions and extra
+`=` signs exit 2 before any task or provider starts, even in an all-PROVEN or empty run.
+
+Task lanes, provider lanes and effective limits are read once when the run starts. Like task sets, they do not enter
+proof identity: slots, provider instances and limits do not change keys; changing them preserves proofs, except for a task selecting `proof.yaml`,
 whose bytes enter its key. Limits apply per `proof run`; separate invocations do not share
 capacity. Per-host locking across clones (design §4.11) remains a milestone Candidate.
 

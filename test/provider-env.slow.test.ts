@@ -173,6 +173,11 @@ const rejections: {
     payload: (v) => `PROOF_PROVIDER_ENV=${v}`,
     expected: "'PROOF_PROVIDER_ENV'",
   },
+  {
+    kind: 'PROOF_LANE_SLOT',
+    payload: (v) => `PROOF_LANE_SLOT=${v}`,
+    expected: "'PROOF_LANE_SLOT': reserved name",
+  },
   { kind: 'declared', payload: url, expected: "'URL'", env: ['URL'] },
   { kind: 'edited', payload: url, expected: "'URL'", edit: declareLater },
   {
