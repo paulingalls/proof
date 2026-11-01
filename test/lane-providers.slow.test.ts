@@ -207,3 +207,68 @@ for (const limit of [1, 2]) {
     }
   });
 }
+
+for (const limit of [1, 3]) {
+  test(`runtime lane override replaces limit with ${limit}, preserving other lanes`, async () => {
+    const f = setup(
+      Object.fromEntries(
+        ['a', 'b', 'c', 'otherA', 'otherB'].map((id) => [id, `${mark(id)}; ${wait('release')}`]),
+      ),
+      {},
+      { ios: 2, other: 2 },
+    );
+    Object.assign(f.env, { PROOF_LANES: `ios=${limit}` });
+    const running = spawn(f, '--fresh', '--jobs', '5');
+    try {
+      const expected = [...['a', 'b', 'c'].slice(0, limit), 'otherA', 'otherB'];
+      await until(() => expected.every(f.has));
+      await Bun.sleep(300);
+      expect(['a', 'b', 'c'].filter(f.has)).toHaveLength(limit);
+      expect(
+        expected
+          .filter((id) => !id.startsWith('other'))
+          .map((id) => f.read(id).trim())
+          .sort(),
+      ).toEqual(Array.from({ length: limit }, (_, i) => String(i)));
+      expect(['otherA', 'otherB'].map((id) => f.read(id).trim()).sort()).toEqual(['0', '1']);
+      f.mark('release');
+      await finish(running);
+    } finally {
+      f.mark('release');
+      await stop(running.child);
+    }
+  });
+}
+
+test('runtime lane overrides reject malformed values before starting even proven or empty runs', () => {
+  const f = setup({ a: mark('a') }, { stack });
+  expect(f.repo.cli(['record', 'a', '--outcome', 'green'], f.env).code).toBe(0);
+  const empty = fixture({});
+  for (const value of [
+    '',
+    'ios',
+    '=1',
+    'ios=',
+    'ios=0',
+    'ios=-1',
+    'ios=1.5',
+    'ios=x',
+    'ios=01',
+    'ios=9007199254740992',
+    'ios=1=2',
+    ',ios=1',
+    'ios=1,',
+    'ios=1,,ios=2',
+    'ios=1,ios=2',
+    ' ios=1',
+    'ios=1 ',
+    'missing=1',
+    'solo=1',
+  ]) {
+    const result = f.repo.cli(['run', '--jobs', '2'], { ...f.env, PROOF_LANES: value });
+    expect(result.code, value + result.out + result.err).toBe(2);
+    expect(result.err).toContain('PROOF_LANES');
+    expect(f.has('start-0')).toBe(false);
+    expect(empty.repo.cli(['run'], { ...empty.env, PROOF_LANES: value }).code).toBe(2);
+  }
+});
