@@ -32,7 +32,7 @@ The goal: run only what a change can actually affect, and nothing extra.
 tagged release from GitHub:
 
 ```sh
-bun add -d "git+https://github.com/paulingalls/proof.git#v0.12.2"
+bun add -d "git+https://github.com/paulingalls/proof.git#v0.13.0"
 bunx proof --version
 ```
 
