@@ -111,6 +111,11 @@ The package has its own tests for its own behaviour, on synthetic repos it build
   - Journeys (native and web) exercise the running backend, so their inputs include `$stack` too: a backend
     change re-runs them. Never a stale PROVEN; a repo narrows `$stack` per journey if that costs too much
     (Paul, 2026-10-30, resolving design §4.2 against §1.2 cases 4, 7 and 10).
+  - **Amendment, Paul, 2026-11-01:** a repo may rely on representative gates for backend changes,
+    so journeys, images and other gates that share `$stack` need not re-run (R3's `unkeyed`). A
+    backend change that breaks only those stays green until R10's super run. That run is the
+    backstop and must run regularly; a miss it finds becomes a representative or a selection case.
+    Cases 4, 7 and 10 stand at their narrower sets: 69 to 6, 276 to 7, 80 to 7 tasks.
 - **R5. Derive, then declare.**
   - **Derived:** the import closure, from the language's own tooling rather than hand-written globs:
     Bun/TypeScript via `bun build --metafile` or the TypeScript program (honouring tsconfig paths and workspace
