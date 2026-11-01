@@ -227,7 +227,7 @@ export async function runTask(
         );
       } else
         summary.push(
-          `${outcome} ${id}; not recorded: ${current.reason}${escapes.length ? `; ${escapes.join('; ')}` : ''}${log}`,
+          `${outcome} ${id}; not recorded: ${current.reason}${exhausted ? `; ${exhausted}` : ''}${escapes.length ? `; ${escapes.join('; ')}` : ''}${log}`,
         );
     } finally {
       sandbox?.close();
