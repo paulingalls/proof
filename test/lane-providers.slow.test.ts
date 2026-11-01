@@ -272,3 +272,63 @@ test('runtime lane overrides reject malformed values before starting even proven
     expect(empty.repo.cli(['run'], { ...empty.env, PROOF_LANES: value }).code).toBe(2);
   }
 });
+
+test('keys survive actual slot changes, declared limits and runtime overrides', async () => {
+  const f = setup(
+    { a: `${addressed('a')}; ${wait('b')}`, b: `${addressed('b')}; ${wait('release')}` },
+    { stack },
+  );
+  const running = spawn(f, '--fresh', '--jobs', '2');
+  try {
+    await until(() => f.has('b'));
+    expect(f.read('b').trim()).toBe('1');
+    f.mark('release');
+    await finish(running);
+  } finally {
+    f.mark('release');
+    await stop(running.child);
+  }
+  expect(f.run('--fresh', '--jobs', '1', '--tasks', 'b').code).toBe(0);
+  expect(f.read('b').trim()).toBe('0');
+  const keys = f
+    .rows()
+    .filter((r) => r.task === 'b')
+    .map((r) => r.key);
+  expect(keys).toHaveLength(2);
+  expect(new Set(keys).size).toBe(1);
+  const declaration = JSON.parse(f.repo.git('show', 'HEAD:proof.yaml'));
+  declaration.lanes.ios = 1;
+  f.repo.commit({ 'proof.yaml': JSON.stringify(declaration) });
+  const before = f.read('start-0');
+  for (const override of [undefined, 'ios=3']) {
+    const result = f.repo.cli(['run', '--jobs', '3', '--tasks', 'b'], {
+      ...f.env,
+      PROOF_LANES: override,
+    });
+    expect(result.code).toBe(0);
+    expect(result.out).toContain('PROVEN b');
+    expect(f.read('start-0')).toBe(before);
+  }
+  expect(
+    f.repo.cli(['run', '--staged', '--jobs', '3', '--tasks', 'b'], {
+      ...f.env,
+      PROOF_LANES: 'ios=3',
+    }).out,
+  ).toContain('PROVEN b');
+});
+
+test('literal provider names cannot alias slot instance identities', () => {
+  const f = setup(
+    { a: `${addressed('a')} && test "$OTHER" = unlaned` },
+    {
+      stack,
+      'stack[0]': {
+        start: 'test -z "$PROOF_LANE_SLOT" && echo OTHER=unlaned > "$PROOF_PROVIDER_ENV"',
+        stop: 'test -z "$PROOF_LANE_SLOT" && touch scratch/unlaned-stop',
+      },
+    },
+  );
+  expect(f.repo.cli(['run'], { ...f.env, PROOF_LANE_SLOT: '99' }).code).toBe(0);
+  expect(f.has('unlaned-stop')).toBe(true);
+  expect(f.rows()[0]?.outcome).toBe('green');
+});

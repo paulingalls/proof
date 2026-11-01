@@ -156,6 +156,8 @@ The package has its own tests for its own behaviour, on synthetic repos it build
   that green everywhere and records a contradiction. Its greens publish proofs like any other clean run.
 - **R11. Running-stack reuse is modelled.** A run brings the stack up once for all its stack tasks. A stack
   already running is reused only if its identity matches the current tree's.
+  - Paul, 2026-11-01: a provider declaring `lane:` starts once per slot in use; a provider
+    without `lane:` still starts once per run.
 
 ### The store
 - **R12. Postgres in Docker** (a pinned image, never a Homebrew service).

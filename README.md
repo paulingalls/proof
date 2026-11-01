@@ -269,8 +269,12 @@ then `stack-ready`, the input contents, and `stack-stopped`. A second run reuses
 starts nothing. `proof run --tasks gate` considers only that task and its providers.
 
 `start` must return when the resource is ready; a long-lived resource detaches itself.
-Each needed provider starts at most once, only for a task currently RUN. Optional `stop` runs
-once after the last selected dependent, including on task failure, startup failure or interruption.
+A needed provider without `lane` starts at most once, only for a task currently RUN.
+A provider declaring `lane: ios` starts once per used slot of the declared `ios` lane;
+every dependent must declare that same lane. Tasks and their provider instance receive
+`PROOF_LANE_SLOT` (0 through limit minus one). PROVEN tasks take no slot and start nothing.
+Optional `stop` runs for every attempted instance after the last selected dependent,
+including on task failure, startup failure or interruption.
 Providers execute through `sh -c` in the checkout with the caller's environment. Dependent tasks
 keep their sandbox and declared environment, plus exports from their needed providers.
 `start` receives `PROOF_PROVIDER_ENV`, the path of a private mode-600 file in the state directory.
@@ -279,7 +283,9 @@ It may write literal `NAME=value` lines there; proof reads and removes it after 
 clones with different resource addresses can share proofs. Tasks without `needs: [stack]` receive
 none of its exports. Empty files preserve the existing lifecycle. See [the export rules](docs/commands.md#provider-environment)
 for names, conflicts and privacy. Included tasks use the root provider names;
-unknown names are declaration errors.
+unknown names are declaration errors. `PROOF_LANE_SLOT` is reserved in task `env` and provider
+exports. `PROOF_LANES=ios=1 proof run --jobs 3` replaces the declared limit for that invocation;
+see [lane scheduling and failures](docs/commands.md#provider-environment) for details.
 
 A failed start prevents its dependents from executing and records `incomplete`; existing proofs
 and contests stay intact. Dirty inputs use the existing committed-key recording path with the
