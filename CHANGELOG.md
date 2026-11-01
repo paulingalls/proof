@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.1
+
+- `proof`, `--help`, `-h` and `help` print the commands, `proof.yaml` fields, environment, exit codes
+  and installed docs paths, with no git repo needed. `proof <command> --help` and `proof help <command>`
+  describe one command. An unknown command lists the valid ones.
+
 ## 0.14.0
 
 - A provider can declare `lane: <name>`. proof starts one instance per lane slot in use, only for
