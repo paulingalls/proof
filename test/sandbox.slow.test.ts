@@ -10,7 +10,7 @@ import {
   symlinkSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { Repo } from './support/repo';
 
 const repos: Repo[] = [];
@@ -329,3 +329,146 @@ for (const via of ['tracked directory', 'ignored symlink to it']) {
     expect(changed.out).not.toContain('PROVEN linked');
   });
 }
+
+for (const python of [false, true]) {
+  test(`declared roots share installed targets; Python=${python}`, () => {
+    const { repo, env, cli, declare, run } = fixture();
+    repo.commit({ '.gitignore': 'a/node_modules/\n.venv/\nnode_modules-other/\n' });
+    repo.write('node_modules/.bun/example/index.js', 'installed');
+    const child = 'a/node_modules/example';
+    const pth = '.venv/lib/python3.13/site-packages/local.pth';
+    if (python) repo.write(pth, '../../../../node_modules/.bun/example\n');
+    else {
+      mkdirSync(join(repo.path, 'a/node_modules'), { recursive: true });
+      symlinkSync('../../node_modules/.bun/example', join(repo.path, child));
+    }
+    declare(
+      [python ? '.venv' : 'a/node_modules', 'node_modules'],
+      python ? `cat ${pth}` : `grep -q installed ${child}/index.js`,
+    );
+    expect(run().out).toContain('green linked; proof published');
+    const proof = rows(env, 'proofs');
+    expect(proof).toHaveLength(1);
+    expect(cli('plan', '--json').out).toContain('"state":"PROVEN"');
+    if (python) return;
+    repo.write('node_modules-other/index.js', 'installed');
+    rmSync(join(repo.path, child));
+    symlinkSync('../../node_modules-other', join(repo.path, child));
+    const plan = cli('plan', '--json');
+    expect(plan.out).toContain('"state":"RUN"');
+    expect(plan.out).toContain(`link escape '${child}'`);
+    expect(plan.out).toContain(join(repo.path, 'node_modules-other'));
+    const result = run();
+    expect(result.code).toBe(0);
+    expect(result.out).toContain('green linked; no proof published:');
+    expect(rows(env, 'proofs')).toEqual(proof);
+  });
+}
+
+for (const root of ['node_modules', 'a/node_modules']) {
+  test(`cross-root links still refuse tracked content in ${root}`, () => {
+    const { repo, env, cli, declare, run } = fixture();
+    repo.commit({ '.gitignore': 'a/node_modules/\n' });
+    const other = root === 'node_modules' ? 'a/node_modules' : 'node_modules';
+    repo.write(`${root}/payload/index.js`, 'tracked');
+    repo.git('add', '-f', `${root}/payload/index.js`);
+    repo.git('commit', '-qm', 'tracked payload');
+    mkdirSync(join(repo.path, other), { recursive: true });
+    symlinkSync(
+      root === 'node_modules' ? '../../node_modules/payload' : '../a/node_modules/payload',
+      join(repo.path, other, 'cross'),
+    );
+    declare(['a/node_modules', 'node_modules'], `grep -q tracked ${other}/cross/index.js`);
+    const result = run();
+    expect(result.code).toBe(0);
+    expect(result.out).toContain('green linked; no proof published:');
+    expect(result.out).toContain(`reaches tracked '${root}/payload/index.js'`);
+    expect(result.out).not.toContain('link escape');
+    expect(rows(env, 'proofs')).toEqual([]);
+    expect(cli('plan').out).toContain('RUN linked');
+  });
+}
+
+test('selected committed symlinks preserve target identity and checkout isolation', () => {
+  const { repo, env, cli, declare, run } = fixture();
+  repo.commit({ 'a/keep': '', first: 'same', second: 'same' });
+  const link = join(repo.path, 'a/link');
+  symlinkSync('../first', link);
+  const command = 'test -L a/link && test "$(cat a/link)" = same';
+  declare([], command, ['a/link', 'first', 'second']);
+  const decision = () =>
+    JSON.parse(cli('plan', '--json').out).find((row: { task: string }) => row.task === 'linked');
+  const before = decision().key;
+  expect(run().out).toContain('green linked; proof published');
+  expect(decision().state).toBe('PROVEN');
+  rmSync(link);
+  symlinkSync('../second', link);
+  repo.git('add', 'a/link');
+  repo.git('commit', '-qm', 'retarget identical bytes');
+  expect(decision().key).not.toBe(before);
+  expect(decision().state).toBe('RUN');
+  expect(run().out).toContain('green linked; proof published');
+  expect(decision().state).toBe('PROVEN');
+  declare(
+    [],
+    `rm '${link}'; ln -s ../first '${link}'; test "$(readlink a/link)" = ../second && ${command}`,
+    ['a/link', 'first', 'second'],
+  );
+  const result = run();
+  expect(result.code).toBe(0);
+  expect(result.out).toContain("no proof published: new dirty path 'a/link'");
+  expect(rows(env, 'proofs')).toHaveLength(2);
+});
+
+for (const kind of ['absolute', 'leaves repo', 'dirty']) {
+  test(`selected symlink rejects ${kind} targets before execution`, () => {
+    const { repo, env, declare, run } = fixture();
+    repo.commit({ target: 'same' });
+    const marker = join(directory(), 'ran');
+    const target =
+      kind === 'absolute'
+        ? join(repo.path, 'target')
+        : kind === 'leaves repo'
+          ? `../${basename(repo.path)}/target`
+          : 'target';
+    const link = join(repo.path, 'link');
+    symlinkSync(target, link);
+    declare([], `touch '${marker}'`, ['link', 'target']);
+    if (kind === 'dirty') {
+      rmSync(link);
+      symlinkSync('other', link);
+    }
+    const result = run();
+    expect(result.code).toBe(2);
+    expect(result.err).toContain("selected path 'link': symlink");
+    if (kind !== 'dirty') expect(result.err).toContain(target);
+    expect(existsSync(marker)).toBe(false);
+    expect(rows(env, 'results')).toEqual([]);
+    expect(rows(env, 'proofs')).toEqual([]);
+    expect(readdirSync(env.TMPDIR)).toEqual([]);
+  });
+}
+
+test('staged provider tasks publish with clean committed selected symlinks', () => {
+  const { repo, env, cli } = fixture();
+  repo.commit({ target: 'selected' });
+  symlinkSync('target', join(repo.path, 'link'));
+  repo.commit({
+    'proof.yaml': JSON.stringify({
+      version: 1,
+      project: 'links',
+      providers: { stack: { start: 'true' } },
+      tasks: {
+        linked: {
+          run: 'test -L link && grep -q selected link',
+          inputs: ['link', 'target'],
+          needs: ['stack'],
+        },
+      },
+    }),
+  });
+  const result = cli('run', '--staged', '--tasks', 'linked');
+  expect(result.code).toBe(0);
+  expect(result.out).toContain('green linked; proof published');
+  expect(rows(env, 'proofs')).toHaveLength(1);
+});
