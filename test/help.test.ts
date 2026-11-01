@@ -34,6 +34,24 @@ const usages: Record<string, string> = {
   help: 'usage: proof help [<command>]',
 };
 
+const declared = {
+  'proof.yaml root fields': [
+    'version',
+    'project',
+    'inputs',
+    'tasks',
+    'include',
+    'coverage',
+    'exempt',
+    'providers',
+    'lanes',
+    'dimensions',
+    'unkeyed',
+  ],
+  'Task fields': ['run', 'inputs', 'env', 'links', 'needs', 'sets', 'lane', 'dimensions', 'keyed'],
+  'Provider fields': ['start', 'stop', 'lane'],
+};
+
 for (const args of [
   ['check'],
   ['check', 'a', 'b'],
@@ -66,27 +84,12 @@ for (const cwd of [repo.path, outside]) {
     expect(canonical.out).toBe(repo.cli([]).out);
     for (const name of Object.keys(usages))
       expect(canonical.out).toMatch(new RegExp(`^  ${name} +\\S.+$`, 'm'));
+    for (const [section, fields] of Object.entries(declared)) {
+      const body = canonical.out.split(`${section}:\n`)[1]?.split('\n\n')[0] ?? '';
+      for (const field of fields) expect(body).toMatch(new RegExp(`\\b${field}:`));
+    }
     for (const text of [
       'version: 1',
-      'project',
-      'inputs',
-      'tasks',
-      'include',
-      'coverage',
-      'exempt',
-      'providers',
-      'lanes',
-      'dimensions',
-      'unkeyed',
-      'run',
-      'env',
-      'links',
-      'needs',
-      'sets',
-      'lane',
-      'keyed',
-      'start',
-      'stop',
       'solo',
       '$name',
       "'!'",
