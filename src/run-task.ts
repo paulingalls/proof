@@ -5,7 +5,7 @@ import { key, scope, selection } from './key';
 import { logSuffix } from './logs';
 import { currentTree, decide, inspectTaskLinks, renderDecision, STAGED_SUFFIX } from './plan';
 import { providerMismatch } from './provider-inputs';
-import type { Providers } from './providers';
+import { BASE_ENV, type Providers } from './providers';
 import type { RunProcesses } from './run-process';
 import { Sandbox } from './sandbox';
 import type { Store } from './store';
@@ -140,11 +140,12 @@ export async function runTask(
       unbuilt = error instanceof Error ? error.message : String(error);
     }
     if (sandbox && !unbuilt) {
-      const env: Record<string, string> = {};
-      for (const name of ['PATH', 'HOME', 'TMPDIR', ...(task.env ?? [])]) {
+      const env: Record<string, string> = Object.create(null);
+      for (const name of [...BASE_ENV, ...(task.env ?? [])]) {
         const value = process.env[name];
         if (value !== undefined) env[name] = value;
       }
+      Object.assign(env, providers.environment(task.needs ?? []));
       const started = performance.now();
       const result = await processes.execute(task.run, sandbox.path, env, false, {
         project,

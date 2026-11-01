@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.13.0
+
+- A provider `start` can write `NAME=value` lines to `$PROOF_PROVIDER_ENV`. Tasks needing that
+  provider receive them, unkeyed, so clones with different addresses share proofs.
+
 ## 0.12.2
 
 - Lines after the URL in the store file name the projects allowed to use it. Any other project
