@@ -148,7 +148,8 @@ export class Providers {
       const where = `environment line ${index + 1}`;
       if (equals < 0 || !NAME.test(name)) return `${where}: invalid name`;
       const named = `${where} '${name}'`;
-      if ([...BASE_ENV, CHANNEL].includes(name)) return `${named}: reserved name`;
+      if ([...BASE_ENV, CHANNEL, 'PROOF_LANE_SLOT'].includes(name))
+        return `${named}: reserved name`;
       if (Object.hasOwn(env, name)) return `${named}: duplicate name`;
       // Bun's spawn error includes the value when an environment string contains NUL.
       if (line.includes('\0')) return `${named}: NUL is not allowed`;
