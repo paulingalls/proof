@@ -175,6 +175,10 @@ The package has its own tests for its own behaviour, on synthetic repos it build
   per-declared-env-name absent-or-value hashes, contradiction records. Paul, 2026-10-30: store these
   env identities per proof for `why`; never env values. Never logs or output: app-a's logs can contain
   private personal data.
+  - **Amendment, Paul, 2026-11-01:** declared non-secret dimension values may be stored per
+    result. This is a scoped exception for dimension stdout declaring facts, not general command
+    output. A dimension must not print a secret, even when reading ambient env. Task env values,
+    dotenv values, logs and general command output remain excluded; never env values.
 - **R14. A local fallback.** Each machine keeps a local SQLite replica of its own results. When the store is
   unreachable, `plan` falls back to that machine's own proofs, otherwise runs everything, and says so loudly.
 - **R15. The store absorbs the history** that app-a scatters today: per-task timings, flake history,

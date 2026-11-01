@@ -224,7 +224,11 @@ exempt:
   undeclared names fail declaration validation, even in unselected tasks.
 
   Nonzero exits or empty trimmed output make the task undecidable, naming the dimension;
-  it runs and publishes nothing. Command output stays out of diagnostics and the store.
+  it runs and publishes nothing. Successful trimmed dimension values are stored per result
+  by `record` and `run`, for `stats --by tool`. A dimension declares a non-secret fact:
+  it must not print a secret, even when its command reads ambient env. Task env and dotenv
+  values remain excluded from the store. General command output stays out of diagnostics
+  and the store.
   `why` compares stored hashes and reports `changed env dimension:tool`; it never executes the
   historical command. `status --ref` uses that ref's commands on the current machine.
   Dimension names cannot contain `:`, and `dotenv` cannot name a file exactly `dimension`,

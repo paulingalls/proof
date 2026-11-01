@@ -78,12 +78,21 @@ Postgres configuration, `plan`, `run` and `record` print no replica or sharing d
 Proof metadata includes one identity per declared env name: `absent` or SHA-256 of its value.
 `env_hashes` also holds one `<file>:<NAME>` identity per included dotenv name, always a value hash.
 `env_hashes` also holds `dimension:<name>` with SHA-256 of each selected dimension's trimmed stdout.
-No raw env or dimension value is stored. These identities are captured with the key by both
+No raw task env or dotenv value is stored. These identities are captured with the key by both
 `record` and `run`;
 `why` uses them to explain env changes. Schema 2 adds nullable `proofs.env_hashes`, encoded as
 JSON name/identity pairs. NULL denotes a legacy proof whose env comparison is unavailable;
 `[]` denotes a new proof with no declared env. Migration preserves existing results and proofs
 without backfilling env data.
+
+Declared dimension values are non-secret facts. `record` and `run` also write their resolved,
+trimmed values for every result outcome, in the result transaction on each backend. A dimension
+must not print a secret, even if its command reads ambient env. General command output and logs
+remain excluded. The additive `dimension_values` table has `result_id` referencing `results(id)`,
+`name`, and `value`, with primary key `(result_id, name)`. It is created with `IF NOT EXISTS`;
+schema version stays 2, and v0.14.1 clients continue opening and writing the store. No values are
+backfilled: older clients' results appear under `(no recorded value)` in `stats --by`.
+These stored facts do not change keys, skip pricing or savings.
 
 The first client at this version migrates a fresh, unversioned or schema-1 store to schema 2
 under the schema transaction/lock. Any command opening the store can migrate it, including
