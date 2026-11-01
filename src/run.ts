@@ -44,11 +44,11 @@ export async function run(args: string[]) {
   let logFailed = false;
   const processes = new RunProcesses();
   const providers = new Providers(
-    async (command, stopping, name) => {
+    async (command, stopping, name, environment) => {
       const result = await processes.execute(
         command,
         process.cwd(),
-        process.env,
+        environment?.env ?? process.env,
         stopping,
         stopping
           ? undefined
@@ -59,18 +59,20 @@ export async function run(args: string[]) {
               live: jobs === 1,
             },
       );
-      const ready = result.code === 0 && !result.signal;
+      const problem = result.code === 0 && !result.signal ? environment?.accept() : undefined;
+      const ready = result.code === 0 && !result.signal && !problem;
       const log =
         result.capture?.finish(
           ready ? 'green' : processes.cancelled || result.signal ? 'incomplete' : 'red',
         ) ?? {};
       if (log.error) logFailed = true;
-      return { ready, ...log };
+      return { ready, problem, ...log };
     },
     (message) => {
       failed = true;
       summary.push(message);
     },
+    () => (snapshot ?? currentTree()).tasks.values(),
   );
   const providerMismatches = new Map<string, string>();
   try {
