@@ -2,7 +2,23 @@ export class Lanes {
   private readonly retired = new Map<string, Set<number>>();
   private readonly occupied = new Map<string, Set<number>>();
 
-  constructor(private readonly limits: Map<string, number>) {}
+  private readonly limits: Map<string, number>;
+
+  constructor(declared: Map<string, number>, override = process.env.PROOF_LANES) {
+    this.limits = new Map(declared);
+    if (override === undefined) return;
+    const seen = new Set<string>();
+    for (const entry of override.split(',')) {
+      const match = /^([^\s,=]+)=([1-9][0-9]*)$/.exec(entry);
+      if (!match || !Number.isSafeInteger(Number(match[2])))
+        throw new Error('PROOF_LANES: expected name=N,... with positive safe integers');
+      const name = match[1] as string;
+      if (!declared.has(name)) throw new Error(`PROOF_LANES: unknown lane '${name}'`);
+      if (seen.has(name)) throw new Error(`PROOF_LANES: duplicate lane '${name}'`);
+      seen.add(name);
+      this.limits.set(name, Number(match[2]));
+    }
+  }
 
   capacity(lane: string) {
     const limit = this.limits.get(lane);
