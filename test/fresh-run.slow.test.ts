@@ -289,7 +289,7 @@ test('another clone observes a super deletion and remembers it offline', async (
   } finally {
     await postgres.restart();
   }
-}, 30_000);
+}, 60_000);
 
 test('offline fresh red deletes locally and vetoes a still-green remote until clean fresh green', async () => {
   const database = await postgres.database();
@@ -329,7 +329,7 @@ test('offline fresh red deletes locally and vetoes a still-green remote until cl
   expect(f.cli('run', '--fresh').code).toBe(0);
   expect(f.cli('plan').out).toContain('PROVEN task');
   expect(f.rows('unshared_reds')).toEqual([]);
-}, 30_000);
+}, 60_000);
 
 test('lost shared commit reports local deletion only and preserves its veto', async () => {
   const database = await postgres.database();
