@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.23.1
+
+- Plans inspect each distinct link set once, reusing the result across tasks. Execution
+  still checks links again after tasks run to prevent publishing proof through an escape.
+
 ## 0.23.0
 
 - Provider start and stop receive `PROOF_RUN_PID`, the proof process's pid, alive throughout

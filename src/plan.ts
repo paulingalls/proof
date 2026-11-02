@@ -33,6 +33,18 @@ export async function planTree(
   inspect?: (task: Task) => ReturnType<typeof inspectTaskLinks>,
   since?: Since,
 ) {
+  const inspections = new Map<string, ReturnType<typeof inspectTaskLinks>>();
+  const inspectPlanLinks =
+    inspect ??
+    ((decl: Task) => {
+      const links = JSON.stringify(decl.links ?? []);
+      let inspection = inspections.get(links);
+      if (!inspection) {
+        inspection = inspectTaskLinks(decl, tree, dirty);
+        inspections.set(links, inspection);
+      }
+      return inspection;
+    });
   const store = await Store.open(project);
   try {
     const rows = [];
@@ -46,7 +58,7 @@ export async function planTree(
           declaration,
           project,
           store,
-          inspect?.(decl),
+          inspectPlanLinks(decl),
           false,
           since,
         ),
