@@ -235,6 +235,7 @@ test('an unwritable event directory reports the failure without changing lint re
   const env = fixture();
   const warm = r.cli(['lint'], env);
   expect(warm.code, warm.err).toBe(0);
+  expect(r.cli(['stats'], env).code).toBe(0);
   rmSync(join(env.PROOF_STATE_DIR, 'generate-events.jsonl'), { force: true });
   chmodSync(env.PROOF_STATE_DIR, 0o555);
   try {
@@ -242,6 +243,10 @@ test('an unwritable event directory reports the failure without changing lint re
     expect(result.code).toBe(warm.code);
     expect(result.out).toBe(warm.out);
     expect(result.err).toContain('generate event not recorded');
+    const stats = r.cli(['stats'], env);
+    expect(stats.code, stats.err).toBe(0);
+    expect(stats.err).toContain('generate event not recorded');
+    expect(stats.out).toContain('generate: 0 hits, 0 runs');
   } finally {
     chmodSync(env.PROOF_STATE_DIR, 0o755);
   }

@@ -51,7 +51,14 @@ export function generate(decl: Generator, tree: RefTree, dirty: string[], projec
 export function generateEvents(project: string, start: Date, now: Date) {
   const file = join(statePath(), 'generate-events.jsonl');
   const samples: (number | null)[] = [];
-  const lines = readFileSync(file, 'utf8').split('\n');
+  let content: string;
+  try {
+    content = readFileSync(file, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return samples;
+    throw error;
+  }
+  const lines = content.split('\n');
   if (lines.at(-1) === '') lines.pop();
   for (const [index, line] of lines.entries()) {
     try {
