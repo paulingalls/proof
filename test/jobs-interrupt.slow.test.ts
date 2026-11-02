@@ -7,7 +7,7 @@ for (const ignore of [false, true]) {
   test(`SIGINT drains both groups and descendants; second signal required=${ignore}`, async () => {
     const f = fixture(
       Object.fromEntries(
-        ['a', 'b'].map((id) => [
+        ['a', 'b', 'queued'].map((id) => [
           id,
           {
             ...task(`echo $$ > scratch/leader-${id}; exec '${process.execPath}' worker.ts ${id}`),
@@ -48,6 +48,13 @@ writeFileSync('scratch/ready-' + id, 'yes');`,
       expect(await child.exited).toBe(130);
       const [out, err] = await output;
       expect(err).toBe('');
+      expect(out.match(/^progress: 0\/3 done;/gm)).toHaveLength(2);
+      expect(out).toMatch(
+        /^progress: 0\/3 done; green 0, red 0, incomplete 2, proven 0, unreached 0; task [ab]$/m,
+      );
+      expect(out).toEndWith('summary: green 0, red 0, incomplete 2, proven 0, unreached 0\n');
+      expect(out).not.toMatch(/^progress: .*; task queued$/m);
+      expect(f.has('leader-queued')).toBe(false);
       for (const id of ['a', 'b']) expect(out).toContain(`incomplete ${id}`);
       expect(f.rows().sort((a, b) => a.task.localeCompare(b.task))).toMatchObject([
         { task: 'a', outcome: 'incomplete' },

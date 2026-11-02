@@ -6,11 +6,11 @@ import { fixture, spawn, stop, task, until, wait } from './support/jobs';
 test('default and explicit jobs=1 preserve the serial transcript', () => {
   const f = fixture({
     a: task('echo a-out; echo a-err >&2; exit 1'),
-    b: task('echo b-out; echo b-err >&2'),
+    b: task('echo b-out; printf b-err >&2'),
   });
   const expected = {
     code: 1,
-    out: 'RUN a: no proof for key; trusted links: scratch\nRUN b: no proof for key; trusted links: scratch\na-out\na-err\nb-out\nb-err\nred a; log: <log>\ngreen b; proof published\n',
+    out: 'RUN a: no proof for key; trusted links: scratch\nRUN b: no proof for key; trusted links: scratch\na-out\na-err\nprogress: 1/2 done; green 0, red 1, incomplete 0, proven 0, unreached 0; task a\nb-out\nb-err\nprogress: 2/2 done; green 1, red 1, incomplete 0, proven 0, unreached 0; task b\nred a; log: <log>\ngreen b; proof published\nsummary: green 1, red 1, incomplete 0, proven 0, unreached 0\n',
     err: '',
   };
   for (const args of [[], ['--jobs', '1']]) {
@@ -43,6 +43,9 @@ test('jobs requires one positive safe integer before the selector', () => {
     );
   }
   expect(f.run('--jobs', '2').code).toBe(0);
+  const empty = fixture({}).run();
+  expect(empty.code).toBe(0);
+  expect(empty.out).toBe('summary: green 0, red 0, incomplete 0, proven 0, unreached 0\n');
 });
 
 test('two mutual-marker tasks need two jobs, without timing assertions', () => {
@@ -227,17 +230,24 @@ test('completed task blocks combine streams without interleaving or storing outp
       `printf b-private-out; printf b-private-err >&2; touch scratch/b; ${wait('release-b')}; echo b-private-end`,
     ),
   });
-  const { child, output } = spawn(f, '--jobs', '2');
+  const child = f.repo.spawnCli(['run', '--jobs', '2'], f.env);
+  let out = '';
+  const reading = (async () => {
+    for await (const chunk of child.stdout) out += Buffer.from(chunk).toString();
+  })();
+  const stderr = new Response(child.stderr).text();
   try {
     await until(() => f.has('a') && f.has('b'));
     f.mark('release-b');
-    await until(() => f.rows().some((r) => r.task === 'b'));
+    await until(() => out.includes('unreached 0; task b\n'));
     f.mark('release-a');
     expect(await child.exited).toBe(0);
-    const [out, err] = await output;
+    await reading;
+    const err = await stderr;
     expect(err).toBe('');
+    expect(out.match(/^progress:/gm)).toHaveLength(2);
     expect(out).toContain(
-      '--- b\nb-private-outb-private-errb-private-end\n--- a\na-private-outa-private-erra-private-end\ngreen a; proof published\ngreen b; proof published\n',
+      '--- b\nb-private-outb-private-errb-private-end\nprogress: 1/2 done; green 1, red 0, incomplete 0, proven 0, unreached 0; task b\n--- a\na-private-outa-private-erra-private-end\nprogress: 2/2 done; green 2, red 0, incomplete 0, proven 0, unreached 0; task a\ngreen a; proof published\ngreen b; proof published\nsummary: green 2, red 0, incomplete 0, proven 0, unreached 0\n',
     );
     for (const path of readdirSync(f.env.PROOF_STATE_DIR)) {
       if (!statSync(join(f.env.PROOF_STATE_DIR, path)).isFile()) continue;
@@ -250,6 +260,7 @@ test('completed task blocks combine streams without interleaving or storing outp
     f.mark('release-a');
     f.mark('release-b');
     await stop(child);
+    await reading;
   }
 });
 
@@ -319,6 +330,10 @@ test('queued PROVEN task refreshes its decision before dispatch', async () => {
     expect(out).toContain('PROVEN c:');
     expect(out).toContain("RUN c: undecidable: dirty input 'later'");
     expect(out).toContain("green c; no proof published: dirty input 'later'");
+    expect(out).toMatch(
+      /^progress: .*green [23], red 0, incomplete 0, proven 0, unreached 0; task c$/m,
+    );
+    expect(out).toEndWith('summary: green 3, red 0, incomplete 0, proven 0, unreached 0\n');
   } finally {
     f.mark('release');
     f.mark('release-b');

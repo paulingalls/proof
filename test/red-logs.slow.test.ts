@@ -122,6 +122,11 @@ setInterval(() => {}, 100);`,
     expect(out.split('\n').find((line) => line.startsWith('incomplete a;'))).not.toContain(
       'not delivered',
     );
+    expect(out.match(/^progress:/gm)).toHaveLength(1);
+    expect(out).toContain(
+      'progress: 0/2 done; green 0, red 0, incomplete 1, proven 0, unreached 0; task a\n',
+    );
+    expect(out).toEndWith('summary: green 0, red 0, incomplete 1, proven 0, unreached 0\n');
     expect(f.rows().map((r) => r.outcome)).toEqual(['incomplete']);
     expect(existsSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/tasks/later'))).toBe(false);
   } finally {
@@ -178,9 +183,13 @@ for (const jobs of [1, 2]) {
     expect(readFileSync(path, 'utf8')).toBe('provider-out\nprovider-err\n');
     const block = result.out.slice(result.out.indexOf("provider 'stack':"));
     expect(block).toBe(
-      `provider 'stack': 2 tasks blocked\nprovider 'stack' start failed: exit 7; log: ${path}\n  provider-out\n  provider-err\n`,
+      `provider 'stack': 2 tasks blocked\nprovider 'stack' start failed: exit 7; log: ${path}\n  provider-out\n  provider-err\nsummary: green 1, red 0, incomplete 2, proven 0, unreached 0\n`,
     );
+    expect(result.out.match(/^progress:/gm)).toHaveLength(3);
     for (const id of ['a', 'b']) {
+      expect(result.out).toMatch(
+        new RegExp(`^progress: .*incomplete [12], proven 0, unreached 0; task ${id}$`, 'm'),
+      );
       expect(result.out).toContain(`incomplete ${id}; blocked by provider 'stack'`);
       expect(result.out.indexOf(`incomplete ${id}`)).toBeLessThan(result.out.indexOf(block));
     }
@@ -218,6 +227,7 @@ test('failed startup remains a failure when its dependent becomes PROVEN', () =>
   expect(result.out).toContain("provider 'stack': 0 tasks blocked");
   expect(result.out).toContain("provider 'stack' start failed: exit 7; log: ");
   expect(result.out).not.toContain('incomplete a');
+  expect(result.out).toEndWith('summary: green 0, red 0, incomplete 0, proven 1, unreached 0\n');
 });
 
 test('rejected export ends with its value-free cause and diagnostic tail', () => {
@@ -235,7 +245,9 @@ test('rejected export ends with its value-free cause and diagnostic tail', () =>
   expect(block).toContain("start failed: environment line 1 'PATH': reserved name; log: ");
   expect(block).not.toContain('exit 0');
   expect(result.out.indexOf('incomplete a')).toBeLessThan(result.out.indexOf(block));
-  expect(block).toEndWith('  harmless-diagnostic\n');
+  expect(block).toEndWith(
+    '  harmless-diagnostic\nsummary: green 0, red 0, incomplete 1, proven 0, unreached 0\n',
+  );
   const path = block.match(/; log: (.*)\n/)?.[1] as string;
   expect(result.out + result.err + readFileSync(path, 'utf8')).not.toContain(marker);
   expect(f.rows().map((r) => r.outcome)).toEqual(['incomplete']);
@@ -256,6 +268,7 @@ for (const newline of ['', '\n']) {
     const block = result.out.slice(result.out.indexOf("provider 'stack':"));
     expect(block.split('\n').slice(2)).toEqual([
       ...lines.slice(-20).map((line) => `  ${line}`),
+      'summary: green 0, red 0, incomplete 1, proven 0, unreached 0',
       '',
     ]);
     const path = block.match(/; log: (.*)\n/)?.[1] as string;
@@ -423,5 +436,30 @@ test('retained private bytes and paths never enter either store', async () => {
     }
   } finally {
     await pg.close();
+  }
+});
+
+test('task and provider log arguments round-trip through sh and zsh', () => {
+  const f = fixture(
+    { '(a)': task('printf task-bytes; false'), blocked: task('true', ['(stack)']) },
+    { '(stack)': { start: 'printf provider-bytes; false' } },
+  );
+  const state = join(f.directory(), "space ' $ ` ; * ? [x]");
+  const result = f.repo.cli(['run', '--jobs', '2'], { ...f.env, PROOF_STATE_DIR: state });
+  expect(result.code).toBe(1);
+  const arguments_ = [...result.out.matchAll(/; log: (.*)\n/g)].map((m) => m[1] as string);
+  expect(arguments_).toHaveLength(2);
+  for (const argument of arguments_) {
+    const kind = argument.includes('/tasks/') ? 'tasks/(a)' : 'providers/(stack)';
+    const directory = join(state, 'logs/jobs', kind);
+    const path = join(directory, readdirSync(directory)[0] as string);
+    expect(argument).toBe(`'${path.replaceAll("'", "'\"'\"'")}'`);
+    for (const shell of ['sh', 'zsh']) {
+      const read = Bun.spawnSync([shell, '-c', `cat ${argument}`]);
+      expect(read.exitCode, read.stderr.toString()).toBe(0);
+      expect(read.stdout.toString()).toBe(
+        kind.startsWith('tasks') ? 'task-bytes' : 'provider-bytes',
+      );
+    }
   }
 });

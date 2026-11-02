@@ -16,6 +16,11 @@ import type { RunProcesses } from './run-process';
 import { Sandbox } from './sandbox';
 import type { Store } from './store';
 
+export type TaskResult = {
+  outcome: 'green' | 'red' | 'incomplete' | 'proven' | 'unreached';
+  notRecorded: boolean;
+};
+
 type Context = {
   lanes: Lanes;
   lane?: string;
@@ -62,7 +67,7 @@ export async function runTask(
     skipped,
     retain,
   }: Context,
-) {
+): Promise<TaskResult | undefined> {
   const baseline = currentView();
   let view = baseline;
   let task = view.tasks.get(id);
@@ -138,12 +143,12 @@ export async function runTask(
     const { tree, project, dirty, declaration } = view;
     if (decision.state === 'UNREACHED') {
       summary.push(renderDecision(decision));
-      return;
+      return { outcome: 'unreached', notRecorded: false };
     }
     if (decision.state === 'PROVEN') {
       skipped(id);
       summary.push(`PROVEN ${id}: ${decision.reason}`);
-      return;
+      return { outcome: 'proven', notRecorded: false };
     }
     const blocked =
       processes.cancelled ||
@@ -256,6 +261,7 @@ export async function runTask(
         summary.push(
           `${outcome} ${id}; not recorded: ${current.reason}${exhausted ? `; ${exhausted}` : ''}${providerReason}${escapes.length ? `; ${escapes.join('; ')}` : ''}${log}`,
         );
+      return { outcome, notRecorded: current.key === undefined };
     } finally {
       try {
         sandbox?.close();

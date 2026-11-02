@@ -76,6 +76,17 @@ test('since narrows plan and run, selectors and jobs without recording unreached
     expect(existsSync(join(s.dir, 'unreached'))).toBe(false);
     expect(s.records('results')).toEqual([{ task: 'reached' }]);
     expect(s.records('skips')).toEqual([]);
+    const counts = 'green 1, red 0, incomplete 0, proven 0, unreached 1';
+    expect(result.out.match(/^progress:/gm)).toHaveLength(2);
+    expect(result.out).toContain(`progress: 2/2 done; ${counts}; task reached\n`);
+    expect(result.out).toEndWith(`summary: ${counts}\n`);
+    const again = s.cli('run', '--since', s.base, '--jobs', '2', ...selector);
+    expect(again.code).toBe(0);
+    expect(again.out.match(/^progress:/gm)).toHaveLength(2);
+    expect(again.out).toMatch(
+      /^progress: 2\/2 done; green 0, red 0, incomplete 0, proven 1, unreached 1; task /m,
+    );
+    expect(again.out).toEndWith('summary: green 0, red 0, incomplete 0, proven 1, unreached 1\n');
   }
 });
 

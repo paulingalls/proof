@@ -40,6 +40,32 @@ execution order. Task stdout and stderr see no TTY. Above 1, each task's stdout 
 appear together on stdout when it finishes, under `--- <task>`; summaries stay in declared
 order. Both streams write to one capture file to preserve their write order.
 
+After each task's final disposition, one stdout line reports cumulative progress in completion
+order, for one job as well as parallel jobs:
+
+```text
+progress: 1/2 done; green 1, red 0, incomplete 0, proven 0, unreached 0; task a
+progress: 2/2 done; green 2, red 0, incomplete 0, proven 0, unreached 0; task b
+```
+
+The total is the selected task count, including PROVEN and UNREACHED tasks; both count as done.
+Green and red count as done too. Interrupted, killed, sandbox-failed and provider-blocked tasks
+count as `incomplete`, without increasing done. Unstarted tasks get no progress line or outcome
+count, so interruption or incomplete work leaves done below total. Counts use final decisions,
+which may differ from the initial preview.
+
+The final summary keeps task lines in declaration order and ends with a tally:
+
+```text
+summary: green 2, red 0, incomplete 0, proven 0, unreached 0
+```
+
+An empty selection prints an all-zero tally and no progress. Both progress and tally append
+`, not recorded N` only when above zero: these tasks have no recordable key. This overlaps
+an outcome count, rather than adding tasks to done or total. A recorded outcome marked
+`no proof published` does not count as `not recorded`. Fatal command errors exit 2 without
+a final tally.
+
 Red and incomplete tasks keep that file; their summary prints its absolute path under
 `<state directory>/logs/<project>/tasks/<task>/<UTC timestamp>-<capture UUID>-<first 8 of key>-<outcome>.log`.
 Keyless tasks and provider starts use `no-key`. Project and task names are encoded as single
@@ -48,6 +74,12 @@ a green deletes its capture and leaves earlier logs alone. The state directory i
 one as the local replica, outside checkouts by default. A `PROOF_STATE_DIR` override inside
 a checkout also puts logs there, so removing that checkout removes those logs. Logs stay
 local and never enter either store: they may contain private data.
+
+Displayed task and provider log paths are shell arguments: safe paths print unchanged;
+paths with spaces, parentheses or other shell metacharacters print in single quotes, with
+embedded apostrophes escaped as `'"'"'`. Paste the argument after `cat` in sh or zsh.
+An unterminated task output gets a display newline so progress starts on its own line;
+retained log bytes stay unchanged.
 
 A red task's summary can append `; not delivered: omitted` before its log path when
 an explicit missing-file diagnostic names a tracked path outside that task's selection.
@@ -82,9 +114,11 @@ provider 'stack': 2 tasks blocked
 provider 'stack' start failed: exit 7; log: /absolute/state/logs/jobs/providers/stack/<timestamp>-<uuid>-no-key-red.log
   provider-out
   provider-err
+summary: green 1, red 0, incomplete 2, proven 0, unreached 0
 ```
 
-The tail includes an unterminated final line; a terminal newline adds no empty line.
+The failure block stays directly above the tally. The tail includes an unterminated final line;
+a terminal newline adds no empty line.
 An unreadable retained log prints `log tail unavailable: <error>` without changing the
 run's exit status or suppressing other summaries. Original startup output is still displayed
 in full using the usual streaming or grouped rules. Ready providers add no failure block.

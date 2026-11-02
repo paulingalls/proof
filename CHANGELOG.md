@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.21.2
+
+- `run` reports cumulative progress after each task and ends its summary with outcome totals,
+  including keyless `not recorded` outcomes. Incomplete tasks do not advance the done count.
+- Task and provider log paths print as pasteable shell arguments, quoting metacharacters.
+
 ## 0.21.1
 
 - Red task summaries name up to three tracked paths explicitly reported missing outside the
