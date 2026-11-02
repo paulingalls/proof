@@ -94,6 +94,7 @@ Configuration environment:
   PROOF_LANES=name=N,...: override declared lane limits for a run.
 
 Supplied environment (not configuration switches):
+  PROOF_RUN_PID: proof process pid for provider start/stop; unavailable to tasks.
   PROOF_LANE_SLOT: zero-based slot for laned tasks and provider start/stop.
   PROOF_PROVIDER_ENV: start-only path to the provider environment export file.
   PROOF_DECLARATIONS: generator-only empty output directory for *.yaml declarations.
