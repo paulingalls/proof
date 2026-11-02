@@ -36,6 +36,20 @@ export function logSuffix(result: LogResult) {
       : '';
 }
 
+export function logTail(path: string) {
+  try {
+    const content = readFileSync(path, 'utf8').replace(/\n$/, '');
+    return content === ''
+      ? []
+      : content
+          .split('\n')
+          .slice(-20)
+          .map((line) => `  ${line}`);
+  } catch (error) {
+    return [`  log tail unavailable: ${error}`];
+  }
+}
+
 export class Capture {
   readonly fd: number;
   private readonly root = resolve(statePath(), 'logs');

@@ -134,6 +134,9 @@ export async function runTask(
       processes.cancelled ||
       exhausted !== undefined ||
       (task.needs ?? []).map((name) => providers.ready(name, slot)).some((ready) => !ready);
+    const providerReason = blocked
+      ? providers.blockedReason(id, task.needs ?? [], slot, exhausted !== undefined)
+      : '';
     const current = declaration
       ? { reason: `dirty declaration '${declaration}'`, key: undefined }
       : key(id, task, tree);
@@ -222,11 +225,11 @@ export async function runTask(
         if (deletedLocal) summary.push(`deleted proof local ${id} ${current.key}`);
         if (deletedShared) summary.push(`deleted proof shared ${id} ${current.key}`);
         summary.push(
-          `${outcome} ${id}${exhausted ? `; ${exhausted}` : unbuilt ? `; sandbox failed: ${unbuilt}` : unpublished ? `; no proof published: ${unpublished}` : outcome === 'green' ? '; proof published' : ''}${sharing === 'local' ? '' : `; ${sharing}`}${log}`,
+          `${outcome} ${id}${exhausted ? `; ${exhausted}` : unbuilt ? `; sandbox failed: ${unbuilt}` : unpublished ? `; no proof published: ${unpublished}` : outcome === 'green' ? '; proof published' : ''}${providerReason}${sharing === 'local' ? '' : `; ${sharing}`}${log}`,
         );
       } else
         summary.push(
-          `${outcome} ${id}; not recorded: ${current.reason}${exhausted ? `; ${exhausted}` : ''}${escapes.length ? `; ${escapes.join('; ')}` : ''}${log}`,
+          `${outcome} ${id}; not recorded: ${current.reason}${exhausted ? `; ${exhausted}` : ''}${providerReason}${escapes.length ? `; ${escapes.join('; ')}` : ''}${log}`,
         );
     } finally {
       sandbox?.close();

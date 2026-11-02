@@ -198,6 +198,23 @@ for (const jobs of [1, 2]) {
   });
 }
 
+test('failed startup remains a failure when its dependent becomes PROVEN', () => {
+  const f = fixture(
+    { a: task('true', ['stack']) },
+    {
+      stack: { start: 'git checkout -- input; echo failed-after-restore; exit 7' },
+    },
+  );
+  expect(f.repo.cli(['record', 'a', '--outcome', 'green'], f.env).code).toBe(0);
+  f.repo.write('input', 'changed');
+  const result = f.run('--jobs', '2');
+  expect(result.code).toBe(1);
+  expect(result.out).toContain('PROVEN a:');
+  expect(result.out).toContain("provider 'stack': 0 tasks blocked");
+  expect(result.out).toContain("provider 'stack' start failed: exit 7; log: ");
+  expect(result.out).not.toContain('incomplete a');
+});
+
 test('rejected export ends with its value-free cause and diagnostic tail', () => {
   const marker = crypto.randomUUID();
   const f = fixture(

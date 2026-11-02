@@ -51,7 +51,31 @@ local and never enter either store: they may contain private data.
 
 Providers without `lane` start once; laned providers start once per used slot. Dependents
 await their instance’s readiness, and teardown waits for all running and pending users. Starts use the same capture and display rules, with `--- provider-<name>`
-blocks above one job. A failed start's summary names its retained log under
+blocks above one job. After every task summary and provider teardown, a failed-start block
+prints each provider's distinct blocked-task count, followed by each failed instance's exit
+code, absolute retained log path and last 20 log lines. An environment-channel problem
+replaces the exit code when exports are rejected or the channel cannot be created.
+Provider-blocked `incomplete` lines name the failed providers, including allocated slots.
+Counts include exhausted-lane dependents needing that provider, even keyless tasks, and
+exclude PROVEN and unselected tasks. Each task counts once per provider across failed slots.
+
+For example, a start that exits 7 after printing diagnostics ends the run with:
+
+```text
+incomplete a; blocked by provider 'stack'
+incomplete b; blocked by provider 'stack'
+green independent; proof published
+provider 'stack': 2 tasks blocked
+provider 'stack' start failed: exit 7; log: /absolute/state/logs/jobs/providers/stack/<timestamp>-<uuid>-no-key-red.log
+  provider-out
+  provider-err
+```
+
+The tail includes an unterminated final line; a terminal newline adds no empty line.
+An unreadable retained log prints `log tail unavailable: <error>` without changing the
+run's exit status or suppressing other summaries. Original startup output is still displayed
+in full using the usual streaming or grouped rules. Ready providers add no failure block.
+A failed start retains its log under
 `logs/<project>/providers/<name>/`, with its own ten-log budget. Laned instances use
 `stack[0]`, `stack[1]`, etc. in diagnostics, headers and encoded log paths;
 a ready start deletes its capture. Background processes left by provider starts no longer
