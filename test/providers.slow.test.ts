@@ -218,7 +218,7 @@ test('providers use checkout and caller env while dependents retain sandbox isol
   expect(f.rows('proofs')).toHaveLength(1);
 });
 
-test('failed start blocks keyed, dirty and undecidable dependents without touching proofs', () => {
+test('failed start preserves dependent proofs while unrelated dirt permits independent publication', () => {
   const f = fixture();
   f.commit(
     {
@@ -249,12 +249,14 @@ test('failed start blocks keyed, dirty and undecidable dependents without touchi
       .slice(3)
       .map((r) => [r.task, r.outcome, r.seconds, r.dirty]),
   ).toEqual([
-    ['a', 'incomplete', null, 1],
-    ['contested', 'incomplete', null, 1],
+    ['a', 'incomplete', null, 0],
+    ['contested', 'incomplete', null, 0],
     ['dirty', 'incomplete', null, 1],
-    ['independent', 'green', expect.any(Number), 1],
+    ['independent', 'green', expect.any(Number), 0],
   ]);
-  expect(f.rows('proofs')).toEqual(proofs);
+  expect(f.rows('proofs').filter((row) => row.task !== 'independent')).toEqual(proofs);
+  expect(result.out).toContain('green independent; proof published');
+  expect(f.cli('plan').out).toContain('PROVEN independent');
   expect(f.rows('contradictions')).toEqual(contests);
   const beforeDirtyDeclaration = f.rows();
   f.repo.write('proof.yaml', `${readFileSync(join(f.repo.path, 'proof.yaml'), 'utf8')}\n`);

@@ -140,23 +140,29 @@ test('restored historical bytes are undecidable until committed', () => {
   expect(repo.cli(['plan'], env).out).toContain("RUN lint: undecidable: dirty input 'src/a.ts'");
 });
 
-test('dirty records retain results without publishing even for unrelated dirtiness', () => {
+test('records publish only when their selected inputs are clean', () => {
   for (const path of ['src/a.ts', 'notes/todo.md']) {
     const repo = fixture();
     const env = state();
     repo.write(path, 'dirty');
     const result = record(repo, env, []);
     expect(result.code).toBe(0);
-    expect(result.out).toContain(`no proof published: dirty path '${path}'`);
+    const selected = path === 'src/a.ts';
+    expect(result.out).toContain(
+      selected ? `no proof published: dirty input '${path}'` : 'proof published',
+    );
+    if (!selected) expect(repo.cli(['plan'], env).out).toContain('PROVEN lint');
     const db = new Database(join(env.PROOF_STATE_DIR, 'proof.db'));
     expect(db.query('SELECT outcome, seconds, dirty FROM results').all()).toEqual([
-      { outcome: 'green', seconds: null, dirty: 1 },
+      { outcome: 'green', seconds: null, dirty: selected ? 1 : 0 },
     ]);
-    expect(db.query('SELECT * FROM proofs').all()).toEqual([]);
+    expect(db.query('SELECT * FROM proofs').all()).toHaveLength(selected ? 0 : 1);
     db.close();
     repo.git('restore', '.');
     if (path.startsWith('notes/')) rmSync(join(repo.path, path));
-    expect(repo.cli(['plan'], env).out).toContain('RUN lint: no proof for key');
+    expect(repo.cli(['plan'], env).out).toContain(
+      selected ? 'RUN lint: no proof for key' : 'PROVEN lint',
+    );
   }
 });
 
@@ -213,6 +219,7 @@ test('dirty root or included declarations make every task undecidable', () => {
         (id) => `RUN ${id}: undecidable: dirty declaration '${path}'`,
       ),
     );
+    expect(record(repo, env).out).toContain(`no proof published: dirty declaration '${path}'`);
     const json = repo.cli(['plan', '--json'], env);
     expect(json.code).toBe(0);
     for (const row of JSON.parse(json.out)) expect(row).not.toHaveProperty('key');
@@ -233,7 +240,7 @@ test('a submodule moved off its gitlink is dirty even when .gitmodules ignores i
   expect(record(repo, env).out).toContain('proof published');
   repo.git(...sub, 'commit', '-q', '--allow-empty', '-m', 'two');
   expect(repo.cli(['plan'], env).out).toContain("RUN lint: undecidable: dirty input 'src/sub'");
-  expect(record(repo, env).out).toContain("no proof published: dirty path 'src/sub'");
+  expect(record(repo, env).out).toContain("no proof published: dirty input 'src/sub'");
 });
 
 test('empty-store JSON distinguishes input changes from unrelated dirt and tags', () => {
