@@ -134,7 +134,7 @@ test('unkeyed bytes stay in sandboxes while only representatives key them', () =
   }
   expect(cli(['plan'])).toContain('RUN representative');
   const why = cli(['why', 'closure']);
-  expect(why.match(/^unkeyed shared.ts$/gm)).toHaveLength(1);
+  expect(why.match(/^delivered not keyed unkeyed shared.ts$/gm)).toHaveLength(1);
   expect(why).not.toContain('changed file shared.ts');
   expect(cli(['why', 'representative'])).toContain('file shared.ts ');
   expect(cli(['why', 'control'])).not.toContain('unkeyed shared.ts');

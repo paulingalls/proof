@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.21.1
+
+- Red task summaries name up to three tracked paths explicitly reported missing outside the
+  sandbox selection, with a count of the rest. Unreadable logs leave reds unchanged.
+- `why` labels current sandbox inputs as delivered and distinguishes keyed contributions
+  from unkeyed and super-only exclusions.
+
 ## 0.21.0
 
 - Root and included/generated `super-only` patterns exclude files from all task keys without

@@ -1,7 +1,7 @@
 import { hostname } from 'node:os';
 import { key, selection } from './key';
 import type { Lanes } from './lanes';
-import { logSuffix } from './logs';
+import { logSuffix, notDelivered } from './logs';
 import {
   type currentTree,
   decide,
@@ -163,11 +163,15 @@ export async function runTask(
       let outcome: 'incomplete' | 'green' | 'red' = 'incomplete';
       let unbuilt: string | undefined;
       let log = '';
+      let selected = new Set<string>();
       try {
-        // Dirt that reaches no input must not change what runs: the proof names the committed bytes.
-        const visible = input.key === undefined ? dirty : [];
-        sandbox?.materialize(selection(task, tree, visible), tree, visible, staged);
-        sandbox?.link(task.links ?? [], inspection);
+        if (sandbox) {
+          // Dirt that reaches no input must not change what runs: the proof names the committed bytes.
+          const visible = input.key === undefined ? dirty : [];
+          selected = selection(task, tree, visible);
+          sandbox.materialize(selected, tree, visible, staged);
+          sandbox.link(task.links ?? [], inspection);
+        }
       } catch (error) {
         // Unattended, the backstop finishes every task it can; a person running `run` is told now.
         if (!fresh) throw error;
@@ -194,7 +198,10 @@ export async function runTask(
         seconds = (performance.now() - started) / 1000;
         const retained = result.capture?.finish(outcome) ?? {};
         if (retained.error) logFailed();
-        log = logSuffix(retained);
+        log =
+          (outcome === 'red' && retained.path
+            ? notDelivered(retained.path, sandbox.root, tree, selected)
+            : '') + logSuffix(retained);
       }
       if (outcome !== 'green') fail();
       const after = refresh();

@@ -101,9 +101,11 @@ test('SIGTERM keeps incomplete bytes after the handler and skips unstarted tasks
       'signal.ts': `import { writeFileSync } from 'node:fs';
 process.on('SIGTERM', () => { console.log('handled'); process.exit(0); });
 console.log(process.cwd());
+console.log('cat: omitted: No such file or directory');
 console.log('ready');
 writeFileSync('scratch/ready', 'yes');
 setInterval(() => {}, 100);`,
+      omitted: 'yes',
     },
   );
   const { child, output } = spawn(f);
@@ -115,8 +117,11 @@ setInterval(() => {}, 100);`,
     expect(err).toBe('');
     const bytes = readFileSync(logPath(out, 'a', 'incomplete'), 'utf8');
     const sandbox = bytes.split('\n')[0] as string;
-    expect(bytes).toBe(`${sandbox}\nready\nhandled\n`);
+    expect(bytes).toBe(`${sandbox}\ncat: omitted: No such file or directory\nready\nhandled\n`);
     expect(existsSync(sandbox)).toBe(false);
+    expect(out.split('\n').find((line) => line.startsWith('incomplete a;'))).not.toContain(
+      'not delivered',
+    );
     expect(f.rows().map((r) => r.outcome)).toEqual(['incomplete']);
     expect(existsSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/tasks/later'))).toBe(false);
   } finally {

@@ -20,11 +20,14 @@ export async function why(args: string[]) {
       ),
     );
     const parts = keyParts(task, new WorkingTree(view.tree, view.dirty));
-    for (const [path, mode, blob] of parts.files) console.log(`file ${path} ${mode} ${blob}`);
+    for (const [path, mode, blob] of parts.files)
+      console.log(`delivered keyed file ${path} ${mode} ${blob}`);
     for (const [path, mode, member, hash] of parts.members)
-      console.log(`member ${path} ${member} ${mode} ${hash}`);
+      console.log(`delivered keyed member ${path} ${member} ${mode} ${hash}`);
     for (const path of parts.unkeyed)
-      console.log(`${parts.superOnly.includes(path) ? 'super-only' : 'unkeyed'} ${path}`);
+      console.log(
+        `delivered not keyed ${parts.superOnly.includes(path) ? 'super-only' : 'unkeyed'} ${path}`,
+      );
     for (const [name] of parts.env) console.log(`env ${name}`);
     console.log(`declaration ${parts.declarationHash}`);
     for (const reason of parts.reasons) console.log(`undecidable: ${reason}`);

@@ -181,6 +181,29 @@ test('a task whose sandbox cannot be built fails alone in fresh and aborts ordin
   expect(repo.cli(['run', '--tasks', 'unproven'], env).code).toBe(2);
 });
 
+test('a dirty input that cannot be selected fails alone in fresh', () => {
+  const repo = new Repo();
+  repos.push(repo);
+  repo.commit({
+    'a.ts': 'export {};',
+    other: 'x',
+    'proof.yaml': JSON.stringify({
+      version: 1,
+      project: 'fresh',
+      tasks: {
+        closure: { run: 'true', inputs: [{ 'imports-of': 'a.ts' }] },
+        later: { run: 'true', inputs: ['other'] },
+      },
+    }),
+  });
+  rmSync(join(repo.path, 'a.ts'));
+  symlinkSync('other', join(repo.path, 'a.ts'));
+  const fresh = repo.cli(['run', '--fresh'], { PROOF_STATE_DIR: directory(), TMPDIR: directory() });
+  expect(fresh.code).toBe(1);
+  expect(fresh.out).toContain('incomplete closure; sandbox failed: ');
+  expect(fresh.out).toContain('green later; proof published');
+});
+
 test('fresh captures dirty closure eligibility before a command removes its shadow', () => {
   const f = fixture();
   f.commit(

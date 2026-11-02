@@ -233,6 +233,7 @@ export function inspectLinks(
 
 export class Sandbox {
   readonly path = mkdtempSync(join(tmpdir(), 'proof-sandbox-'));
+  readonly root = realpathSync(this.path);
   private readonly files = new Map<string, File | undefined>();
 
   materialize(paths: Set<string>, tree: RefTree, dirty: string[], snapshotOnly = false) {

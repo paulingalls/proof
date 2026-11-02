@@ -49,6 +49,19 @@ one as the local replica, outside checkouts by default. A `PROOF_STATE_DIR` over
 a checkout also puts logs there, so removing that checkout removes those logs. Logs stay
 local and never enter either store: they may contain private data.
 
+A red task's summary can append `; not delivered: omitted` before its log path when
+an explicit missing-file diagnostic names a tracked path outside that task's selection.
+For example, `cat omitted` with tracked `omitted` absent from the task's inputs prints
+that hint. At most three distinct paths appear in diagnostic order, followed by
+`(+N more)` for the remainder. The retained log stays complete.
+
+Matching uses sandbox-root-relative paths or absolute paths under the sandbox's real
+root. Untracked paths, delivered paths (including projections and key exclusions),
+directories, outside paths and indirect symptoms such as `Script not found` get no hint.
+Relative paths after a task changes directory may remain unrecognized. Green and incomplete
+tasks get no hint. If the retained log cannot be read, the red reports as usual.
+Hints change no outcome, key or proof.
+
 Providers without `lane` start once; laned providers start once per used slot. Dependents
 await their instance’s readiness, and teardown waits for all running and pending users. Starts use the same capture and display rules, with `--- provider-<name>`
 blocks above one job. After every task summary and provider teardown, a failed-start block
@@ -339,14 +352,15 @@ Committing the input edit gives plan a different key. Plan exits 0 throughout;
 status exits 1 here because the task has no proof.
 
 `proof why <task>` starts with the task's `plan` decision, then prints its current key
-parts: selected paths with file identities and modes, JSON member identities, declared dimension names
+parts: current declared sandbox inputs labeled `delivered` and `keyed`, with file identities
+and modes, JSON member identities, declared dimension names
 (without values), and the declaration hash. These parts use the files on disk, including staged
 and unstaged edits, deletions and untracked additions that Git does not ignore. Git decides whether a
 tracked path is clean, so a line-ending or LFS filter never reads as a change; blob ids of
 dirty paths hash their raw bytes. Whole-selected object manifests instead print a SHA-256 identity
 of their bytes with the version value blanked, rather than a Git blob id.
 Plan's dirty-input eligibility stays the same. Resolver-only manifests print
-`member package.json <member> <mode> <hash>` lines instead of a `file package.json` line.
+`delivered keyed member package.json <member> <mode> <hash>` lines instead of a `delivered keyed file package.json` line.
 A version-only edit reports `no inputs changed` in the comparison even when the dirty rule
 requires RUN; a resolution-member edit reports, for example, `changed member package.json name`.
 
@@ -354,19 +368,20 @@ For the README's shared-file example, `proof why reader` includes these lines af
 committed edit to `shared.txt`:
 
 ```text
-unkeyed shared.txt
+delivered not keyed unkeyed shared.txt
 no inputs changed
 ```
 
 Each received unkeyed file appears once, sorted, instead of its file or member identity.
-The representative still prints `file shared.txt <mode> <hash>`. A policy change lists
+The representative still prints `delivered keyed file shared.txt <mode> <hash>`. A policy change lists
 `now unkeyed shared.txt` when adopting the exclusion, or `now keyed shared.txt` when restoring
 its contribution, rather than claiming no inputs changed. These lines compare against the
 selected comparison baseline, just like other differences.
 
-For the README's test-script example, `proof why test` prints `super-only test.sh`
+For the README's test-script example, `proof why test` prints `delivered not keyed super-only test.sh`
 and, after a committed script edit, `no inputs changed`. Received exclusions appear once,
-sorted by path, with `super-only` or `unkeyed` labels instead of file/member identities.
+sorted by path, with `delivered not keyed` and `super-only` or `unkeyed` labels instead of
+file/member identities. Delivery describes current declared inputs, not a receipt from a previous run.
 Adoption prints `now super-only test.sh`; restoring its contribution prints
 `now keyed test.sh`. These transitions use the comparison proof's result commit.
 `run --fresh` executes the current exact bytes even when the key retains a proof.
