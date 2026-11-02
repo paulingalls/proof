@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.19.2
+
+- A sandbox that cannot be removed no longer aborts the run: it warns with the task and path left
+  behind, preserves task outcomes and lets remaining tasks finish.
+
 ## 0.19.1
 
 - A failed provider start now ends the run summary, after every task line, with its exit code or

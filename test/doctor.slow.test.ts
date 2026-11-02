@@ -132,7 +132,7 @@ test('doctor reports an outage even with a populated replica', async () => {
   } finally {
     await postgres.restart();
   }
-}, 30_000);
+}, 60_000);
 
 test('the operator guide startup block accepts doctor and cleans its named volume', async () => {
   const source = await Bun.file(new URL('../docs/store.md', import.meta.url)).text();

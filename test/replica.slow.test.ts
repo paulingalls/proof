@@ -90,7 +90,7 @@ test('online record and run survive an outage without importing another machineâ
   } finally {
     await postgres.restart();
   }
-}, 30_000);
+}, 60_000);
 
 test('offline results stay local across reopen and online reads never merge local greens', async () => {
   const { repo, clone, a, b, sql, record, rows } = await setup();

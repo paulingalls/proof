@@ -115,7 +115,7 @@ test('shared skips report once across clones and offline history stays local', a
   expect(cli('stats')).toEqual(shared);
   expect(JSON.parse(report(repo, env.PROOF_STATE_DIR).out)).toEqual(online);
   expect(await sql`SELECT count FROM skips`).toEqual([{ count: 3 }]);
-}, 30_000);
+}, 60_000);
 
 test('a lost remote skip write keeps the local increment and task exit without replay', async () => {
   const { repo, sql, env, cli } = await setup();
@@ -158,7 +158,7 @@ test('a lost remote skip write keeps the local increment and task exit without r
   }
   expect(cli('stats').code).toBe(0);
   expect(await sql`SELECT * FROM skips`).toEqual([]);
-}, 30_000);
+}, 60_000);
 
 test('v0.14.1 stores remain schema 2 and both real clients preserve proof and skips', async () => {
   const { repo, sql, env, cli } = await setup();

@@ -232,7 +232,13 @@ export async function runTask(
           `${outcome} ${id}; not recorded: ${current.reason}${exhausted ? `; ${exhausted}` : ''}${providerReason}${escapes.length ? `; ${escapes.join('; ')}` : ''}${log}`,
         );
     } finally {
-      sandbox?.close();
+      try {
+        sandbox?.close();
+      } catch (error) {
+        summary.push(
+          `warning: sandbox cleanup failed for ${id}; left behind: ${sandbox?.path}; ${error}`,
+        );
+      }
     }
   } finally {
     lanes.release(lane, slot);
