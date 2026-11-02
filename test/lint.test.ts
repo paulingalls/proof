@@ -147,7 +147,7 @@ test('lint preserves finding order, absent exemptions and sticky projections', (
           inputs: ['src/owned.ts', '!src/**', { 'imports-of': 'entry.ts' }],
         },
       },
-      coverage: ['z/**', 'src/**', '**/*.ts', 'nothing/**', 'config.json'],
+      coverage: ['z/**', 'src/**', '**/*.ts', 'nothing/**'],
       exempt: {
         'src/owned.ts': 'manual',
         'absent-glob/file': 'manual',
@@ -155,6 +155,7 @@ test('lint preserves finding order, absent exemptions and sticky projections', (
         'missing.ts': 'manual',
         'missing.yaml': 'manual',
         'config.json': 'manual',
+        'z/*.ts': 'manual',
       },
     }),
     'z/unowned.ts': '',
@@ -184,6 +185,7 @@ test('lint preserves finding order, absent exemptions and sticky projections', (
       "exempt 'missing.ts': no tracked file\n" +
       "exempt 'missing.ts': selected by task 'first'\n" +
       "exempt 'missing.yaml': no tracked file\n" +
-      "exempt 'config.json': selected by task 'first'\n",
+      "exempt 'config.json': selected by task 'first'\n" +
+      "exempt 'z/*.ts': no tracked file\n",
   });
 });
