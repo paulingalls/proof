@@ -163,12 +163,15 @@ export async function runTask(
       let outcome: 'incomplete' | 'green' | 'red' = 'incomplete';
       let unbuilt: string | undefined;
       let log = '';
-      const visible = input.key === undefined ? dirty : [];
-      const selected = selection(task, tree, visible);
+      let selected = new Set<string>();
       try {
-        // Dirt that reaches no input must not change what runs: the proof names the committed bytes.
-        sandbox?.materialize(selected, tree, visible, staged);
-        sandbox?.link(task.links ?? [], inspection);
+        if (sandbox) {
+          // Dirt that reaches no input must not change what runs: the proof names the committed bytes.
+          const visible = input.key === undefined ? dirty : [];
+          selected = selection(task, tree, visible);
+          sandbox.materialize(selected, tree, visible, staged);
+          sandbox.link(task.links ?? [], inspection);
+        }
       } catch (error) {
         // Unattended, the backstop finishes every task it can; a person running `run` is told now.
         if (!fresh) throw error;

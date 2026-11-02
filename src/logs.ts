@@ -10,7 +10,7 @@ import {
   unlinkSync,
   writeSync,
 } from 'node:fs';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { statePath } from './config';
 import type { RefTree } from './git';
 
@@ -54,7 +54,6 @@ export function notDelivered(path: string, root: string, tree: RefTree, selected
     for (const candidate of [...quoted, field, field.split(/\s+/).at(-1) ?? '']) {
       if (!candidate) continue;
       const file = relative(root, resolve(root, candidate));
-      if (isAbsolute(file) || file === '..' || file.startsWith('../')) continue;
       if (tree.files.has(file) && !selected.has(file)) omitted.add(file);
     }
   }
