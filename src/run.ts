@@ -76,7 +76,7 @@ export async function run(args: string[]) {
           ready ? 'green' : processes.cancelled || result.signal ? 'incomplete' : 'red',
         ) ?? {};
       if (log.error) logFailed = true;
-      return { ready, problem, ...log };
+      return { ready, code: result.code, problem, ...log };
     },
     (message) => {
       failed = true;
@@ -193,7 +193,9 @@ export async function run(args: string[]) {
     if (fatal) throw fatal.error;
     await store.skip(initial.project, skipped);
     await providers.stopExcept(new Set());
-    console.log(summary.join('\n'));
+    const failures = providers.failures();
+    if (failures.length) failed = true;
+    console.log([...summary, ...failures].join('\n'));
     return processes.interrupted
       ? processes.interrupted === 'SIGINT'
         ? 130
@@ -206,7 +208,7 @@ export async function run(args: string[]) {
   } catch (error) {
     try {
       await providers.stopExcept(new Set());
-      console.log(summary.join('\n'));
+      console.log([...summary, ...providers.failures()].join('\n'));
       await store.close();
     } catch {
       /* Preserve the command failure. */

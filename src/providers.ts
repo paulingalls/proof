@@ -2,7 +2,7 @@ import { closeSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path';
 import { statePath } from './config';
 import type { Provider, Task } from './declarations';
-import { type LogResult, logSuffix } from './logs';
+import { type LogResult, logSuffix, logTail } from './logs';
 
 export const BASE_ENV = ['PATH', 'HOME', 'TMPDIR'];
 const CHANNEL = 'PROOF_PROVIDER_ENV';
@@ -13,12 +13,15 @@ export type ProviderEnvironment = {
   accept: () => string | undefined;
 };
 
+type StartResult = LogResult & { ready: boolean; code: number; problem?: string };
+
 type Attempt = {
   name: string;
   slot?: number;
   env: Record<string, string>;
   declaration: Provider;
   ready: boolean;
+  failure?: LogResult & { code?: number; problem?: string };
   stopped: boolean;
   starting: Promise<boolean>;
 };
@@ -26,13 +29,15 @@ type Attempt = {
 export class Providers {
   private readonly attempts = new Map<string, Map<number | undefined, Attempt>>();
 
+  private readonly blocked = new Map<string, Set<string>>();
+
   constructor(
     private readonly execute: (
       command: string,
       cleanup: boolean,
       name: string,
       environment?: ProviderEnvironment,
-    ) => Promise<LogResult & { ready: boolean; problem?: string }>,
+    ) => Promise<StartResult>,
     private readonly report: (message: string) => void,
     private readonly tasks: () => Iterable<Task>,
     private readonly initial: Map<string, Provider>,
@@ -105,7 +110,7 @@ export class Providers {
         path = join(directory, 'env');
         closeSync(openSync(path, 'wx', 0o600));
       } catch {
-        this.report(`provider '${name}' start failed: cannot create environment channel`);
+        attempt.failure = { problem: 'cannot create environment channel' };
         return false;
       }
       const result = await this.execute(attempt.declaration.start, false, name, {
@@ -113,14 +118,47 @@ export class Providers {
         accept: () => this.accept(attempt.name, attempt, path),
       });
       attempt.ready = result.ready;
-      if (!result.ready || result.error)
-        this.report(
-          `provider '${name}' ${result.ready ? 'start ready' : 'start failed'}${result.problem ? `: ${result.problem}` : ''}${logSuffix(result)}`,
-        );
+      if (!result.ready) attempt.failure = result;
+      else if (result.error) this.report(`provider '${name}' start ready${logSuffix(result)}`);
       return result.ready;
     } finally {
       if (directory) rmSync(directory, { recursive: true, force: true });
     }
+  }
+
+  blockedReason(id: string, needs: string[], slot?: number, exhausted = false) {
+    const names: string[] = [];
+    for (const name of needs) {
+      const instances = this.attempts.get(name);
+      const failed = [...(instances?.values() ?? [])].find(
+        (attempt) =>
+          attempt.failure && (exhausted || attempt.slot === this.instanceSlot(name, slot)),
+      );
+      if (!failed) continue;
+      const tasks = this.blocked.get(name) ?? new Set<string>();
+      tasks.add(id);
+      this.blocked.set(name, tasks);
+      names.push(`provider '${exhausted ? name : this.display(failed)}'`);
+    }
+    return names.length ? `; blocked by ${names.join(', ')}` : '';
+  }
+
+  failures() {
+    const lines: string[] = [];
+    for (const [name, instances] of this.attempts) {
+      const failed = [...instances.values()].filter((attempt) => attempt.failure);
+      if (!failed.length) continue;
+      lines.push(`provider '${name}': ${this.blocked.get(name)?.size ?? 0} tasks blocked`);
+      for (const attempt of failed) {
+        const failure = attempt.failure;
+        if (!failure) continue;
+        lines.push(
+          `provider '${this.display(attempt)}' start failed: ${failure.problem ?? `exit ${failure.code}`}${logSuffix(failure)}`,
+        );
+        if (failure.path) lines.push(...logTail(failure.path));
+      }
+    }
+    return lines;
   }
 
   private accept(provider: string, attempt: Attempt, path: string): string | undefined {

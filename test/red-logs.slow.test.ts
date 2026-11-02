@@ -145,32 +145,138 @@ test('parallel captures separate a red from a green', () => {
   expect(readdirSync(join(f.env.PROOF_STATE_DIR, 'logs'))).toEqual(['jobs']);
 });
 
-test('failed provider retains one log and no dependent captures; ready provider cleans up', () => {
+for (const jobs of [1, 2]) {
+  test(`failed provider retains one log and no dependent captures; ready provider cleans up, jobs=${jobs}`, () => {
+    const f = fixture(
+      {
+        a: task('echo forbidden', ['stack']),
+        b: task('echo forbidden', ['stack']),
+        independent: task('true'),
+        unselected: task('echo forbidden', ['stack']),
+      },
+      {
+        stack: {
+          start:
+            'printf "provider-out\\n"; printf "provider-err\\n" >&2; test -f scratch/succeed || exit 7',
+          stop: 'echo stop >> scratch/stops',
+        },
+      },
+    );
+    const result = f.run('--jobs', String(jobs), '--tasks', 'a', 'b', 'independent');
+    expect(result.code).toBe(1);
+    const paths = [...result.out.matchAll(/provider 'stack' start failed: exit 7; log: (.*)\n/g)];
+    expect(paths).toHaveLength(1);
+    const path = paths[0]?.[1] as string;
+    expect(isAbsolute(path)).toBe(true);
+    expect(path).toContain('/logs/jobs/providers/stack/');
+    expect(path).toEndWith('-no-key-red.log');
+    expect(readFileSync(path, 'utf8')).toBe('provider-out\nprovider-err\n');
+    const block = result.out.slice(result.out.indexOf("provider 'stack':"));
+    expect(block).toBe(
+      `provider 'stack': 2 tasks blocked\nprovider 'stack' start failed: exit 7; log: ${path}\n  provider-out\n  provider-err\n`,
+    );
+    for (const id of ['a', 'b']) {
+      expect(result.out).toContain(`incomplete ${id}; blocked by provider 'stack'`);
+      expect(result.out.indexOf(`incomplete ${id}`)).toBeLessThan(result.out.indexOf(block));
+    }
+    expect(result.out.indexOf('green independent')).toBeLessThan(result.out.indexOf(block));
+    expect(result.out).not.toContain('forbidden');
+    expect(
+      f
+        .rows()
+        .map((r) => r.outcome)
+        .sort(),
+    ).toEqual(['green', 'incomplete', 'incomplete']);
+    expect(f.read('stops')).toBe('stop\n');
+    expect(readdirSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs'))).toEqual(['providers']);
+    f.mark('succeed');
+    const ready = f.run('--jobs', String(jobs), '--tasks', 'a', 'b', 'independent');
+    expect(ready.code).toBe(0);
+    expect(ready.out).not.toContain("provider 'stack':");
+    expect(ready.out).not.toContain('blocked by provider');
+    expect(readdirSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/providers/stack'))).toHaveLength(1);
+  });
+}
+
+test('failed startup remains a failure when its dependent becomes PROVEN', () => {
   const f = fixture(
-    { a: task('echo forbidden', ['stack']), b: task('echo forbidden', ['stack']) },
+    { a: task('true', ['stack']) },
+    {
+      stack: { start: 'git checkout -- input; echo failed-after-restore; exit 7' },
+    },
+  );
+  expect(f.repo.cli(['record', 'a', '--outcome', 'green'], f.env).code).toBe(0);
+  f.repo.write('input', 'changed');
+  const result = f.run('--jobs', '2');
+  expect(result.code).toBe(1);
+  expect(result.out).toContain('PROVEN a:');
+  expect(result.out).toContain("provider 'stack': 0 tasks blocked");
+  expect(result.out).toContain("provider 'stack' start failed: exit 7; log: ");
+  expect(result.out).not.toContain('incomplete a');
+});
+
+test('rejected export ends with its value-free cause and diagnostic tail', () => {
+  const marker = crypto.randomUUID();
+  const f = fixture(
+    { a: task('echo forbidden', ['stack']) },
+    {
+      stack: { start: `echo PATH=${marker} > "$PROOF_PROVIDER_ENV"; echo harmless-diagnostic` },
+    },
+  );
+  const result = f.run('--jobs', '2');
+  expect(result.code).toBe(1);
+  const block = result.out.slice(result.out.indexOf("provider 'stack':"));
+  expect(block).toContain("provider 'stack': 1 tasks blocked");
+  expect(block).toContain("start failed: environment line 1 'PATH': reserved name; log: ");
+  expect(block).not.toContain('exit 0');
+  expect(result.out.indexOf('incomplete a')).toBeLessThan(result.out.indexOf(block));
+  expect(block).toEndWith('  harmless-diagnostic\n');
+  const path = block.match(/; log: (.*)\n/)?.[1] as string;
+  expect(result.out + result.err + readFileSync(path, 'utf8')).not.toContain(marker);
+  expect(f.rows().map((r) => r.outcome)).toEqual(['incomplete']);
+});
+
+for (const newline of ['', '\n']) {
+  test(`provider final tail keeps exactly twenty lines, terminal newline=${!!newline}`, () => {
+    const lines = Array.from({ length: 25 }, (_, i) => `line-${i + 1}`);
+    const bytes = lines.join('\n') + newline;
+    const f = fixture(
+      { a: task('true', ['stack']) },
+      {
+        stack: { start: `printf '%s' '${bytes}'; exit 3` },
+      },
+    );
+    const result = f.run('--jobs', '2');
+    expect(result.code).toBe(1);
+    const block = result.out.slice(result.out.indexOf("provider 'stack':"));
+    expect(block.split('\n').slice(2)).toEqual([
+      ...lines.slice(-20).map((line) => `  ${line}`),
+      '',
+    ]);
+    const path = block.match(/; log: (.*)\n/)?.[1] as string;
+    expect(readFileSync(path, 'utf8')).toBe(bytes);
+  });
+}
+
+test('unavailable provider tail preserves the final report and exit', () => {
+  const f = fixture(
+    { a: task('true', ['stack']), independent: task('true') },
     {
       stack: {
-        start: 'printf provider-out; printf provider-err >&2; test -f scratch/succeed',
-        stop: 'echo stop >> scratch/stops',
+        start: 'echo diagnostic; exit 4',
+        stop: 'rm "$PROOF_STATE_DIR"/logs/jobs/providers/stack/*.log',
       },
     },
   );
   const result = f.run('--jobs', '2');
   expect(result.code).toBe(1);
-  const paths = [...result.out.matchAll(/provider 'stack' start failed; log: (.*)\n/g)];
-  expect(paths).toHaveLength(1);
-  const path = paths[0]?.[1] as string;
-  expect(path).toContain('/logs/jobs/providers/stack/');
-  expect(path).toEndWith('-no-key-red.log');
-  expect(readFileSync(path, 'utf8')).toBe('provider-outprovider-err');
-  expect(result.out).not.toContain('forbidden');
-  expect(f.rows().map((r) => r.outcome)).toEqual(['incomplete', 'incomplete']);
-  expect(f.read('stops')).toBe('stop\n');
-  expect(readdirSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs'))).toEqual(['providers']);
-  f.mark('succeed');
-  expect(f.run('--jobs', '2').code).toBe(0);
-  expect(readdirSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/providers/stack'))).toHaveLength(1);
-  expect(readdirSync(join(f.env.PROOF_STATE_DIR, 'logs'))).toEqual(['jobs']);
+  expect(result.out).toContain("incomplete a; blocked by provider 'stack'");
+  const block = result.out.slice(result.out.indexOf("provider 'stack':"));
+  expect(result.out.indexOf('green independent')).toBeLessThan(result.out.indexOf(block));
+  expect(block).toContain("provider 'stack': 1 tasks blocked");
+  expect(block).toContain("provider 'stack' start failed: exit 4; log: /");
+  expect(block).toContain('  log tail unavailable: ');
+  expect(block).toContain('ENOENT');
 });
 
 test('each task keeps its newest ten reds and a later green preserves them', () => {
@@ -214,7 +320,7 @@ test('provider retention cannot prune a task with the same printed label', () =>
   for (let n = 0; n < 10; n++) {
     const result = f.run('--tasks', 'dependent');
     expect(result.code, result.err).toBe(1);
-    expect(result.out).toContain("provider 'stack' start failed; log: ");
+    expect(result.out).toContain("provider 'stack' start failed: exit 1; log: ");
   }
   expect(readFileSync(path, 'utf8')).toBe('task-diagnostic\n');
 }, 15000);

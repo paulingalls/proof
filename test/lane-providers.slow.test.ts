@@ -111,6 +111,17 @@ test('PROVEN dependents hold no slot and start no instance', () => {
   expect(f.run('--jobs', '2').code).toBe(0);
   expect(f.read('start-0')).toBe(before);
   expect(f.rows()).toHaveLength(2);
+  const failed = setup(
+    { a: addressed('a'), b: addressed('b') },
+    {
+      stack: { ...stack, start: `${stack.start}; exit 7` },
+    },
+  );
+  expect(failed.repo.cli(['record', 'a', '--outcome', 'green'], failed.env).code).toBe(0);
+  const result = failed.run('--jobs', '2');
+  expect(result.code).toBe(1);
+  expect(result.out).toContain('PROVEN a');
+  expect(result.out).toContain("provider 'stack': 1 tasks blocked");
 });
 
 test('exports from distinct providers conflict even across lane instances', () => {
@@ -153,7 +164,10 @@ test('failed slot retires capacity while healthy slot serves later tasks', async
     expect(f.has('c') || f.has('d')).toBe(false);
     expect(f.read('start-1')).toBe('start\n');
     f.mark('release');
-    expect(await finish(running, 1)).toContain("provider 'stack[1]' start failed");
+    const out = await finish(running, 1);
+    expect(out).toContain("provider 'stack[1]' start failed");
+    expect(out).toContain("provider 'stack': 1 tasks blocked");
+    expect(out).toContain("incomplete b; blocked by provider 'stack[1]'");
     expect(f.read('c').trim()).toBe('0');
     expect(f.read('d').trim()).toBe('0');
     expect(
@@ -178,11 +192,11 @@ test('failed slot retires capacity while healthy slot serves later tasks', async
 for (const limit of [1, 2]) {
   test(`exhausted lane records incomplete, limit=${limit}`, () => {
     const tasks = Object.fromEntries(
-      ['a', 'b', 'c', 'd'].map((id) => [
+      ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => [
         id,
         {
           ...task(mark(id), ['c', 'd'].includes(id) ? [] : ['stack']),
-          inputs: [id === 'd' ? 'missing' : 'input'],
+          inputs: [['d', 'f'].includes(id) ? 'missing' : 'input'],
           lane: 'ios',
         },
       ]),
@@ -202,8 +216,30 @@ for (const limit of [1, 2]) {
     expect(result.out).toContain("lane 'ios' exhausted");
     expect(['a', 'b', 'c', 'd'].some(f.has)).toBe(false);
     expect(result.out).toMatch(/incomplete d;.*lane 'ios' exhausted/);
-    expect(f.rows().map((r) => r.outcome)).toEqual(['incomplete', 'incomplete', 'incomplete']);
+    expect(f.rows().map((r) => r.outcome)).toEqual([
+      'incomplete',
+      'incomplete',
+      'incomplete',
+      'incomplete',
+    ]);
+    expect(result.out).toContain("provider 'stack': 4 tasks blocked");
+    for (const id of ['e', 'f']) {
+      expect(result.out).toMatch(
+        new RegExp(`incomplete ${id};.*lane 'ios' exhausted.*blocked by provider 'stack'`),
+      );
+    }
+    expect(result.out).toContain('incomplete f; not recorded:');
+    expect(f.rows().some((r) => r.task === 'f')).toBe(false);
+    expect(
+      f
+        .rows()
+        .filter((r) => ['e'].includes(r.task))
+        .map((r) => r.outcome),
+    ).toEqual(['incomplete']);
     for (let slot = 0; slot < limit; slot++) {
+      const diagnostic = `provider 'stack[${slot}]' start failed: exit 1; log: /`;
+      expect(result.out).toContain(diagnostic);
+      expect(result.out.indexOf(diagnostic)).toBeGreaterThan(result.out.indexOf('incomplete f'));
       expect(f.read(`start-${slot}`)).toBe('start\n');
       expect(f.read(`stop-${slot}`)).toBe('stop\n');
     }
