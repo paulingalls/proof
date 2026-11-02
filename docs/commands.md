@@ -176,9 +176,8 @@ capacity. Per-host locking across clones (design §4.11) remains a milestone Can
 The first interrupt signals every active task and provider-start process group; a second
 kills every active group, including teardown. Interrupted tasks record incomplete. A sandbox
 construction failure cancels and drains siblings before returning the error; `--fresh` instead
-records that task incomplete and finishes the remaining tasks. Sandbox removal tries up to
-three times, waiting 50 ms between attempts. Successful cleanup prints no diagnostic. Exhausted
-cleanup adds a warning naming the task and the path left behind to the summary; it preserves
+records that task incomplete and finishes the remaining tasks. A sandbox that cannot be removed
+adds a warning naming the task and the path left behind to the summary; it preserves
 task outcomes, earlier errors and the task-derived exit status, and other tasks continue.
 
 `proof run --staged` captures the index once. Declarations, includes, task selection, keys,

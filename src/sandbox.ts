@@ -339,15 +339,6 @@ export class Sandbox {
   }
 
   close() {
-    // Bun 1.4.4 ignores rmSync's maxRetries and retryDelay options.
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        rmSync(this.path, { recursive: true, force: true });
-        return;
-      } catch (error) {
-        if (attempt === 2) throw error;
-        Bun.sleepSync(50);
-      }
-    }
+    rmSync(this.path, { recursive: true, force: true });
   }
 }

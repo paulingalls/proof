@@ -2,8 +2,8 @@
 
 ## 0.19.2
 
-- Sandbox cleanup retries transient removal failures. If removal still fails, the run warns with
-  the task and path left behind, preserves task outcomes and lets remaining tasks finish.
+- A sandbox that cannot be removed no longer aborts the run: it warns with the task and path left
+  behind, preserves task outcomes and lets remaining tasks finish.
 
 ## 0.19.1
 
