@@ -133,6 +133,8 @@ The package has its own tests for its own behaviour, on synthetic repos it build
   Apple-silicon Macs (Paul, 2026-10-29). A repo declares a dimension only for tasks whose results it changes,
   such as Xcode and the simulator runtime for native journeys; an Xcode update then re-proves those journeys,
   with no override.
+  A proof is consumable only on a machine that evaluates the task's dimensions to the same values; a machine
+  that cannot evaluate one cannot consume that task's proofs (Paul, 2026-11-02).
 
 ### Enforcement and correctness
 - **R7. Enforce declarations, never trust them.**
@@ -220,7 +222,9 @@ The package has its own tests for its own behaviour, on synthetic repos it build
 
 ## 4. Non-goals
 
-- No remote execution, build graph, or CI caching service.
+- No remote execution in the core: `proof` runs where it is invoked. A repository may dispatch `proof run`
+  to another machine with its own tooling; the store carries the results and `status --ref` consumes them
+  (Paul, 2026-11-02). No build graph or CI caching service.
 - Not a Bazel/Nx replacement for builds: it decides and records test proof only.
 - No shadow mode. Paul chose to cut over directly, with R9's contested rule and R10's super backstop as the
   safety net.
