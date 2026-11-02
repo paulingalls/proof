@@ -356,6 +356,31 @@ the previous window is the N days before it. Both use the reading machine's time
 with inclusive start and exclusive end midnights. Skips retain the recording machine's
 local date. Invalid, missing, repeated or unknown flags exit 2 with usage.
 
+When the project declares `generate`, a local generation line appears immediately before
+`saved` (the Measure stays last). For two cache hits and one 1.25-second run:
+
+```text
+generate: 2 hits, 1 runs, median 1.25s in 30d (local to this machine)
+```
+
+These figures cover the declaration's project across clones sharing this machine's state
+directory, independently of `--set` and `--by`. Hits count validated cache reads; every other
+generator call counts as a run, including failures. The median includes all timed runs in the
+window, unlike task medians, and is `unavailable` when there are none. JSON adds
+`generate: {"hits":2,"runs":1,"median":1.25,"local":true}`; `median` is unrounded seconds or
+`null`, and top-level `days` supplies the window. Projects without `generate` omit both forms.
+
+Generation uses the same local calendar start as `--since`, ending just before `stats` began.
+Each generator call records one event, including dirty comparisons and post-task refreshes;
+in-process reuse of declarations adds none. `stats` records its own declaration read for the
+next report, so consecutive reports can differ by a hit.
+
+Events stay in `generate-events.jsonl` under `PROOF_STATE_DIR` (otherwise
+`XDG_STATE_HOME/proof` or `HOME/.local/state/proof`). Deleting that file resets the figures.
+An append failure prints `proof: generate event not recorded: ...` on stderr while preserving
+the command's stdout and exit result. An unreadable or malformed history makes `stats` exit 2;
+a malformed event names its file and line.
+
 For a committed `text` task in `sets: [push]`, with no earlier history:
 
 ```sh

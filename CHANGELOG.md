@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.17.0
+
+- `proof stats` and `--json` report this machine's generator cache hits, runs and median seconds when
+  a project declares `generate`. Events stay local in the state directory.
+
 ## 0.16.1
 
 - `proof lint` computes each task's selection once rather than per path: a synthetic 439-task repo

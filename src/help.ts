@@ -26,7 +26,7 @@ const commands: Record<string, [string, string]> = {
   flakes: [flakesUsage, 'Report tasks ranked by contradictions.'],
   stats: [
     statsUsage,
-    'Report timings, optional dimension splits, the RUN estimate and time saved; supports JSON.',
+    'Report timings, optional dimension splits, the RUN estimate and time saved; supports JSON. Generation hits, runs and median are local to this machine, independent of --set/--by; failed runs count.',
   ],
   why: [whyUsage, 'Explain current key parts and changes since the newest proof.'],
   help: [helpUsage, 'Show general help or help for one command.'],
@@ -80,7 +80,8 @@ Configuration environment:
     First line is the URL; optional remaining project names restrict sharing.
     Without a URL, proof uses the local SQLite store only.
   PROOF_STATE_DIR: state directory; otherwise XDG_STATE_HOME/proof,
-    otherwise HOME/.local/state/proof. Contains proof.db and retained logs.
+    otherwise HOME/.local/state/proof. Contains proof.db, retained logs and generate-events.jsonl.
+    Deleting generate-events.jsonl resets local generation figures.
   HOME: fallback base for configuration and state paths.
   PROOF_LANES=name=N,...: override declared lane limits for a run.
 

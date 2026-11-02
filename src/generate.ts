@@ -1,4 +1,5 @@
 import {
+  appendFileSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -27,6 +28,67 @@ import { refuseDuplicateKeys } from './yaml-keys';
 export type Generator = Pick<Task, 'run' | 'inputs' | 'links'>;
 
 export function generate(decl: Generator, tree: RefTree, dirty: string[], project: string) {
+  const started = performance.now();
+  let hit = false;
+  try {
+    return attempt(decl, tree, dirty, project, () => {
+      hit = true;
+    });
+  } finally {
+    const seconds = hit ? null : (performance.now() - started) / 1000;
+    try {
+      appendFileSync(
+        join(statePath(), 'generate-events.jsonl'),
+        `${JSON.stringify([project, new Date().toISOString(), seconds])}\n`,
+        { mode: 0o600 },
+      );
+    } catch (error) {
+      console.error(`proof: generate event not recorded: ${error}`);
+    }
+  }
+}
+
+export function generateEvents(project: string, start: Date, now: Date) {
+  const file = join(statePath(), 'generate-events.jsonl');
+  const samples: (number | null)[] = [];
+  let content: string;
+  try {
+    content = readFileSync(file, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return samples;
+    throw error;
+  }
+  const lines = content.split('\n');
+  if (lines.at(-1) === '') lines.pop();
+  for (const [index, line] of lines.entries()) {
+    try {
+      const event = JSON.parse(line);
+      if (
+        !Array.isArray(event) ||
+        event.length !== 3 ||
+        typeof event[0] !== 'string' ||
+        typeof event[1] !== 'string' ||
+        !Number.isFinite(Date.parse(event[1])) ||
+        (event[2] !== null &&
+          (typeof event[2] !== 'number' || !Number.isFinite(event[2]) || event[2] < 0))
+      )
+        throw new Error('invalid generate event');
+      const finished = Date.parse(event[1]);
+      if (event[0] === project && finished >= +start && finished < +now) samples.push(event[2]);
+    } catch (error) {
+      throw new Error(`${file}:${index + 1}: ${error}`);
+    }
+  }
+  return samples;
+}
+
+function attempt(
+  decl: Generator,
+  tree: RefTree,
+  dirty: string[],
+  project: string,
+  onHit: () => void,
+) {
   let capture: Capture;
   try {
     capture = new Capture({ project, kind: 'generators', task: 'generate', live: false });
@@ -82,6 +144,7 @@ export function generate(decl: Generator, tree: RefTree, dirty: string[], projec
       closed = true;
       const log = capture.finish('green');
       if (log.error) throw new Error(`log failed: ${log.error}`);
+      onHit();
       return cached as [string, string][];
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
