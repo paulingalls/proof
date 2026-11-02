@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.22.0
+
+- Optional task `timeout` budgets kill the entire process group and report a red budget
+  failure. Interrupts retain incomplete semantics; timeout metadata does not enter keys.
+
 ## 0.21.2
 
 - `run` reports cumulative progress after each task and ends its summary with outcome totals,

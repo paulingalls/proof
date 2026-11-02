@@ -357,6 +357,15 @@ start; pending RUN dependents of attempted providers record incomplete, and clea
 before exit 130/143. The first signal during `stop` lets teardown finish; a second signal kills
 its running group.
 
+Tasks may declare `timeout: 900` to limit the command to 900 seconds. The optional field
+accepts whole seconds from 1 to 2147483; without it there is no budget. Timing starts when
+the task command spawns, after provider startup and sandbox construction. At expiry, proof
+immediately kills the whole process group with SIGKILL and records red, with
+`killed at budget after 900 seconds` in the summary. Other tasks continue. An interrupt
+already in progress takes precedence and records incomplete. Like `lane` and `carry`,
+`timeout` does not enter keys; editing a selected file such as `proof.yaml` still changes
+its key by its bytes. See [run output](docs/commands.md) for progress and exit status.
+
 Provider declarations and `needs` do not enter task keys. A selected file such as `proof.yaml`
 or a provider script still enters the key by its bytes. Declare the resource's relevant inputs
 on each task (a named `$stack` set can share them). Startup edits are re-evaluated before task

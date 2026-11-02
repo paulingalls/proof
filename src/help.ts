@@ -67,6 +67,7 @@ proof.yaml root fields:
 Task fields:
   run: command (required); inputs: nonempty input list (required).
   env: pass-through allowlist of caller environment names; links: list of trusted checkout paths.
+  timeout: optional whole seconds from 1 to 2147483; no default budget; does not enter keys.
   carry: boolean opt-in to rekey across input declaration changes; does not enter keys.
   needs: list of provider names; sets: list of task selection groups.
   lane: declared lane name, or reserved solo (no root declaration needed).

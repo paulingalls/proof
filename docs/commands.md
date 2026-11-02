@@ -220,6 +220,28 @@ proof identity: slots, provider instances and limits do not change keys; changin
 whose bytes enter its key. Limits apply per `proof run`; separate invocations do not share
 capacity. Per-host locking across clones (design §4.11) remains a milestone Candidate.
 
+A task's optional `timeout: 1` gives its command one second from spawn. Only whole seconds
+from 1 to 2147483 are accepted; any other value is a declaration error for every reader
+(exit 2). Without the field, no budget applies. Provider startup, queue and lane waits,
+and sandbox construction consume none of the budget. Expiry immediately sends SIGKILL to
+the whole task process group, including children that ignore SIGTERM; traps do not run.
+The group drains before sandbox cleanup and slot release. The task records red with its
+measured elapsed seconds, retains its log, and makes `run` exit 1. Siblings and queued tasks
+continue. An interrupt already in progress takes precedence: its handler can finish beyond
+the budget and the task records incomplete with exit 130/143. Timers are cleared on completion.
+`timeout` does not enter keys, except that editing a selected declaration file changes its
+input bytes as usual.
+
+For example, a timed `over` task beside an untimed task and two quick tasks produced:
+
+```text
+progress: 2/4 done; green 1, red 1, incomplete 0, proven 0, unreached 0; task over
+red over; killed at budget after 1 seconds; log: /absolute/state/logs/jobs/tasks/over/<timestamp>-<uuid>-<key>-red.log
+summary: green 2, red 2, incomplete 0, proven 0, unreached 0
+```
+
+Budget reds increase both done and red in `progress:` and the final tally.
+
 The first interrupt signals every active task and provider-start process group; a second
 kills every active group, including teardown. Interrupted tasks record incomplete. A sandbox
 construction failure cancels and drains siblings before returning the error; `--fresh` instead

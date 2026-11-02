@@ -201,21 +201,26 @@ test('root node properties cannot hide mapping keys', () => {
   }
 });
 
-test('carry is boolean selection metadata across declaration readers', () => {
+test('selection metadata preserves keys and carry validates across readers', () => {
   repo = new Repo();
-  let key: string | undefined;
-  for (const carry of [undefined, false, true]) {
-    commit(
-      header +
-        `tasks: ${JSON.stringify({ lint: { run: 'echo ok', inputs: ['src/**'], ...(carry === undefined ? {} : { carry }) } })}`,
-    );
-    const result = plan(true);
-    expect(result.code, result.err).toBe(0);
-    const [row] = JSON.parse(result.out);
-    key ??= row.key;
-    expect(row.key).toBe(key);
-    if (carry === undefined) expect(commands(repo.git('rev-parse', 'HEAD'))[2]?.code).toBe(0);
-    else expect(row.state).toBe('PROVEN');
+  for (const [field, values] of [
+    ['carry', [undefined, false, true]],
+    ['timeout', [undefined, 1, 2, 2147483]],
+  ] as const) {
+    let key: string | undefined;
+    for (const value of values) {
+      commit(
+        header +
+          `tasks: ${JSON.stringify({ lint: { run: 'echo ok', inputs: ['src/**'], ...(value === undefined ? {} : { [field]: value }) } })}`,
+      );
+      const result = plan(true);
+      expect(result.code, result.err).toBe(0);
+      const [row] = JSON.parse(result.out);
+      key ??= row.key;
+      expect(row.key).toBe(key);
+      if (value === undefined) expect(commands(repo.git('rev-parse', 'HEAD'))[2]?.code).toBe(0);
+      else expect(row.state).toBe('PROVEN');
+    }
   }
   for (const carry of ['yes', 1, null, [], {}]) {
     const body = `tasks: ${JSON.stringify({ lint: { run: 'echo ok', inputs: ['src/**'], carry } })}`;
@@ -234,6 +239,40 @@ test('carry is boolean selection metadata across declaration readers', () => {
       const result = route === 'working' ? repo.cli(['doctor']) : plan();
       expect(result.code, route + result.err).toBe(2);
       expect(result.err).toContain("task 'lint': carry must be a boolean");
+    }
+  }
+});
+
+test('timeout rejects invalid budgets through every reader', () => {
+  repo = new Repo();
+  const invalid = [0, -1, 1.5, '60', null, true, [], {}, 2147484, 2 ** 53];
+  for (const timeout of invalid) {
+    const ref = commit(
+      header +
+        `tasks: ${JSON.stringify({ lint: { run: 'echo ok', inputs: ['src/**'], timeout } })}`,
+    );
+    const results =
+      timeout === 0
+        ? [
+            ...commands(ref),
+            ...[
+              'run',
+              'lint',
+              'why lint',
+              'status --ref HEAD',
+              'stats --since 7d',
+              'flakes',
+              'invalidate --task lint --all',
+              'rekey',
+              'doctor',
+            ].map((command) => repo.cli(command.split(' '))),
+          ]
+        : [plan(true)];
+    for (const result of results) {
+      expect(result.code, result.err).toBe(2);
+      expect(result.err).toContain(
+        "task 'lint': timeout must be a whole number of seconds from 1 to 2147483",
+      );
     }
   }
 });
