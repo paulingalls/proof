@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.21.0
+
+- Root and included/generated `super-only` patterns exclude files from all task keys without
+  representatives. Sandboxes retain exact bytes; fresh runs execute edits, dirty received inputs
+  block publication, and `why` names the exclusions and policy transitions. `keyed` overrides,
+  overlap with `unkeyed`, negations and unmatched entries are declaration errors.
+- Existing unchanged-byte `carry: true` migration can adopt the policy with `rekey --apply`.
+  Key scheme 4 and keys without the new declaration remain unchanged.
+
 ## 0.20.0
 
 - `run --since <ref>` and `plan --since <ref>` leave unchanged unproven tasks UNREACHED.

@@ -128,6 +128,15 @@ The package has its own tests for its own behaviour, on synthetic repos it build
     key-versus-sandbox split. Environment values do not enter keys. No key-scheme change; without
     `unkeyed`, keys are unchanged. R8's dirty-input rule still applies, and R10's fresh super
     run is the backstop.
+  - Paul, 2026-11-02: test-only edits may wait for the super. Root
+    `super-only: [paths/globs]` uses the same exclusion as `unkeyed`, without a keyed
+    representative. It excludes whole-file and member contributions, retains exact sandbox
+    bytes and traversal, and leaves keys unchanged in repos without the declaration.
+    `why` identifies received files as `super-only`. The first adoption changes affected
+    keys; `carry: true` with `rekey --apply` may migrate unchanged inputs under the existing
+    carry rules. Inputs changed since the green refuse with `input changed`.
+    A repo listing its flows narrows design case 6 (a flow edit runs its journeys);
+    confirm its expected set with Paul when that declaration lands, per section 2.
 - **R4. Providers govern lifecycle, never keys.** Providers are the shared stack, a test database, the iOS app
   build and the web export. They start only when some RUN task needs them. A task's key holds the task's own
   inputs, never a provider's whole input set. A stack gate's inputs include a coarse named set `$stack` (the
@@ -177,6 +186,12 @@ The package has its own tests for its own behaviour, on synthetic repos it build
     `unkeyed` is a declaration error. Entries matching no file and negation entries are errors.
     All commands reading declarations enforce this before task selection, including included
     tasks. R10's fresh super run checks the representative assumption.
+  - Paul, 2026-11-02: `super-only` needs no representative. Its patterns must match files,
+    negations are errors, overlap with `unkeyed` is an error, and task `keyed` cannot match
+    a super-only path. Included/generated files add to the root list as for `unkeyed`.
+    Every declaration reader validates the current or target ref before selecting tasks;
+    an undecidable historical since baseline runs, and unavailable historical rekey
+    declarations refuse carry.
 - **R8. Fail safe, never silent.**
   - An undecidable task runs: a glob that matches nothing, an unknown adapter, a dirty tracked input. `plan`
     prints why for every task. With `--since <ref>`, only an otherwise `no proof for key`
@@ -185,10 +200,13 @@ The package has its own tests for its own behaviour, on synthetic repos it build
     Absent tasks or undecidable inputs/declarations at the ref run and say why; an unknown ref
     fails loudly. Unreached unproven tasks, including red-only keys, wait for the fresh super.
     `--since` bounds selection, not proof identity; it cannot combine with `--fresh` or `--staged`.
-  - Paul, 2026-11-02: selected paths only. Dirty selected inputs (including `unkeyed`) prevent
-    that task publishing; unrelated dirt does not. Dirty declarations and HEAD moving during a task
+  - Paul, 2026-11-02: selected paths only. Dirty selected inputs (including `unkeyed` and
+    `super-only`) prevent that task publishing; unrelated dirt does not. Dirty declarations and HEAD moving during a task
     still prevent publication. `record` follows the same rule. The `run --staged` exception stands:
     Paul, 2026-10-30, an immutable index snapshot may publish.
+  - Committed super-only edits preserve a task's proof. `--fresh` executes their new bytes.
+    A new task still needs a proof for its own key. Under `--since`, an unproven task with
+    only super-only changes is UNREACHED; an existing valid proof stays PROVEN.
 - **R9. Red against a stored green: contested.**
   - When the newest result for a key is red, that key is never PROVEN.
   - A contested key runs once: green restores the proof, a second red deletes it.

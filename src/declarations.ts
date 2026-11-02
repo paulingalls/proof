@@ -19,6 +19,7 @@ export type Task = {
   env?: string[];
   keyed?: string[];
   unkeyed?: Set<string>;
+  superOnly?: Set<string>;
   dimensions?: [string, string][];
   links?: string[];
   needs?: string[];
@@ -115,6 +116,7 @@ export function declarations(tree: RefTree, working = false) {
   const contexts = new Map<string, string>();
   const requested = new Map<string, string[]>();
   const unkeyed: unknown[] = [];
+  const superOnly: unknown[] = [];
   function read(path: string, root: boolean) {
     const context = `ref '${tree.ref}' ${path}`;
     return load(working ? readFileSync(path, 'utf8') : tree.read(path), context, root);
@@ -144,10 +146,13 @@ export function declarations(tree: RefTree, working = false) {
             'lanes',
             'dimensions',
             'unkeyed',
+            'super-only',
           ]
-        : ['inputs', 'tasks', 'unkeyed'],
+        : ['inputs', 'tasks', 'unkeyed', 'super-only'],
       context,
     );
+    if ('super-only' in doc)
+      superOnly.push(...filePatterns(doc['super-only'], `${context} super-only`));
     if ('unkeyed' in doc) unkeyed.push(...filePatterns(doc.unkeyed, `${context} unkeyed`));
     if (root) {
       if (doc.version !== 1) throw new Error(`${context}: version must be 1`);
@@ -307,7 +312,7 @@ export function declarations(tree: RefTree, working = false) {
           throw new Error(`task '${id}': provider '${name}' requires lane '${provider.lane}'`);
       }
     }
-    resolveUnkeyed(unkeyed, tasks, tree, working);
+    resolveUnkeyed(unkeyed, superOnly, tasks, tree, working);
     const context = `ref '${tree.ref}' proof.yaml`;
     const coverage: string[] = [];
     if ('coverage' in root) {

@@ -49,6 +49,7 @@ const declared = {
     'lanes',
     'dimensions',
     'unkeyed',
+    'super-only',
   ],
   'Task fields': [
     'run',
