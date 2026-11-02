@@ -126,19 +126,19 @@ export class Store {
     return this.lookup(project, task, key, this.local.query, true);
   }
 
-  async newestProof(project: string, task: string) {
+  async proofHistory(project: string, task: string) {
     if (this.remote && !this.offline) {
       try {
-        return await this.lookupNewest(project, task, this.remote.query);
+        return await this.lookupHistory(project, task, this.remote.query);
       } catch (error) {
         this.fallback(error);
       }
     }
-    return this.lookupNewest(project, task, this.local.query);
+    return this.lookupHistory(project, task, this.local.query);
   }
 
-  private async lookupNewest(project: string, task: string, query: Query) {
-    const [proof] = await query<{
+  private async lookupHistory(project: string, task: string, query: Query) {
+    return query<{
       key: string;
       env_hashes: string | null;
       commit: string;
@@ -148,11 +148,10 @@ export class Store {
       `SELECT p.key, p.env_hashes, r."commit", r.host, r.finished_at FROM proofs p JOIN results r
       ON r.id = p.result_id AND r.project = p.project AND r.task = p.task AND r.key = p.key
       WHERE p.project = ? AND p.task = ?
-      ORDER BY r.finished_at DESC, p.result_id DESC LIMIT 1`,
+      ORDER BY r.finished_at DESC, p.result_id DESC`,
       project,
       task,
     );
-    return proof;
   }
 
   private async observe(project: string, task: string, key: string, query: Query, proof?: Proof) {

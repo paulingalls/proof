@@ -285,7 +285,7 @@ Each received unkeyed file appears once, sorted, instead of its file or member i
 The representative still prints `file shared.txt <mode> <hash>`. A policy change lists
 `now unkeyed shared.txt` when adopting the exclusion, or `now keyed shared.txt` when restoring
 its contribution, rather than claiming no inputs changed. These lines compare against the
-newest surviving proof, just like other differences.
+selected comparison baseline, just like other differences.
 
 For example, after proving `text`, edit its input and explain it:
 
@@ -298,9 +298,18 @@ bunx proof why text
 The decision says `RUN text: undecidable: dirty input 'src/text.ts'`, and the comparison
 includes `changed file src/text.ts`. Explanation never executes tasks or starts providers.
 
-The baseline is the newest surviving proof for this project and task across all keys, including
-contested proofs. Newest means greatest finish time, then result id; the comparison names its
-commit, host and time. Historical inputs and declarations come from that commit's Git blobs.
+The baseline is the newest surviving proof for this project and task whose stored dimension
+identities match this machine's current dimension identities, including contested proofs.
+Legacy proofs with NULL env identities cannot match dimensions. If none matches, `why` uses the
+newest proof overall and prints one line before `comparison:`:
+
+```text
+no proof has these dimension values; dimensions differ; comparing with newest proof
+```
+
+For tasks without dimensions, the baseline remains the newest surviving proof across all keys.
+Newest means greatest finish time, then result id; the comparison names its commit, host and time.
+Historical inputs and declarations come from that commit's Git blobs.
 Changes list added, removed and changed paths or JSON members, changed env names, and
 `declaration changed` when the command or links changed. Env comparisons use stored hashes,
 never today's env as a substitute for historical values. Mode changes count too.

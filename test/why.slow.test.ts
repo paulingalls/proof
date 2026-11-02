@@ -111,6 +111,7 @@ test('legacy proofs migrate without inventing env metadata and can be replaced',
     db.exec('ALTER TABLE proofs DROP COLUMN env_hashes; UPDATE schema_version SET version = 1');
     const unchanged = repo.cli(['why', 'gate'], env);
     expect(unchanged.out).toContain('env comparison unavailable');
+    expect(unchanged.out).not.toContain('no proof has these dimension values');
     expect(unchanged.out).toContain('no comparable inputs changed');
     repo.commit({ 'src/a.ts': 'changed' });
     for (let i = 0; i < 2; i++) {
@@ -329,4 +330,55 @@ test('unavailable closure metadata cannot turn still-present workspace inputs in
   expect(result.code).toBe(0);
   expect(result.out).toContain("unavailable input 'package.json'");
   expect(changes(result.out)).toEqual([]);
+}, 30_000);
+
+test('why prefers matching dimensions, including contested and offline proofs, before legacy fallback', () => {
+  const { repo, env } = fixture();
+  const doc = JSON.parse(repo.git('show', 'HEAD:proof.yaml'));
+  doc.dimensions = { platform: 'printf "$PROOF_WHY_PLATFORM"' };
+  doc.tasks.gate.dimensions = ['platform'];
+  const a = repo.commit({ 'proof.yaml': JSON.stringify(doc) });
+  const platform = (value: string, mode = 'new') => ({
+    ...env,
+    PROOF_WHY_PLATFORM: value,
+    PROOF_WHY_MODE: mode,
+  });
+  for (const outcome of ['green', 'red'])
+    expect(repo.cli(['record', 'gate', '--outcome', outcome], platform('ios', 'old')).code).toBe(0);
+  const b = repo.commit({ 'src/a.ts': 'changed' });
+  expect(repo.cli(['record', 'gate', '--outcome', 'green'], platform('android')).code).toBe(0);
+  const matching = repo.cli(['why', 'gate'], platform('ios'));
+  const missing = repo.cli(['why', 'gate'], platform('other'));
+  const listener = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } });
+  const port = listener.port;
+  listener.stop(true);
+  const offline = repo.cli(['why', 'gate'], {
+    ...platform('ios'),
+    PROOF_STORE: `postgres://proof@127.0.0.1:${port}/proof`,
+  });
+  using db = new Database(join(env.PROOF_STATE_DIR, 'proof.db'));
+  db.query(
+    'UPDATE proofs SET env_hashes = NULL WHERE result_id IN (SELECT id FROM results WHERE "commit" = ?)',
+  ).run(b);
+  const legacy = repo.cli(['why', 'gate'], platform('ios'));
+  db.exec('UPDATE proofs SET env_hashes = NULL');
+  repo.write('src/a.ts', 'another change');
+  const fallback = repo.cli(['why', 'gate'], platform('ios'));
+  const results = [matching, missing, offline, legacy, fallback];
+  expect(results.map((result) => result.code)).toEqual([0, 0, 0, 0, 0]);
+  const notice =
+    'no proof has these dimension values; dimensions differ; comparing with newest proof';
+  expect({
+    baselines: results.map((result) => result.out.match(/^comparison: (\S+) on /m)?.[1]),
+    notices: results.map(
+      (result) => result.out.split('\n').filter((line) => line === notice).length,
+    ),
+  }).toEqual({ baselines: [a, b, a, a, b], notices: [0, 1, 0, 0, 1] });
+  expect(changes(matching.out)).toEqual(['changed file src/a.ts', 'changed env PROOF_WHY_MODE']);
+  expect(changes(missing.out)).toEqual(['changed env dimension:platform']);
+  expect(offline.err.trim().split('\n')).toEqual([
+    expect.stringMatching(/^store unreachable \(.+\); using this machine's own proofs$/),
+  ]);
+  expect(fallback.out).toContain('env comparison unavailable');
+  expect(changes(fallback.out)).toEqual(['changed file src/a.ts']);
 }, 30_000);
