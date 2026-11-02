@@ -200,3 +200,40 @@ test('root node properties cannot hide mapping keys', () => {
     expect(result.err).toContain(`line ${line}: duplicate key 'tasks'`);
   }
 });
+
+test('carry is boolean selection metadata across declaration readers', () => {
+  repo = new Repo();
+  let key: string | undefined;
+  for (const carry of [undefined, false, true]) {
+    commit(
+      header +
+        `tasks: ${JSON.stringify({ lint: { run: 'echo ok', inputs: ['src/**'], ...(carry === undefined ? {} : { carry }) } })}`,
+    );
+    const result = plan(true);
+    expect(result.code, result.err).toBe(0);
+    const [row] = JSON.parse(result.out);
+    key ??= row.key;
+    expect(row.key).toBe(key);
+    if (carry === undefined) expect(commands(repo.git('rev-parse', 'HEAD'))[2]?.code).toBe(0);
+    else expect(row.state).toBe('PROVEN');
+  }
+  for (const carry of ['yes', 1, null, [], {}]) {
+    const body = `tasks: ${JSON.stringify({ lint: { run: 'echo ok', inputs: ['src/**'], carry } })}`;
+    for (const route of ['root', 'include', 'generate', 'working']) {
+      const source =
+        route === 'include'
+          ? 'include: proof.d/*.yaml'
+          : route === 'generate'
+            ? 'generate: {run: bun generator.js, inputs: [generator.js]}'
+            : body;
+      commit(header + source, route === 'include' ? body : '');
+      if (route === 'generate')
+        repo.commit({
+          'generator.js': `await Bun.write(process.env.PROOF_DECLARATIONS + '/generated.yaml', ${JSON.stringify(body)})`,
+        });
+      const result = route === 'working' ? repo.cli(['doctor']) : plan();
+      expect(result.code, route + result.err).toBe(2);
+      expect(result.err).toContain("task 'lint': carry must be a boolean");
+    }
+  }
+}, 30_000);
