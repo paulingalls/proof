@@ -60,7 +60,10 @@ export async function why(args: string[]) {
     if (!previous) throw new Error(`proof commit: undeclared task '${id}'`);
     const before = keyParts(previous, tree, true);
     if (proof.env_hashes === null) console.log('env comparison unavailable');
-    else before.env = JSON.parse(proof.env_hashes) as [string, string][];
+    else
+      before.env = (JSON.parse(proof.env_hashes) as [string, string][]).filter(([name]) =>
+        name.startsWith('dimension:'),
+      );
     for (const reason of before.reasons) console.log(`proof undecidable: ${reason}`);
     const differences = compareParts(before, parts, proof.env_hashes !== null);
     console.log(

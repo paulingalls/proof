@@ -48,7 +48,15 @@ status --ref HEAD;lint;doctor;check .git/cases.yaml;stats;flakes;invalidate --ta
 
 test('dimension-only identity uses current values, stored hashes and each ref command', () => {
   const old = 'echo hit >> .git/old-counter; cat .git/value; printf "$TOOL"';
-  const f = fixture(doc({ tool: old }));
+  const f = fixture(
+    doc(
+      { tool: old },
+      {
+        ...base,
+        native: { ...task(['tool']), env: ['TOOL'], inputs: ['input', { dotenv: 'stack.conf' }] },
+      },
+    ),
+  );
   f.repo.write('.git/value', 'raw-marker-A');
   f.cli(['run', '--jobs', '2']);
   const a = f.repo.git('rev-parse', 'HEAD');

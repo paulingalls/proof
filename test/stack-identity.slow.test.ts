@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite';
 import { afterAll, afterEach, beforeAll, expect, test } from 'bun:test';
-import { rmSync, symlinkSync } from 'node:fs';
+import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { Postgres } from './support/postgres';
 import { Repo } from './support/repo';
@@ -21,7 +21,7 @@ function declaration(inputs: unknown[], extra = {}) {
     version: 1,
     project: 'stack',
     tasks: {
-      gate: { run: 'test ! -f .env.docker && echo executed', inputs, ...extra },
+      gate: { run: 'test ! -f stack.conf && echo executed', inputs, ...extra },
     },
   });
 }
@@ -29,7 +29,7 @@ function fixture(inputs: unknown[], files = {}, extra = {}) {
   const repo = new Repo();
   repos.push(repo);
   repo.commit({
-    '.gitignore': '.env.docker\n',
+    '.gitignore': 'stack.conf\n',
     'proof.yaml': declaration(inputs, extra),
     ...files,
   });
@@ -44,15 +44,15 @@ function success(r: ReturnType<Repo['cli']>) {
 
 test('dotenv declarations validate fields, exclusions, projections and checkout paths', () => {
   for (const [input, diagnostic] of [
-    [{ dotenv: '.env.docker', typo: true }, "unknown field 'typo'"],
+    [{ dotenv: 'stack.conf', typo: true }, "unknown field 'typo'"],
     ...[[], 'FLAG', [''], [1]].map(
-      (exclude) => [{ dotenv: '.env.docker', exclude }, 'exclude'] as const,
+      (exclude) => [{ dotenv: 'stack.conf', exclude }, 'exclude'] as const,
     ),
     ...['/outside', '../outside', 'a//b', './a', '.git/a', 'a/'].map(
       (dotenv) => [{ dotenv }, 'unsafe dotenv'] as const,
     ),
-    [{ path: '.env.example', 'dotenv-keys': false }, 'dotenv-keys must be true'],
-    [{ path: '.env.example', json: ['A'], 'dotenv-keys': true }, 'not both'],
+    [{ path: 'example.conf', 'dotenv-keys': false }, 'dotenv-keys must be true'],
+    [{ path: 'example.conf', json: ['A'], 'dotenv-keys': true }, 'not both'],
   ] as const) {
     const f = fixture([input]);
     const r = f.cli('plan');
@@ -60,28 +60,28 @@ test('dotenv declarations validate fields, exclusions, projections and checkout 
     expect(r.err).toContain("task 'gate'");
     expect(r.err).toContain(diagnostic);
   }
-  const f = fixture([{ dotenv: '.env.docker' }]);
+  const f = fixture([{ dotenv: 'stack.conf' }]);
   expect(f.cli('lint').code).toBe(0);
-  f.repo.write('.env.docker', 'FLAG=one');
+  f.repo.write('stack.conf', 'FLAG=one');
   expect(f.cli('lint').code).toBe(0);
 });
 
 test('tracked dotenv names project at refs, retain whole inputs and reject dirty edits', () => {
-  const input = { path: '.env.example', 'dotenv-keys': true };
-  const f = fixture([input], { '.env.example': 'export A=one\nB="two#literal" # comment\n' });
+  const input = { path: 'example.conf', 'dotenv-keys': true };
+  const f = fixture([input], { 'example.conf': 'export A=one\nB="two#literal" # comment\n' });
   const a = f.repo.git('rev-parse', 'HEAD');
   expect(success(f.cli('run'))).toContain('green gate');
   expect(success(f.cli('plan'))).toContain('PROVEN gate');
-  const b = f.repo.commit({ '.env.example': "# comment\nB='different'\nA = changed # inline\n" });
+  const b = f.repo.commit({ 'example.conf': "# comment\nB='different'\nA = changed # inline\n" });
   expect(success(f.cli('plan'))).toContain('PROVEN gate');
   for (const staged of [false, true]) {
-    f.repo.write('.env.example', 'A=dirty\nB=two');
-    if (staged) f.repo.git('add', '.env.example');
-    expect(success(f.cli('plan'))).toContain("undecidable: dirty input '.env.example'");
+    f.repo.write('example.conf', 'A=dirty\nB=two');
+    if (staged) f.repo.git('add', 'example.conf');
+    expect(success(f.cli('plan'))).toContain("undecidable: dirty input 'example.conf'");
     f.repo.git('reset', '--hard', b);
   }
-  const c = f.repo.commit({ '.env.example': 'A=x\nB=y\nC=' });
-  expect(success(f.cli('why', 'gate'))).toContain('changed member .env.example dotenv-keys');
+  const c = f.repo.commit({ 'example.conf': 'A=x\nB=y\nC=' });
+  expect(success(f.cli('why', 'gate'))).toContain('changed member example.conf dotenv-keys');
   expect(
     success(
       f.repo.check([
@@ -90,93 +90,38 @@ test('tracked dotenv names project at refs, retain whole inputs and reject dirty
       ]),
     ),
   ).toContain('PASS names');
-  f.repo.commit({ 'proof.yaml': declaration([input, '.env.example']) });
+  f.repo.commit({ 'proof.yaml': declaration([input, 'example.conf']) });
   expect(success(f.cli('run'))).toContain('green gate');
-  f.repo.commit({ '.env.example': 'A=changed\nB=y\nC=' });
+  f.repo.commit({ 'example.conf': 'A=changed\nB=y\nC=' });
   expect(success(f.cli('plan'))).toContain('RUN gate');
 });
 
-test('checkout dotenv values key alone, canonicalize, explain and stay secret in both stores', async () => {
-  const f = fixture([{ dotenv: '.env.docker', exclude: ['API_KEY'] }]);
+test('checkout dotenv values, missing and malformed files never enter either store key', async () => {
+  const f = fixture([{ dotenv: 'stack.conf' }]);
   const remote = await postgres.database();
   const env = { ...f.env, PROOF_STORE: remote.PROOF_STORE };
-  const secrets = ['included-private-marker', 'excluded-private-marker'];
-  const cli = (...args: string[]) => {
-    const r = f.repo.cli(args, env);
-    for (const secret of secrets) expect(r.out + r.err).not.toContain(secret);
-    expect(r.code).toBe(args[0] === 'status' && r.out.includes('RUN gate') ? 1 : 0);
-    return r.out;
-  };
-  f.repo.write('.env.docker', `FLAG=${secrets[0]}\nAPI_KEY=${secrets[1]}`);
-  const a = f.repo.git('rev-parse', 'HEAD');
+  const cli = (...args: string[]) => success(f.repo.cli(args, env));
+  f.repo.write('stack.conf', 'FLAG=first');
   expect(cli('run')).toContain('green gate');
-  expect(cli('plan')).toContain('PROVEN gate');
-  const b = f.repo.commit({ unrelated: 'new commit' });
-  f.repo.write('.env.docker', 'FLAG=changed\nAPI_KEY=changed');
-  expect(cli('why', 'gate')).toContain('changed env .env.docker:FLAG');
-  for (const ref of [a, b]) expect(cli('status', '--ref', ref)).toContain('RUN gate');
-  f.repo.write('.env.docker', `API_KEY=changed\nexport FLAG='${secrets[0]}' # inline`);
-  for (const ref of [a, b]) expect(cli('status', '--ref', ref)).toContain('PROVEN gate');
-  expect(cli('plan', '--json')).toContain('PROVEN');
-  f.repo.commit({
-    'proof.yaml': declaration([
-      { dotenv: '.env.docker', exclude: ['API_KEY', 'API_KEY'] },
-      { dotenv: '.env.docker', exclude: ['API_KEY'] },
-    ]),
-  });
-  expect(cli('plan')).toContain('PROVEN gate');
-  for (const text of ['FLAG=changed', 'FLAG=changed\nEMPTY=', '']) {
-    f.repo.write('.env.docker', text);
-    expect(cli('plan')).toContain('RUN gate');
-    expect(cli('run')).toContain('green gate');
-    expect(cli('plan')).toContain('PROVEN gate');
+  const key = JSON.parse(cli('plan', '--json'))[0].key;
+  for (const text of ['FLAG=second', 'malformed', undefined]) {
+    if (text === undefined) rmSync(join(f.repo.path, 'stack.conf'));
+    else f.repo.write('stack.conf', text);
+    expect(JSON.parse(cli('plan', '--json'))[0]).toMatchObject({ key, state: 'PROVEN' });
+    expect(cli('status', '--ref', 'HEAD')).toContain('PROVEN gate');
+    expect(cli('why', 'gate')).not.toContain('env stack.conf:');
   }
-  f.repo.write('.env.docker', `FLAG=valid\n${secrets[1]}`);
-  for (const args of [
-    ['plan'],
-    ['plan', '--json'],
-    ['why', 'gate'],
-    ['run'],
-    ['status', '--ref', 'HEAD'],
-  ])
-    expect(cli(...args)).toContain('undecidable');
-  const db = new Database(join(f.env.PROOF_STATE_DIR, 'proof.db'));
-  try {
-    for (const table of ['results', 'proofs']) {
-      const local = db.query(`SELECT * FROM ${table}`).all();
-      const shared = await remote.sql.unsafe(`SELECT * FROM ${table}`);
-      expect(local).toHaveLength(4);
-      expect(shared).toHaveLength(4);
-    }
-    const tables = db.query("SELECT name FROM sqlite_master WHERE type='table'").all() as {
-      name: string;
-    }[];
-    const remoteTables =
-      await remote.sql`SELECT tablename FROM pg_tables WHERE schemaname='public'`;
-    for (const secret of secrets) {
-      for (const { name } of tables)
-        expect(JSON.stringify(db.query(`SELECT * FROM "${name}"`).all())).not.toContain(secret);
-      for (const { tablename } of remoteTables)
-        expect(
-          JSON.stringify(await remote.sql.unsafe(`SELECT * FROM "${tablename}"`)),
-        ).not.toContain(secret);
-    }
-  } finally {
-    db.close();
-  }
-  f.repo.write('.env.docker', `FLAG=${secrets[0]}`);
-  expect(cli('run', '--fresh')).toContain('green gate');
-  f.repo.commit({ 'proof.yaml': declaration(['unrelated']) });
-  rmSync(join(f.repo.path, '.env.docker'));
-  const explained = cli('why', 'gate');
-  expect(explained).toContain('changed env .env.docker:FLAG');
-  expect(explained).not.toContain('proof undecidable');
+  using db = new Database(join(f.env.PROOF_STATE_DIR, 'proof.db'));
+  expect(db.query('SELECT env_hashes FROM proofs').all()).toEqual([{ env_hashes: '[]' }]);
+  expect(await remote.sql`SELECT env_hashes FROM proofs`).toEqual([{ env_hashes: '[]' }]);
+  f.repo.commit({ 'proof.yaml': declaration(['proof.yaml', '!proof.yaml']) });
+  expect(JSON.parse(cli('plan', '--json'))[0]).toMatchObject({ key, state: 'PROVEN' });
 });
 
-test('missing, malformed and symlink dotenv inputs run undecidable without publication or leaks', () => {
+test('missing and malformed tracked dotenv projections run undecidable without publication or leaks', () => {
   const secret = 'invalid-private-marker';
-  for (const projection of [false, true]) {
-    const path = projection ? '.env.example' : '.env.docker';
+  for (const projection of [true]) {
+    const path = projection ? 'example.conf' : 'stack.conf';
     const input = projection ? { path, 'dotenv-keys': true } : { dotenv: path };
     const f = fixture([input], projection ? { [path]: 'A=valid' } : {});
     if (!projection) f.repo.write(path, 'A=valid');
@@ -209,11 +154,6 @@ test('missing, malformed and symlink dotenv inputs run undecidable without publi
       expect(db.query('SELECT * FROM results').all()).toEqual(before);
     }
     db.close();
-    if (!projection) {
-      rmSync(join(f.repo.path, path));
-      symlinkSync('proof.yaml', join(f.repo.path, path));
-      expect(success(f.cli('plan'))).toContain('undecidable');
-    }
   }
 });
 
@@ -228,27 +168,13 @@ test('tracked dotenv values use checkout at old refs; ignored links provide acce
   expect(success(f.cli('run'))).toContain('green gate');
   expect(success(f.cli('status', '--ref', a))).toContain('PROVEN gate');
   const linked = fixture(
-    [{ dotenv: '.env.docker' }],
+    [{ dotenv: 'stack.conf' }],
     {},
     {
-      links: ['.env.docker'],
-      run: 'test -f .env.docker',
+      links: ['stack.conf'],
+      run: 'test -f stack.conf',
     },
   );
-  linked.repo.write('.env.docker', 'A=value');
+  linked.repo.write('stack.conf', 'A=value');
   expect(success(linked.cli('run'))).toContain('green gate');
-});
-
-test('dotenv grammar preserves literal characters and last assignments', () => {
-  const f = fixture([{ dotenv: '.env.docker' }]);
-  f.repo.write(
-    '.env.docker',
-    '# comment\nexport A = overwritten\nA=b#c # outside\nB="literal#hash"\nC=\'single\'\nD="escaped\\"quote"\nEMPTY=\n',
-  );
-  expect(success(f.cli('run'))).toContain('green gate');
-  f.repo.write(
-    '.env.docker',
-    "EMPTY= # empty\nD='escaped\\\"quote'\nC=single\nB='literal#hash'\nexport A=\"b#c\"\n",
-  );
-  expect(success(f.cli('plan'))).toContain('PROVEN gate');
 });

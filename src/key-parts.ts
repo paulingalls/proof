@@ -3,7 +3,6 @@ import { dimension } from './dimensions';
 import { dotenv } from './dotenv';
 import type { RefTree } from './git';
 import { select } from './key';
-import { workingFile } from './sandbox';
 import { manifestMembers } from './workspaces';
 
 const contents = new WeakMap<RefTree, Map<string, string>>();
@@ -139,12 +138,7 @@ export function keyParts(task: Task, tree: RefTree, historical = false) {
       ]);
   }
   const declaration = { run: task.run, ...(task.links?.length ? { links: task.links } : {}) };
-  const env: [string, string][] = historical
-    ? []
-    : (task.env ?? []).map((name) => [
-        name,
-        process.env[name] === undefined ? 'absent' : hash(process.env[name]),
-      ]);
+  const env: [string, string][] = [];
   const dimensionValues: [string, string][] = [];
   if (!historical) {
     const entries = new Map(env);
@@ -154,28 +148,6 @@ export function keyParts(task: Task, tree: RefTree, historical = false) {
         entries.set(`dimension:${name}`, hash(resolved.value));
         dimensionValues.push([name, resolved.value]);
       } else reasons.push(resolved.reason);
-    }
-    for (const input of task.inputs) {
-      if (typeof input === 'string' || !('dotenv' in input)) continue;
-      const path = input.dotenv;
-      let source: string;
-      try {
-        const file = workingFile(path);
-        if (!file) {
-          reasons.push(`missing input '${path}'`);
-          continue;
-        }
-        source = file.bytes.toString();
-      } catch {
-        reasons.push(`unavailable input '${path}'`);
-        continue;
-      }
-      try {
-        for (const [name, value] of dotenv(source, path))
-          if (!input.exclude?.includes(name)) entries.set(`${path}:${name}`, hash(value));
-      } catch (error) {
-        reasons.push((error as Error).message);
-      }
     }
     env.splice(0, env.length, ...[...entries].sort(([a], [b]) => compare(a, b)));
   }

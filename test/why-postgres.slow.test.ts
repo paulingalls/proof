@@ -71,23 +71,17 @@ test('newest remote proof crosses clone/key boundaries without importing remote 
   const byFinishTime = clone.cli(['why', 'gate'], reader);
   expect(byFinishTime.code).toBe(0);
   expect(byFinishTime.out).toContain(`comparison: ${oldest} on `);
-  expect(changes(byFinishTime.out)).toEqual([
-    'changed file src/a',
-    'changed file src/b',
-    'changed env PROOF_WHY_MODE',
-  ]);
+  expect(changes(byFinishTime.out)).toEqual(['changed file src/a', 'changed file src/b']);
   expect(byFinishTime.out + byFinishTime.err).not.toContain('remote-private');
   await sql`UPDATE results SET finished_at = '2026-01-01T00:00:00.000Z'`;
   const result = clone.cli(['why', 'gate'], reader);
   expect(result.code).toBe(0);
   expect(result.out).toContain(`comparison: ${newest} on `);
-  expect(changes(result.out)).toEqual(['changed file src/b', 'changed env PROOF_WHY_MODE']);
+  expect(changes(result.out)).toEqual(['changed file src/b']);
   expect(result.out + result.err).not.toContain('remote-private');
   const rows =
     await sql`SELECT env_hashes FROM proofs WHERE task = 'gate' AND project = 'why-remote'`;
-  const expected = JSON.stringify([
-    ['PROOF_WHY_MODE', new Bun.CryptoHasher('sha256').update(env.PROOF_WHY_MODE).digest('hex')],
-  ]);
+  const expected = '[]';
   expect(rows.map((row: { env_hashes: string }) => row.env_hashes)).toEqual([expected, expected]);
   const publisher = new Database(join(env.PROOF_STATE_DIR, 'proof.db'));
   const replica = new Database(join(reader.PROOF_STATE_DIR, 'proof.db'));

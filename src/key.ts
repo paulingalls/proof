@@ -172,8 +172,19 @@ export function key(id: string, task: Task, tree: RefTree, dirty: string[] = [])
   }
   const parts = keyParts(task, tree);
   if (parts.reasons.length) return { reason: parts.reasons[0] as string };
+  return {
+    key: serializeKey(id, parts, parts.env),
+    env: parts.env,
+    dimensionValues: parts.dimensionValues,
+  };
+}
+
+export function serializeKey(
+  id: string,
+  parts: Pick<ReturnType<typeof keyParts>, 'declaration' | 'files' | 'members'>,
+  identities: [string, string][],
+) {
   const tuple: unknown[] = [4, id, parts.declaration, [...parts.files, ...parts.members]];
-  if (parts.env.length) tuple.push(parts.env.map(([name, hash]) => ['env', name, hash]));
-  const hash = new Bun.CryptoHasher('sha256').update(JSON.stringify(tuple)).digest('hex');
-  return { key: hash, env: parts.env, dimensionValues: parts.dimensionValues };
+  if (identities.length) tuple.push(identities.map(([name, hash]) => ['env', name, hash]));
+  return new Bun.CryptoHasher('sha256').update(JSON.stringify(tuple)).digest('hex');
 }
