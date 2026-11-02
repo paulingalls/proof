@@ -70,8 +70,8 @@ Edit `src/text.ts` (imported by `test/text.test.ts`) and commit: `plan` now says
 keeps `math` PROVEN, and `run` runs only `text`.
 
 Plain `run` publishes when a task's selected inputs are clean, even with unrelated dirt.
-Uncommitted changes to selected inputs, including `unkeyed` files, make that task run every time
-and publish nothing. A dirty declaration prevents every task from publishing. A commit hook can
+Uncommitted changes to selected inputs, including `unkeyed` and `super-only` files, make that
+task run every time and publish nothing. A dirty declaration prevents every task from publishing. A commit hook can
 use `proof run --staged` to prove the index instead: its green is reusable after committing those staged bytes, including
 at push or in CI.
 
@@ -136,8 +136,8 @@ exempt:
   committed version bump; the super run that executes every task fresh catches it.
 - **Generated declarations stay out of git.** Root `generate: {run, inputs, links?}` runs a
   generator in a sandbox containing its selected inputs from the judged tree. It writes included
-  declarations (`inputs`, `tasks`, `unkeyed`) to the empty `$PROOF_DECLARATIONS` directory. Committed
-  `include` files can coexist; duplicate tasks and input sets fail. `plan` and other declaration
+  declarations (`inputs`, `tasks`, `unkeyed`, `super-only`) to the empty `$PROOF_DECLARATIONS`
+  directory. Committed `include` files can coexist; duplicate tasks and input sets fail. `plan` and other declaration
   readers therefore execute repository code on a cache miss. For example, commit `source.txt`,
   this root declaration, and `scripts/generate-proof.sh`:
 
@@ -202,8 +202,37 @@ exempt:
   and files reached through `imports-of` or `maestro`. Traversal continues through an unkeyed
   file, so its imports still key. Sandboxes keep exact bytes, and dirty inputs still RUN.
   Environment values and deprecated `{dotenv: path}` inputs do not enter keys. The commit first adopting `unkeyed` moves affected keys once;
-  subsequent committed file edits retain proof for nonrepresentatives. Repos without
-  `unkeyed` keep their existing keys. `why` lists each received unkeyed path.
+  subsequent committed file edits retain proof for nonrepresentatives. `why` lists each
+  received unkeyed path.
+- **Test edits that wait for the super.** Root `super-only` excludes paths or globs from
+  every task's key without requiring a representative. For example, create `source.txt`
+  containing `ready` and `test.sh` containing `cat source.txt`, then use:
+
+  ```yaml
+  version: 1
+  project: test-example
+  super-only: [test.sh]
+  tasks:
+    test:
+      run: sh test.sh
+      inputs: [test.sh, source.txt]
+  ```
+
+  Commit these files and run `bunx proof run`. Add `printf "checked\n"` to `test.sh`
+  and commit it: `bunx proof plan` still says PROVEN. `bunx proof why test` lists
+  `super-only test.sh` and `no inputs changed`. `bunx proof run --fresh --tasks test`
+  runs the new script and prints `ready` and `checked`. Source changes still change the key.
+
+  Files retain exact sandbox bytes and dependency traversal. Dirty received paths block
+  publication. Entries must match files, cannot be negations, cannot overlap `unkeyed`,
+  and cannot be restored by task `keyed`; every declaration reader enforces these rules.
+  Included and generated declarations add `super-only` entries to the root list.
+  Repos without `super-only` retain their existing keys, including existing unkeyed policy.
+  Adoption changes affected keys once. With `carry: true`, `proof rekey --apply` can
+  migrate an existing green if the inputs are unchanged at its commit; an edited input
+  refuses with `input changed`. Without carry, adoption reruns once. A new task always
+  needs its own proof. With `--since`, an unproven task whose complete key is unchanged
+  is UNREACHED; an existing valid proof stays PROVEN. The fresh super run is the backstop.
 - **Maestro inputs**, such as `{maestro: flows/journey.yaml}`, select the flow and its
   recursive `runFlow` and `runScript` references (strings or `{file: path}`), plus
   `addMedia` paths (a list or `{files: [...]}`). References resolve relative to the including

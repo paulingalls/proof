@@ -150,22 +150,24 @@ export function keyParts(task: Task, tree: RefTree, historical = false) {
     }
     env.sort(([a], [b]) => compare(a, b));
   }
+  const unkeyed = [
+    ...new Set([
+      ...selection.paths,
+      ...task.inputs.flatMap((input) =>
+        typeof input !== 'string' && 'path' in input ? [input.path] : [],
+      ),
+    ]),
+  ]
+    .filter((path) => task.unkeyed?.has(path))
+    .sort();
   return {
     tree,
     selection,
     projections,
     declaration,
     declarationHash: hash(JSON.stringify(declaration)),
-    unkeyed: [
-      ...new Set([
-        ...selection.paths,
-        ...task.inputs.flatMap((input) =>
-          typeof input !== 'string' && 'path' in input ? [input.path] : [],
-        ),
-      ]),
-    ]
-      .filter((path) => task.unkeyed?.has(path))
-      .sort(),
+    unkeyed,
+    superOnly: unkeyed.filter((path) => task.superOnly?.has(path)),
     files: files.filter(([path]) => !task.unkeyed?.has(path)),
     members: [...members.values()]
       .filter(([path]) => !task.unkeyed?.has(path))

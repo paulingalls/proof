@@ -254,7 +254,7 @@ input is missing: it stays outside the sandbox and prevents recording, with its 
 Use `links` for ignored file access. Remove deprecated `{dotenv: path}` inputs; they are ignored.
 
 A dirty tree still executes and records results. Dirt blocks publication only for tasks selecting
-that path, including selected `unkeyed` files. A blocked task says
+that path, including selected `unkeyed` and `super-only` files. A blocked task says
 `no proof published: dirty input '<path>'`; unrelated dirt permits publication and later PROVEN.
 `record <task> --outcome green` follows the same rule. A dirty declaration blocks every task:
 `run` prints `not recorded`, while `record` retains the result without publishing.
@@ -363,6 +363,15 @@ The representative still prints `file shared.txt <mode> <hash>`. A policy change
 `now unkeyed shared.txt` when adopting the exclusion, or `now keyed shared.txt` when restoring
 its contribution, rather than claiming no inputs changed. These lines compare against the
 selected comparison baseline, just like other differences.
+
+For the README's test-script example, `proof why test` prints `super-only test.sh`
+and, after a committed script edit, `no inputs changed`. Received exclusions appear once,
+sorted by path, with `super-only` or `unkeyed` labels instead of file/member identities.
+Adoption prints `now super-only test.sh`; restoring its contribution prints
+`now keyed test.sh`. These transitions use the comparison proof's result commit.
+`run --fresh` executes the current exact bytes even when the key retains a proof.
+Dirty received super-only paths still prevent publication. An unproven unchanged key
+under `--since` is UNREACHED and waits for the fresh super run.
 
 For example, after proving `text`, edit its input and explain it:
 
@@ -615,10 +624,15 @@ and other clones use the same plain lookup; decision-time keys and behavior are 
   per C for this invocation; generators retain their existing persistent content cache.
   The task's `run` and `links` must match. Every path selected today must exist at C with the
   same mode and raw blob; projection-only paths compare mode and selected members instead,
-  permitting an unselected member to change. Every member counts, including unkeyed members.
-  Whole-file comparisons include unkeyed paths and package-version-only edits. No path selected
-  at C may be deleted from HEAD, including projection paths. Merely removing a path from today's
+  permitting an unselected member to change. Every member counts, including unkeyed and super-only
+  members. Whole-file comparisons include unkeyed and super-only paths and package-version-only
+  edits. No path selected at C may be deleted from HEAD, including projection paths. Merely removing a path from today's
   declaration is allowed if it still exists in HEAD's tree.
+
+Adding unchanged inputs to `super-only` is eligible for the `carry: true` route:
+preview with `proof rekey`, then publish with `proof rekey --apply`. It references the
+existing result without running the task. Newly listed inputs changed since C refuse
+with `input changed`; tasks without `carry: true` rerun once on adoption.
 
 `carry` is optional boolean metadata, excluded from keys like sets and lanes. Opt in only when
 adding a file absent from C's sandbox could not change what ran there: test discovery by glob,
@@ -657,10 +671,10 @@ red/contest rules continue under carried keys.
 
 Root `generate: {run, inputs, links?}` runs `run` through `sh -c` in the same input sandbox as a
 task. `$PROOF_DECLARATIONS` names a new empty directory outside that sandbox. All nested `*.yaml`
-files are read in sorted relative-path order as included declarations (`inputs`, `tasks`, `unkeyed`).
-Other regular files are ignored; output symlinks and zero YAML files fail. An intentionally empty
+files are read in sorted relative-path order as included declarations
+(`inputs`, `tasks`, `unkeyed`, `super-only`). Other regular files are ignored; output symlinks and zero YAML files fail. An intentionally empty
 output writes one YAML file containing `tasks: {}`. Generated and committed includes combine, with
-ordinary duplicate and representative checks. Generated text has the same task-key meaning as
+ordinary duplicate, exclusion and representative checks. Generated text has the same task-key meaning as
 committed text; adding `generate` alone does not change task keys.
 
 `inputs` uses the task input language, including named sets from the root and committed includes,

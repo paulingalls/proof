@@ -15,13 +15,19 @@ export function filePatterns(value: unknown, context: string): string[] {
 
 export function resolveUnkeyed(
   value: unknown,
+  superOnly: unknown,
   tasks: Map<string, Task>,
   tree: RefTree,
   working: boolean,
 ) {
   const context = `ref '${tree.ref}' proof.yaml`;
   const patterns = filePatterns(value, `${context} unkeyed`);
-  const entries = [...patterns, ...[...tasks.values()].flatMap((task) => task.keyed ?? [])];
+  const superPatterns = filePatterns(superOnly, `${context} super-only`);
+  const entries = [
+    ...patterns,
+    ...superPatterns,
+    ...[...tasks.values()].flatMap((task) => task.keyed ?? []),
+  ];
   if (!entries.length) return;
   const dirty = working ? dirtyPaths() : [];
   const available = [...new Set([...tree.files.keys(), ...dirty])].filter(
@@ -37,6 +43,9 @@ export function resolveUnkeyed(
     return paths;
   }
   const omitted = new Set(patterns.flatMap((pattern) => matches(pattern, 'unkeyed')));
+  const superPaths = new Set(superPatterns.flatMap((pattern) => matches(pattern, 'super-only')));
+  for (const path of superPaths)
+    if (omitted.has(path)) throw new Error(`${context} super-only: '${path}' is also unkeyed`);
   const covered = new Set<string>();
   for (const [id, task] of tasks) {
     const keyed = new Set(
@@ -44,11 +53,14 @@ export function resolveUnkeyed(
     );
     const received = keyed.size ? selection(task, tree, dirty) : new Set<string>();
     for (const path of keyed) {
+      if (superPaths.has(path))
+        throw new Error(`${context} task '${id}' keyed: '${path}' is super-only`);
       if (!omitted.has(path))
         throw new Error(`${context} task '${id}' keyed: '${path}' is outside unkeyed`);
       if (received.has(path)) covered.add(path);
     }
-    task.unkeyed = new Set([...omitted].filter((path) => !keyed.has(path)));
+    task.unkeyed = new Set([...omitted, ...superPaths].filter((path) => !keyed.has(path)));
+    task.superOnly = superPaths;
   }
   for (const path of omitted)
     if (!covered.has(path))
