@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test';
-import { chmodSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Repo } from './support/repo';
 
@@ -155,5 +155,94 @@ test('concurrent cold plans publish complete cache entries', async () => {
   );
   for (const result of results) expect(result.code, result.err).toBe(0);
   expect(JSON.parse(results[0]?.out ?? '')).toEqual(JSON.parse(results[1]?.out ?? ''));
+  const events = readFileSync(join(env.PROOF_STATE_DIR, 'generate-events.jsonl'), 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line));
+  expect(events).toHaveLength(2);
+  for (const event of events) {
+    expect(event[0]).toBe('generated-tests');
+    expect(Number.isFinite(Date.parse(event[1]))).toBe(true);
+    expect(event[2] === null || typeof event[2] === 'number').toBe(true);
+  }
   expect(rows(env)).toEqual(JSON.parse(results[0]?.out ?? ''));
+});
+
+test('stats reports local generation costs before its own read, in text and JSON', () => {
+  const env = fixture();
+  for (let i = 0; i < 3; i++) rows(env);
+  const file = join(env.PROOF_STATE_DIR, 'generate-events.jsonl');
+  const events = readFileSync(file, 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line));
+  const report = (args: string[] = [], overrides: Record<string, string> = env) => {
+    const result = r.cli(['stats', ...args], overrides);
+    expect(result.code, result.err).toBe(0);
+    return result.out.trim().split('\n');
+  };
+  const line = (hits: number, runs: number, median: number | null, days = 30) =>
+    `generate: ${hits} hits, ${runs} runs, median ${median === null ? 'unavailable' : `${Number(median.toFixed(2))}s`} in ${days}d (local to this machine)`;
+  const actual = report();
+  expect(actual.at(-2)).toBe(line(2, 1, events[0][2]));
+  expect(actual.at(-1)).toStartWith('saved ');
+  const now = Date.now();
+  const event = (seconds: number | null, time = now - 1000, project = 'generated-tests') =>
+    JSON.stringify([project, new Date(time).toISOString(), seconds]);
+  for (const [samples, median] of [
+    [[null, null, 1.25], 1.25],
+    [[null, 1, 2], 1.5],
+    [[0], 0],
+    [[null], null],
+  ] as [Array<number | null>, number | null][]) {
+    const seed = `${samples.map((seconds) => event(seconds)).join('\n')}\n`;
+    writeFileSync(file, seed);
+    const hits = samples.filter((s) => s === null).length;
+    expect(report().at(-2)).toBe(line(hits, samples.length - hits, median));
+    writeFileSync(file, seed);
+    expect(JSON.parse(report(['--json'])[0] ?? '').generate).toEqual({
+      hits,
+      runs: samples.length - hits,
+      median,
+      local: true,
+    });
+  }
+  const local = new Date(new Date(now).toLocaleString('en-US', { timeZone: 'Etc/GMT-14' }));
+  const start = Date.UTC(local.getFullYear(), local.getMonth(), local.getDate() - 1) - 14 * 3600000;
+  writeFileSync(
+    file,
+    `${[
+      event(null, start),
+      event(1.25),
+      event(9, start - 1),
+      event(9, now + 86400000),
+      event(9, now - 1000, 'other'),
+    ].join('\n')}\n`,
+  );
+  expect(report(['--since', '2d'], { ...env, TZ: 'Etc/GMT-14' }).at(-2)).toBe(line(1, 1, 1.25, 2));
+  writeFileSync(file, '[]\n');
+  const broken = r.cli(['stats'], env);
+  expect(broken.code).toBe(2);
+  expect(broken.err).toContain(`${file}:1`);
+  const before = readFileSync(file, 'utf8');
+  r.commit({ 'proof.yaml': root.replace(/generate:[\s\S]*/, '') });
+  expect(report().some((line) => line.startsWith('generate:'))).toBe(false);
+  expect(JSON.parse(report(['--json'])[0] ?? '')).not.toHaveProperty('generate');
+  expect(readFileSync(file, 'utf8')).toBe(before);
+});
+
+test('an unwritable event directory reports the failure without changing lint result', () => {
+  const env = fixture();
+  const warm = r.cli(['lint'], env);
+  expect(warm.code, warm.err).toBe(0);
+  rmSync(join(env.PROOF_STATE_DIR, 'generate-events.jsonl'), { force: true });
+  chmodSync(env.PROOF_STATE_DIR, 0o555);
+  try {
+    const result = r.cli(['lint'], env);
+    expect(result.code).toBe(warm.code);
+    expect(result.out).toBe(warm.out);
+    expect(result.err).toContain('generate event not recorded');
+  } finally {
+    chmodSync(env.PROOF_STATE_DIR, 0o755);
+  }
 });

@@ -120,6 +120,16 @@ It reads history after its current-plan decisions; if a decision loses the conne
 earlier decisions remain shared and subsequent reads use the replica under the fallback
 diagnostic, as in `plan`. Authentication, schema and query errors still exit 2.
 
+## Local generation costs
+
+Generation events are appended to `generate-events.jsonl` in the state directory, one JSON
+array per line: `[project, finishedAt, seconds]`. `finishedAt` is an ISO timestamp; `seconds`
+is null for a validated cache hit and numeric for every run, successful or failed. Each
+completed generator call appends once; concurrent commands append without rewriting history.
+These events never reach Postgres or SQLite and are not in `proof.db`. They are not pruned;
+deleting the file resets local generation figures. `stats` reads the declared project's events
+in its calendar window, excluding its own declaration read. Generation changes no saved minutes.
+
 ## Start the host
 
 Use Docker Desktop on the host Mac. Keep the first laptop on power and awake;

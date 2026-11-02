@@ -1,4 +1,5 @@
 import { selectTasks } from './declarations';
+import { generateEvents } from './generate';
 import { currentTree, decide } from './plan';
 import { localDay, Store } from './store';
 
@@ -36,6 +37,17 @@ export async function stats(args: string[]) {
   const previous = boundary(1 - 2 * days);
   if ([start, end, previous].some((date) => !Number.isFinite(+date))) throw new Error(statsUsage);
   const view = currentTree();
+  const events = view.generate ? generateEvents(view.project, start, now) : undefined;
+  const runs = events?.filter((seconds): seconds is number => seconds !== null);
+  const generation =
+    events && runs
+      ? {
+          hits: events.length - runs.length,
+          runs: runs.length,
+          median: midpoint(runs),
+          local: true,
+        }
+      : undefined;
   const tasks = selectTasks(view.tasks, set);
   if (by && ![...tasks.values()].some((task) => task.dimensions?.some(([name]) => name === by)))
     throw new Error(statsUsage);
@@ -62,15 +74,11 @@ export async function stats(args: string[]) {
     const inWindow = (row: (typeof results)[number]) =>
       +new Date(row.finished_at) >= +start && +new Date(row.finished_at) < +end;
     function median(rows: typeof results) {
-      const samples = rows
-        .filter((r) => r.outcome === 'green' && r.seconds !== null)
-        .map((r) => r.seconds as number)
-        .sort((a, b) => a - b);
-      return samples.length
-        ? ((samples[Math.floor(samples.length / 2)] as number) +
-            (samples[Math.floor((samples.length - 1) / 2)] as number)) /
-            2
-        : null;
+      return midpoint(
+        rows
+          .filter((r) => r.outcome === 'green' && r.seconds !== null)
+          .map((r) => r.seconds as number),
+      );
     }
     const timing = (value: number | null) => (value === null ? 'unavailable' : `${format(value)}s`);
     for (const id of tasks.keys()) {
@@ -110,6 +118,10 @@ export async function stats(args: string[]) {
     lines.push(
       `estimated ${format(estimate / 60)}m for ${running.length} RUN tasks${unpriced.length ? `; unpriced ${unpriced.length}: ${unpriced.join(', ')}` : ''}`,
     );
+    if (generation)
+      lines.push(
+        `generate: ${generation.hits} hits, ${generation.runs} runs, median ${timing(generation.median)} in ${days}d (local to this machine)`,
+      );
     function window(from: Date, to: Date) {
       let saved = 0;
       let unpriced = 0;
@@ -142,6 +154,7 @@ export async function stats(args: string[]) {
       json
         ? JSON.stringify({
             days,
+            ...(generation ? { generate: generation } : {}),
             tasks: reports,
             estimate: { seconds: estimate, runs: running.length, unpriced },
             saved: { current, previous: prior },
@@ -158,4 +171,13 @@ export async function stats(args: string[]) {
   } finally {
     await store.close();
   }
+}
+
+function midpoint(samples: number[]) {
+  samples.sort((a, b) => a - b);
+  return samples.length
+    ? ((samples[Math.floor(samples.length / 2)] as number) +
+        (samples[Math.floor((samples.length - 1) / 2)] as number)) /
+        2
+    : null;
 }

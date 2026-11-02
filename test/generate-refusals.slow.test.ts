@@ -111,7 +111,10 @@ test('generator rejects missing inputs, undeclared reads and unsafe or invalid o
   ] as [Record<string, string>, string, boolean][]) {
     r.git('reset', '--hard', 'HEAD');
     r.commit({ ...files });
+    const file = join(env.PROOF_STATE_DIR, 'generate-events.jsonl');
+    const before = existsSync(file) ? readFileSync(file, 'utf8').trim().split('\n').length : 0;
     failed(r.cli(['plan'], env), reason, log);
+    expect(readFileSync(file, 'utf8').trim().split('\n')).toHaveLength(before + 1);
     r.git('reset', '--hard', 'HEAD~1');
   }
 });
@@ -178,4 +181,22 @@ test('untracked generator inputs are included and deleted literals fail despite 
   r.git('reset', '--hard', 'HEAD');
   unlinkSync(join(r.path, 'data'));
   failed(r.cli(['plan'], env), 'missing input');
+});
+
+test('a failed generator records its cost and preserves its exit failure', () => {
+  const env = fixture();
+  expect(r.cli(['plan'], env).code).toBe(0);
+  const generator = readFileSync(join(r.path, 'generator.sh'), 'utf8');
+  r.commit({ 'generator.sh': 'exit 17' });
+  failed(r.cli(['plan'], env), 'exited 17');
+  const events = readFileSync(join(env.PROOF_STATE_DIR, 'generate-events.jsonl'), 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line));
+  expect(events).toHaveLength(2);
+  for (const event of events) expect(typeof event[2]).toBe('number');
+  r.commit({ 'generator.sh': generator });
+  const result = r.cli(['stats'], env);
+  expect(result.code, result.err).toBe(0);
+  expect(result.out).toContain('generate: 0 hits, 2 runs, median ');
 });
