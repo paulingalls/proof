@@ -14,13 +14,14 @@ function cleanup(failures: number) {
     preload,
     `import { mock } from 'bun:test';
 import * as fs from 'node:fs';
+const remove = fs.rmSync;
 let count = 0;
 mock.module('node:fs', () => ({ ...fs, rmSync(path, options) {
   if (fs.existsSync(path + '/fail-cleanup')) {
     fs.appendFileSync(process.env.CLEANUP_ATTEMPTS, path + '\\n');
     if (++count <= Number(process.env.CLEANUP_FAILURES)) throw new Error('ENOTEMPTY');
   }
-  fs.rmSync(path, options);
+  remove(path, options);
 } }));`,
   );
   const until = (body: string) =>
