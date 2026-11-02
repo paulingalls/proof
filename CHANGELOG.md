@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.16.1
+
+- `proof lint` computes each task's selection once rather than per path: a synthetic 439-task repo
+  went from 1.5 s to 0.3 s. Findings are unchanged.
+
 ## 0.16.0
 
 - Root `generate: {run, inputs, links?}` keeps generated declarations out of git. proof runs the

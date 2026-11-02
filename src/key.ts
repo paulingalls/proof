@@ -122,53 +122,6 @@ export function* matching(tree: RefTree, pattern: string) {
   yield* paths;
 }
 
-const selectors = new WeakMap<RefTree, WeakMap<Task, (path: string) => boolean>>();
-
-function selector(task: Task, tree: RefTree) {
-  let cached = selectors.get(tree);
-  if (!cached) {
-    cached = new WeakMap();
-    selectors.set(tree, cached);
-  }
-  const prior = cached.get(task);
-  if (prior) return prior;
-  const view = source(tree);
-  const rules = task.inputs.map((input) => {
-    if (typeof input === 'string') {
-      const negative = input.startsWith('!');
-      return { negative, glob: new Bun.Glob(negative ? input.slice(1) : input) };
-    }
-    return {
-      paths:
-        'imports-of' in input
-          ? closure(input['imports-of'], view).paths
-          : 'maestro' in input
-            ? maestro(input.maestro, view).paths
-            : new Set('path' in input ? [input.path] : []),
-      projection: 'path' in input,
-    };
-  });
-  const matches = (path: string) => {
-    let selected = false;
-    let projected = false;
-    for (const rule of rules) {
-      if (rule.glob) {
-        if (rule.glob.match(path)) selected = !rule.negative;
-      } else if (rule.paths.has(path)) {
-        if (rule.projection) projected = true;
-        else selected = true;
-      }
-    }
-    return selected || projected;
-  };
-  cached.set(task, matches);
-  return matches;
-}
-
-export function selects(task: Task, path: string, tree: RefTree) {
-  return selector(task, tree)(path);
-}
-
 function literalDirectory(pattern: string) {
   const glob = pattern.search(/[(!*?[{\\]/);
   if (glob === -1) return pattern;
