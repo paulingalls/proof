@@ -100,9 +100,14 @@ under the schema transaction/lock. Any command opening the store can migrate it,
 upgrades. Upgrade clients sharing a store together. Newer unsupported schemas are rejected
 without changing history.
 
-`why` reads the newest surviving proof across keys from the shared store when reachable,
-ordered by finish time and result id. Contested proofs remain comparison baselines. Shared reads
-do not import remote history into SQLite; offline explanations use only this machine's proofs.
+`why` reads surviving proofs across keys from the shared store when reachable, ordered by
+finish time and result id, newest first. It selects the newest proof whose `dimension:` identities
+in `env_hashes` equal this machine's current identities. Contested proofs remain comparison baselines;
+legacy proofs with NULL `env_hashes` cannot match dimensions. With no match it uses the newest proof
+overall and prints `no proof has these dimension values; dimensions differ; comparing with newest proof`.
+Tasks without dimensions still use the newest surviving proof. Shared reads do not import remote
+history into SQLite; offline explanations make the same selection from only this machine's proofs,
+with the usual loud fallback.
 
 `run` batches its final PROVEN skips into one atomic multi-row increment per backend,
 local first and then shared when online. `skips` has one row per project, task and local

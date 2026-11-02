@@ -27,10 +27,24 @@ export async function why(args: string[]) {
     for (const [name] of parts.env) console.log(`env ${name}`);
     console.log(`declaration ${parts.declarationHash}`);
     for (const reason of parts.reasons) console.log(`undecidable: ${reason}`);
-    const proof = await store.newestProof(view.project, id);
+    const history = await store.proofHistory(view.project, id);
+    let proof = history[0];
     if (!proof) {
       console.log('no proof for this task');
       return;
+    }
+    if (task.dimensions?.length) {
+      const dimensions = (env: [string, string][]) =>
+        JSON.stringify(env.filter(([name]) => name.startsWith('dimension:')));
+      const current = dimensions(parts.env);
+      const matching = history.find(
+        (row) => row.env_hashes !== null && dimensions(JSON.parse(row.env_hashes)) === current,
+      );
+      if (matching) proof = matching;
+      else
+        console.log(
+          'no proof has these dimension values; dimensions differ; comparing with newest proof',
+        );
     }
     console.log(`comparison: ${proof.commit} on ${proof.host} ${proof.finished_at}`);
     if (proof.commit.endsWith(STAGED_SUFFIX)) {
