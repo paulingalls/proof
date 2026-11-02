@@ -58,7 +58,10 @@ export function notDelivered(path: string, root: string, tree: RefTree, selected
       if (tree.files.has(file) && !selected.has(file)) omitted.add(file);
     }
   }
-  return omitted.size ? `; not delivered: ${[...omitted].join(', ')}` : '';
+  const paths = [...omitted];
+  return paths.length
+    ? `; not delivered: ${paths.slice(0, 3).join(', ')}${paths.length > 3 ? ` (+${paths.length - 3} more)` : ''}`
+    : '';
 }
 
 export function logTail(path: string) {

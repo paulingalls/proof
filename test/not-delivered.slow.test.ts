@@ -9,6 +9,7 @@ const diagnostic = (path: string) => `printf '%s\\n' 'cat: ${path}: No such file
 
 test('red summaries name omitted tracked paths, keeping delivery separate from keys', () => {
   const forms = {
+    many: `${['omitted', 'input', 'omitted', 'absent', 'with spaces', 'nested/collision', 'directory/file', 'extra'].map(diagnostic).join('; ')}; false`,
     relative: 'cat ./omitted',
     absolute: 'cp "$(pwd)/omitted" copy',
     spaces: 'cat "with spaces"',
@@ -17,7 +18,7 @@ test('red summaries name omitted tracked paths, keeping delivery separate from k
     apostrophe: `printf "%s\\n" "can't open file 'omitted': [Errno 2] No such file or directory"; false`,
     go: `printf '%s\\n' 'open omitted: no such file or directory'; false`,
     shell: `printf '%s\\n' 'script: line 4: omitted: No such file or directory'; false`,
-    exclusions: `${['absent', 'input', 'config.json', 'shared', '/outside/omitted', '../omitted', 'collision', 'directory'].map(diagnostic).join('; ')}; printf '%s\\n' 'Script not found: omitted'; cat omitted`,
+    exclusions: `rm input config.json shared; ${['absent', 'input', 'config.json', 'shared', '/outside/omitted', '../omitted', 'collision', 'directory'].map(diagnostic).join('; ')}; printf '%s\\n' 'Script not found: omitted'; cat omitted`,
   };
   const inputs = ['input', 'shared', { path: 'config.json', json: ['name'] }];
   const f = fixture(
@@ -27,6 +28,7 @@ test('red summaries name omitted tracked paths, keeping delivery separate from k
     },
     {},
     {
+      extra: 'yes',
       omitted: 'yes',
       'with spaces': 'yes',
       'config.json': '{"name":"x"}',
@@ -47,7 +49,7 @@ test('red summaries name omitted tracked paths, keeping delivery separate from k
   for (const id of Object.keys(forms)) {
     const line = summary(result.out, id);
     expect(line).toContain(
-      `; not delivered: ${id === 'spaces' ? 'with spaces' : 'omitted'}; log: `,
+      `; not delivered: ${id === 'many' ? 'omitted, with spaces, nested/collision (+2 more)' : id === 'spaces' ? 'with spaces' : 'omitted'}; log: `,
     );
     const bytes = readFileSync(line.split('; log: ')[1] as string, 'utf8');
     expect(bytes).toMatch(/no such file or directory/i);

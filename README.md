@@ -203,7 +203,7 @@ exempt:
   file, so its imports still key. Sandboxes keep exact bytes, and dirty inputs still RUN.
   Environment values and deprecated `{dotenv: path}` inputs do not enter keys. The commit first adopting `unkeyed` moves affected keys once;
   subsequent committed file edits retain proof for nonrepresentatives. `why` lists each
-  received unkeyed path.
+  received unkeyed path as `delivered not keyed unkeyed <path>`.
 - **Test edits that wait for the super.** Root `super-only` excludes paths or globs from
   every task's key without requiring a representative. For example, create `source.txt`
   containing `ready` and `test.sh` containing `cat source.txt`, then use:
@@ -220,7 +220,7 @@ exempt:
 
   Commit these files and run `bunx proof run`. Add `printf "checked\n"` to `test.sh`
   and commit it: `bunx proof plan` still says PROVEN. `bunx proof why test` lists
-  `super-only test.sh` and `no inputs changed`. `bunx proof run --fresh --tasks test`
+  `delivered not keyed super-only test.sh` and `no inputs changed`. `bunx proof run --fresh --tasks test`
   runs the new script and prints `ready` and `checked`. Source changes still change the key.
 
   Files retain exact sandbox bytes and dependency traversal. Dirty received paths block

@@ -71,7 +71,7 @@ test('super-only bytes are delivered exactly, excluded from keys and explained w
     ['flow', 'flows/main.yaml'],
   ]) {
     const why = cli(['why', id as string]);
-    expect(why.match(new RegExp(`^super-only ${path}$`, 'gm'))).toHaveLength(1);
+    expect(why.match(new RegExp(`^delivered not keyed super-only ${path}$`, 'gm'))).toHaveLength(1);
     expect(why).not.toContain(`file ${path} `);
     expect(why).not.toContain(`member ${path} `);
   }
@@ -183,7 +183,10 @@ test('carry migrates unchanged whole and projected inputs on adoption without ex
   const why = cli(['why', 'carry']);
   expect(why).toContain('now super-only test.sh');
   expect(why).toContain('now super-only config.json');
-  expect(why.match(/^super-only .+$/gm)).toEqual(['super-only config.json', 'super-only test.sh']);
+  expect(why.match(/^delivered not keyed super-only .+$/gm)).toEqual([
+    'delivered not keyed super-only config.json',
+    'delivered not keyed super-only test.sh',
+  ]);
   expect(why).not.toContain('now unkeyed');
   using db = new Database(join(state, 'proof.db'));
   const results = () => db.query('SELECT * FROM results').all();
