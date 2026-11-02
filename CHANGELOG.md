@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.23.0
+
+- Provider start and stop receive `PROOF_RUN_PID`, the proof process's pid, alive throughout
+  provider use. Tasks cannot declare it and providers cannot export it.
+- Unknown-field errors include the running proof version and suggest checking it against
+  the dependency pin and running `bun install` if they differ.
+
 ## 0.22.0
 
 - Optional task `timeout` budgets kill the entire process group and report a red budget

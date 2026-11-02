@@ -95,6 +95,7 @@ export class Providers {
 
   private processEnv(attempt: Attempt) {
     const env = { ...process.env };
+    env.PROOF_RUN_PID = String(process.pid);
     delete env.PROOF_LANE_SLOT;
     delete env[CHANNEL];
     if (attempt.slot !== undefined) env.PROOF_LANE_SLOT = String(attempt.slot);
@@ -178,7 +179,7 @@ export class Providers {
       const where = `environment line ${index + 1}`;
       if (equals < 0 || !NAME.test(name)) return `${where}: invalid name`;
       const named = `${where} '${name}'`;
-      if ([...BASE_ENV, CHANNEL, 'PROOF_LANE_SLOT'].includes(name))
+      if ([...BASE_ENV, CHANNEL, 'PROOF_LANE_SLOT', 'PROOF_RUN_PID'].includes(name))
         return `${named}: reserved name`;
       if (Object.hasOwn(env, name)) return `${named}: duplicate name`;
       // Bun's spawn error includes the value when an environment string contains NUL.

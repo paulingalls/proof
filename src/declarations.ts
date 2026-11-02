@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
+import pkg from '../package.json';
 import { type Generator, generate } from './generate';
 import { dirtyPaths, type RefTree } from './git';
 import { filePatterns, resolveUnkeyed } from './unkeyed';
@@ -38,7 +39,10 @@ export function mapping(value: unknown, context: string): Record<string, unknown
 
 export function fields(value: Record<string, unknown>, allowed: string[], context: string) {
   for (const name of Object.keys(value)) {
-    if (!allowed.includes(name)) throw new Error(`${context}: unknown field '${name}'`);
+    if (!allowed.includes(name))
+      throw new Error(
+        `${context}: unknown field '${name}'. Running proof ${pkg.version}. Check proof --version against the proof dependency pin in package.json; run bun install if they differ.`,
+      );
   }
 }
 
@@ -224,8 +228,8 @@ export function declarations(tree: RefTree, working = false) {
       }
       if (env?.some((name) => name.includes(':')))
         throw new Error(`${label}: env name must not contain ':'`);
-      if (env?.includes('PROOF_LANE_SLOT'))
-        throw new Error(`${label}: PROOF_LANE_SLOT is reserved`);
+      for (const name of ['PROOF_LANE_SLOT', 'PROOF_RUN_PID'])
+        if (env?.includes(name)) throw new Error(`${label}: ${name} is reserved`);
       const links = 'links' in task ? linkList(task.links, label) : undefined;
       tasks.set(id, {
         run: text(task.run, `${label} run`),

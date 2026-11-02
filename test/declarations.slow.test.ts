@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from 'bun:test';
+import pkg from '../package.json';
 import { Repo } from './support/repo';
 
 let repo: Repo;
@@ -274,5 +275,34 @@ test('timeout rejects invalid budgets through every reader', () => {
         "task 'lint': timeout must be a whole number of seconds from 1 to 2147483",
       );
     }
+  }
+});
+
+test('task env cannot request the provider run pid', () => {
+  repo = new Repo();
+  commit(`${header}tasks:\n  lint: {run: echo ok, inputs: [src/**], env: [PROOF_RUN_PID]}`);
+  const result = plan();
+  expect(result.code).toBe(2);
+  expect(result.err).toContain("task 'lint': PROOF_RUN_PID is reserved");
+});
+
+test('unknown fields keep their context and suggest checking the running version against the pin', () => {
+  repo = new Repo();
+  repo.commit({
+    'package.json': JSON.stringify({ version: '0.0.0', dependencies: { proof: '0.0.0' } }),
+  });
+  for (const [body, context] of [
+    [`typo: true\n${lint}`, "ref 'HEAD' proof.yaml"],
+    [
+      'tasks:\n  lint: {run: echo ok, inputs: [src/**], typo: true}',
+      "ref 'HEAD' proof.yaml task 'lint'",
+    ],
+  ]) {
+    commit(header + body);
+    const result = plan();
+    expect(result.code).toBe(2);
+    expect(result.err).toContain(
+      `${context}: unknown field 'typo'. Running proof ${pkg.version}. Check proof --version against the proof dependency pin in package.json; run bun install if they differ.`,
+    );
   }
 });

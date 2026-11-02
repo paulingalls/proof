@@ -32,6 +32,9 @@ proof stats [--set <name>] [--since Nd] [--by <dimension>] [--json]  timings, cu
 `run` exits 0 when every task is proven or green, 1 when a task is red/incomplete or a provider fails, 130/143 when interrupted;
 any command exits 2 on a usage, declaration, store or log error. Interrupt exits take precedence
 over log errors, and log errors take precedence over task failures without changing recorded outcomes.
+Unknown-field errors retain their context and field name, then name the running proof version
+and suggest checking `proof --version` against the proof dependency pin in `package.json`
+and running `bun install` if they differ.
 
 `proof run --jobs 2` runs up to two tasks concurrently. `--jobs` accepts a positive safe
 integer and belongs after `--fresh` or `--staged`, before the selector. It defaults to 1,
@@ -130,6 +133,10 @@ send output to the terminal after startup finishes. Provider stops keep their in
 
 ### Provider environment
 
+Provider `start` and `stop` receive `PROOF_RUN_PID`, the invoking proof process's pid,
+overriding any inherited value. That process stays alive while the provider is in use.
+Tasks do not receive `PROOF_RUN_PID`.
+
 A provider's `start` receives `PROOF_PROVIDER_ENV`, an absolute path to a precreated mode-600
 file in a private mode-700 directory under the state directory. To hand an address to its tasks:
 
@@ -148,8 +155,8 @@ Each LF-separated line is `NAME=value`, split at the first `=`. Names match
 `[A-Za-z_][A-Za-z0-9_]*`. Values are literal: spaces, extra `=`, quotes, dollar signs and carriage
 returns stay unchanged; empty values are allowed. A final newline is optional. There is no shell
 evaluation, interpolation, quote removal or comment syntax. Blank lines, malformed names,
-duplicate names and NUL bytes fail startup. `PATH`, `HOME`, `TMPDIR`, `PROOF_PROVIDER_ENV` and
-`PROOF_LANE_SLOT` are reserved. An export also fails if its name is in any dependent's declared `env`, including an
+duplicate names and NUL bytes fail startup. `PATH`, `HOME`, `TMPDIR`, `PROOF_PROVIDER_ENV`,
+`PROOF_LANE_SLOT` and `PROOF_RUN_PID` are reserved. An export also fails if its name is in any dependent's declared `env`, including an
 unselected dependent, or another provider started in this run exports that name and any declared task needs both.
 Equal values still conflict; disjoint providers may export the same name. Different slots of
 the same provider may export the same name, and each task receives only its instance’s values. Validation uses the
@@ -194,7 +201,7 @@ PROVEN tasks take none. Unlaned and `solo` tasks receive no slot, even if the ca
 A laned provider starts at most once per slot used; sequential tasks reuse its instance.
 Every instance stops together when no unfinished task needs the provider. A dependent must
 use its provider's declared lane; a provider on an unknown lane or `solo` is invalid.
-Task `env` cannot declare `PROOF_LANE_SLOT`.
+Task `env` cannot declare `PROOF_LANE_SLOT` or `PROOF_RUN_PID`.
 
 A failed laned start (including rejected exports) retires its slot and records that task
 incomplete. Later RUN tasks use healthy slots; admission capacity drops by one per retired

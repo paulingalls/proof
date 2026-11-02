@@ -333,7 +333,9 @@ every dependent must declare that same lane. Tasks and their provider instance r
 `PROOF_LANE_SLOT` (0 through limit minus one). PROVEN tasks take no slot and start nothing.
 Optional `stop` runs for every attempted instance after the last selected dependent,
 including on task failure, startup failure or interruption.
-Providers execute through `sh -c` in the checkout with the caller's environment. Dependent tasks
+Providers execute through `sh -c` in the checkout with the caller's environment.
+Start and stop receive `PROOF_RUN_PID`, the invoking proof process's pid, overriding any inherited
+value; that process stays alive during provider use. Tasks do not receive it. Dependent tasks
 keep their sandbox and declared environment, plus exports from their needed providers.
 `start` receives `PROOF_PROVIDER_ENV`, the path of a private mode-600 file in the state directory.
 It may write literal `NAME=value` lines there; proof reads and removes it after startup.
@@ -342,7 +344,7 @@ keys or store records, so
 clones with different resource addresses can share proofs. Tasks without `needs: [stack]` receive
 none of its exports. Empty files preserve the existing lifecycle. See [the export rules](docs/commands.md#provider-environment)
 for names, conflicts and privacy. Included tasks use the root provider names;
-unknown names are declaration errors. `PROOF_LANE_SLOT` is reserved in task `env` and provider
+unknown names are declaration errors. `PROOF_LANE_SLOT` and `PROOF_RUN_PID` are reserved in task `env` and provider
 exports. `PROOF_LANES=ios=1 proof run --jobs 3` replaces the declared limit for that invocation;
 see [lane scheduling and failures](docs/commands.md#provider-environment) for details.
 
