@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.17.2
+
+- `proof why` compares with the newest proof holding this machine's dimension values, and says so when
+  none does, so one platform's record no longer hides another's cause.
+
 ## 0.17.1
 
 - A declared link may be a symlink: an untracked path at or below a task's or generator's `links` is
