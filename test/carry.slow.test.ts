@@ -12,7 +12,7 @@ afterAll(() => pg.close());
 afterEach(() => {
   for (const repo of repos.splice(0)) repo.close();
 });
-function fixture(PROOF_STORE?: string, inputs: unknown[] = ['a']) {
+function fixture(PROOF_STORE?: string, inputs: unknown[] = ['a'], files = {}) {
   const repo = new Repo();
   repos.push(repo);
   const doc = {
@@ -28,6 +28,7 @@ function fixture(PROOF_STORE?: string, inputs: unknown[] = ['a']) {
     'data.json': '{"chosen":1,"other":1}',
     '[id].json': '{"chosen":1}',
     'package.json': '{"version":"1"}',
+    ...files,
   });
   const env = { PROOF_STORE, PROOF_STATE_DIR: join(repo.path, '.git/state') };
   const cli = (args: string[], code = 0) => {
@@ -264,3 +265,22 @@ await Bun.write(process.env.PROOF_DECLARATIONS + '/tasks.yaml', JSON.stringify({
   });
   expect(f.cli(['rekey', '--apply']).out).toContain('declaration differs: 2');
 }, 30_000);
+
+for (const [manifest, reads] of [
+  [{ version: '2', exports: './a.ts' }, 'carried 1'],
+  [{ version: '1', exports: './b.ts' }, 'input changed: 1'],
+] as const)
+  test(`a derived workspace manifest refuses only what it resolves (${reads})`, () => {
+    const lib = (fields: object) => JSON.stringify({ name: '@app/lib', ...fields });
+    const f = fixture(undefined, [{ 'imports-of': 'main.ts' }], {
+      'package.json': '{"version":"1","workspaces":["packages/*"]}',
+      'main.ts': "import '@app/lib';\n",
+      'packages/lib/package.json': lib({ version: '1', exports: './a.ts' }),
+      'packages/lib/a.ts': 'export {};\n',
+      'packages/lib/b.ts': 'export {};\n',
+    });
+    f.doc.tasks.journey.inputs = [{ 'imports-of': 'main.ts' }, 'b'];
+    f.update({ 'packages/lib/package.json': lib(manifest) });
+    expect(f.cli(['rekey', '--apply']).out).toContain(reads);
+    expect(f.plan().state).toBe(reads === 'carried 1' ? 'PROVEN' : 'RUN');
+  });

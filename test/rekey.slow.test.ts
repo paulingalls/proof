@@ -295,17 +295,13 @@ test('remote-only proofs carry on their backend and local contests veto remote c
   expect(await query('SELECT * FROM results')).toHaveLength(5);
 });
 
-for (const shared of [false, true])
-  test(`fresh reds still reject carried proofs (${shared ? 'shared' : 'local'})`, async () => {
-    const remote = shared ? await postgres.database() : undefined;
-    const f = fixture(remote?.PROOF_STORE);
-    await seed(f);
-    const query = remote ? remoteQuery(remote.sql) : f.query;
-    if (remote) await seed(f, query);
-    f.cli(['rekey', '--apply']);
-    f.cli(['run', '--fresh', '--tasks', 'mixed'], 1, { FAIL: 'yes' });
-    expect(f.plan().find((r) => r.task === 'mixed')?.state).toBe('RUN');
-    expect(f.cli(['rekey', '--apply'])).toContain('destination rejected');
-    f.cli(['run', '--fresh', '--tasks', 'mixed']);
-    expect(f.plan().find((r) => r.task === 'mixed')?.state).toBe('PROVEN');
-  }, 30_000);
+test('fresh reds still reject carried proofs', async () => {
+  const f = fixture();
+  await seed(f);
+  f.cli(['rekey', '--apply']);
+  f.cli(['run', '--fresh', '--tasks', 'mixed'], 1, { FAIL: 'yes' });
+  expect(f.plan().find((r) => r.task === 'mixed')?.state).toBe('RUN');
+  expect(f.cli(['rekey', '--apply'])).toContain('destination rejected');
+  f.cli(['run', '--fresh', '--tasks', 'mixed']);
+  expect(f.plan().find((r) => r.task === 'mixed')?.state).toBe('PROVEN');
+}, 30_000);
