@@ -148,7 +148,7 @@ test('staged declarations, includes, providers and both selectors share the inde
   f.repo.git('commit', '-qm', 'declarations');
   f.repo.git('restore', 'proof.yaml', 'staged/tasks.yaml');
   rmSync(join(f.repo.path, 'staged/extra.yaml'));
-  expect(f.cli('plan', '--set', 'commit').out.match(/PROVEN/g)).toHaveLength(2);
+  expect(f.cli('plan', '--set', 'commit').out.match(/^PROVEN /gm)).toHaveLength(2);
 });
 
 test('staged red retains ordinary contest and recovery rules despite checkout dirt', () => {

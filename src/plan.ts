@@ -5,15 +5,27 @@ import { dirtyPaths, RefTree, resolveRef } from './git';
 import { source } from './imports';
 import { key, selection } from './key';
 import { inspectLinks } from './sandbox';
-import { Store } from './store';
+import { localDay, Store } from './store';
+import { estimate, format, pricesFor } from './timing';
 import { workspaces } from './workspaces';
 
 export const STAGED_SUFFIX = ' (staged)';
 
-export async function plan(set?: string, since?: string) {
+export async function plan(set?: string, since?: string, price = false) {
   const baseline = since === undefined ? undefined : new Since(since);
   const view = currentTree();
-  return planTree({ ...view, tasks: selectTasks(view.tasks, set) }, undefined, baseline);
+  let summary: string | undefined;
+  const rows = await planTree(
+    { ...view, tasks: selectTasks(view.tasks, set) },
+    undefined,
+    baseline,
+    price
+      ? (value) => {
+          summary = value;
+        }
+      : undefined,
+  );
+  return { rows, summary };
 }
 
 export async function planTree(
@@ -32,6 +44,7 @@ export async function planTree(
   },
   inspect?: (task: Task) => ReturnType<typeof inspectTaskLinks>,
   since?: Since,
+  summarize?: (summary: string) => void,
 ) {
   const inspections = new Map<string, ReturnType<typeof inspectTaskLinks>>();
   const inspectPlanLinks =
@@ -63,6 +76,17 @@ export async function planTree(
           since,
         ),
       );
+    if (summarize) {
+      const today = localDay(new Date());
+      const history = await store.history(project, today, today);
+      const running = rows.filter((row) => row.state === 'RUN').map((row) => row.task);
+      const cost = estimate(running, pricesFor(history.results));
+      const proven = rows.filter((row) => row.state === 'PROVEN').length;
+      const unreached = rows.filter((row) => row.state === 'UNREACHED').length;
+      summarize(
+        `summary: RUN ${running.length}, PROVEN ${proven}, UNREACHED ${unreached}; estimated ${format(cost.seconds / 60)}m; unpriced ${cost.unpriced.length}`,
+      );
+    }
     return rows;
   } catch (error) {
     try {

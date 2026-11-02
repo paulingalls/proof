@@ -188,6 +188,9 @@ test('invalid stats arguments fail with usage; unknown set shares plan diagnosti
     ['--since', '0d'],
     ['--since', 'x'],
     ['--unknown'],
+    ['--never-green', '--never-green'],
+    ['--never-green', '--since', '2d'],
+    ['--by', 'platform', '--never-green'],
     ['--by'],
     ['--by', 'missing'],
     ['--where', 'x'],
@@ -202,7 +205,7 @@ test('invalid stats arguments fail with usage; unknown set shares plan diagnosti
     const result = cli('stats', ...args);
     expect(result.code).toBe(2);
     expect(result.err).toBe(
-      'proof: usage: proof stats [--set <name>] [--since Nd] [--by <dimension>] [--json]\n',
+      'proof: usage: proof stats [--never-green | [--since Nd] [--by <dimension>]] [--set <name>] [--json]\n',
     );
     expect(result.out).toBe('');
   }
@@ -316,4 +319,51 @@ test('dimension splits reconcile window runs and JSON shares text figures', () =
     }
   expect(cli('stats', '--by', 'arch', '--set', 'push').code).toBe(2);
   expect(cli('stats', '--by', 'platform', '--by', 'platform').code).toBe(2);
+});
+
+test('never-green lists the selected all-time roster independently of keys and proof', () => {
+  const tasks = Object.fromEntries(
+    ['never', 'red', 'incomplete', 'old', 'untimed', 'dirty', 'excluded'].map((id) => [
+      id,
+      { ...task(), sets: [id === 'excluded' ? 'other' : 'push'] },
+    ]),
+  );
+  const { repo, cli, db } = fixture(tasks);
+  for (const [id, outcome] of [
+    ['red', 'red'],
+    ['incomplete', 'incomplete'],
+    ['old', 'green'],
+    ['untimed', 'green'],
+  ])
+    expect(cli('record', id as string, '--outcome', outcome as string).code).toBe(0);
+  expect(cli('record', 'old', '--outcome', 'red', '--seconds', '999').code).toBe(0);
+  repo.write('input', 'dirty');
+  expect(cli('record', 'dirty', '--outcome', 'green').code).toBe(0);
+  using history = db();
+  history.exec(
+    "DELETE FROM proofs; UPDATE results SET finished_at = '2000-01-01T00:00:00.000Z'; UPDATE results SET seconds = 42 WHERE outcome = 'red'; UPDATE results SET key = 'old-key' WHERE task = 'old' AND outcome = 'green'",
+  );
+  history.exec(`INSERT INTO results (project, task, key, outcome, host, "commit", dirty, finished_at)
+    VALUES ('other', 'never', 'key', 'green', 'host', 'commit', 0, '2000-01-01'),
+           ('stats', 'removed', 'key', 'green', 'host', 'commit', 0, '2000-01-01')`);
+  for (const set of [[], ['--set', 'push']]) {
+    const ids = ['never', 'red', 'incomplete', ...(set.length ? [] : ['excluded'])];
+    expect(cli('stats', '--never-green', ...set)).toEqual({
+      code: 0,
+      err: '',
+      out: `${ids.join('\n')}\n`,
+    });
+    expect(cli('stats', '--json', ...set, '--never-green')).toEqual({
+      code: 0,
+      err: '',
+      out: `${JSON.stringify(ids)}\n`,
+    });
+  }
+  expect(cli('stats', '--never-green', '--set', 'missing')).toEqual(
+    cli('plan', '--set', 'missing'),
+  );
+  for (const id of ['never', 'red', 'incomplete', 'excluded'])
+    expect(cli('record', id, '--outcome', 'green').code).toBe(0);
+  expect(cli('stats', '--never-green')).toEqual({ code: 0, err: '', out: '' });
+  expect(cli('stats', '--never-green', '--json').out).toBe('[]\n');
 });

@@ -17,7 +17,10 @@ export const helpUsage = 'usage: proof help [<command>]';
 
 const commands: Record<string, [string, string]> = {
   check: [checkUsage, 'Check exact task selection against a requirement suite.'],
-  plan: [planUsage, 'Show which tests and gates must run and why.'],
+  plan: [
+    planUsage,
+    'Show which tests and gates must run and why, ending with totals and estimated minutes.',
+  ],
   status: [statusUsage, 'Show proof state at a committed ref.'],
   lint: [lintUsage, 'Check declarations and coverage against the staged tree.'],
   doctor: [doctorUsage, 'Check store health and declared dimension values.'],
@@ -31,7 +34,7 @@ const commands: Record<string, [string, string]> = {
   flakes: [flakesUsage, 'Report tasks ranked by contradictions.'],
   stats: [
     statsUsage,
-    'Report timings, optional dimension splits, the RUN estimate and time saved; supports JSON. Generation hits, runs and median are local to this machine, independent of --set/--by; failed runs count.',
+    'Report timings, --never-green inventory, optional dimension splits, the RUN estimate and time saved; supports JSON. Generation hits, runs and median are local to this machine, independent of --set/--by; failed runs count.',
   ],
   why: [whyUsage, 'Explain current key parts and changes since the newest proof.'],
   help: [helpUsage, 'Show general help or help for one command.'],

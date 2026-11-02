@@ -40,7 +40,7 @@ test('empty store plans every declared task with its reason', () => {
   expect(result).toEqual({
     code: 0,
     err: '',
-    out: 'RUN lint: no proof for key\nRUN docs-check: no proof for key\n',
+    out: 'RUN lint: no proof for key\nRUN docs-check: no proof for key\nsummary: RUN 2, PROVEN 0, UNREACHED 0; estimated 0m; unpriced 2\n',
   });
 });
 
@@ -187,7 +187,10 @@ test('JSON emits the same decisions as plain plan with exactly the public fields
           `${row.state} ${row.task}: ${row.reason}\n`,
       )
       .join(''),
-  ).toBe(plain.out);
+  ).toBe(plain.out.split('summary:')[0]);
+  expect(plain.out.trim().split('\n').at(-1)).toBe(
+    'summary: RUN 1, PROVEN 1, UNREACHED 0; estimated 0m; unpriced 1',
+  );
 });
 
 test('dirty root or included declarations make every task undecidable', () => {
@@ -214,7 +217,7 @@ test('dirty root or included declarations make every task undecidable', () => {
     );
     const result = repo.cli(['plan'], env);
     expect(result.code).toBe(0);
-    expect(result.out.trim().split('\n')).toEqual(
+    expect(result.out.trim().split('\n').slice(0, -1)).toEqual(
       ['lint', 'docs-check', 'missing'].map(
         (id) => `RUN ${id}: undecidable: dirty declaration '${path}'`,
       ),
@@ -335,4 +338,61 @@ test('an ignored projection is missing and stays outside the sandbox', () => {
   const result = repo.cli(['run'], env);
   expect(result.code, result.err + result.out).toBe(0);
   expect(result.out).toContain("green gate; not recorded: missing input 'config.json'");
+});
+
+test('plan prices only selected RUN rows, including keyless and zero-second histories', () => {
+  const repo = fixture();
+  repo.commit({
+    'proof.yaml': JSON.stringify({
+      version: 1,
+      project: 'example',
+      tasks: {
+        timed: { run: 'exit 99', inputs: ['src/**'], sets: ['push'] },
+        zero: { run: 'exit 99', inputs: ['src/**'], sets: ['push'] },
+        unknown: { run: 'exit 99', inputs: ['src/**'], sets: ['push'] },
+        proven: { run: 'exit 99', inputs: ['docs/**'], sets: ['push'] },
+        excluded: { run: 'exit 99', inputs: ['src/**'], sets: ['other'] },
+      },
+    }),
+  });
+  const env = state();
+  for (const [id, seconds] of [
+    ['timed', '20'],
+    ['zero', '0'],
+    ['proven', '900'],
+    ['excluded', '900'],
+  ])
+    expect(
+      repo.cli(['record', id as string, '--outcome', 'green', '--seconds', seconds as string], env)
+        .code,
+    ).toBe(0);
+  const summary = (...args: string[]) =>
+    repo
+      .cli(['plan', ...args], env)
+      .out.trim()
+      .split('\n')
+      .at(-1);
+  expect(summary('--set', 'push')).toBe(
+    'summary: RUN 1, PROVEN 3, UNREACHED 0; estimated 0m; unpriced 1',
+  );
+  expect(summary('--since', 'HEAD', '--set', 'push')).toBe(
+    'summary: RUN 0, PROVEN 3, UNREACHED 1; estimated 0m; unpriced 0',
+  );
+  expect(summary('--set', 'other')).toBe(
+    'summary: RUN 0, PROVEN 1, UNREACHED 0; estimated 0m; unpriced 0',
+  );
+  repo.write('src/a.ts', 'dirty');
+  expect(summary('--set', 'push')).toBe(
+    'summary: RUN 3, PROVEN 1, UNREACHED 0; estimated 0.33m; unpriced 1',
+  );
+  repo.commit({ 'src/a.ts': 'changed' });
+  expect(summary('--set', 'push')).toBe(
+    'summary: RUN 3, PROVEN 1, UNREACHED 0; estimated 0.33m; unpriced 1',
+  );
+  expect(summary('--since', 'HEAD', '--set', 'push')).toBe(
+    'summary: RUN 0, PROVEN 1, UNREACHED 3; estimated 0m; unpriced 0',
+  );
+  repo.commit({ 'proof.yaml': '{"version":1,"project":"example","tasks":{}}' });
+  expect(summary()).toBe('summary: RUN 0, PROVEN 0, UNREACHED 0; estimated 0m; unpriced 0');
+  expect(repo.cli(['plan', '--json'], env).out).toBe('[]\n');
 });

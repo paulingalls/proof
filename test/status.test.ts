@@ -117,7 +117,9 @@ test('clean HEAD matches plan rows and rendering for proof, needs, contest and u
   expect(rows[3].reason).toContain('undecidable:');
   for (const row of rows.slice(0, 3)) expect(row.key).toMatch(/^[a-f0-9]{64}$/);
   expect(rows[3]).not.toHaveProperty('key');
-  expect(repo.cli(['status', '--ref', 'HEAD'], env).out).toBe(repo.cli(['plan'], env).out);
+  expect(repo.cli(['status', '--ref', 'HEAD'], env).out).toBe(
+    repo.cli(['plan'], env).out.split('summary:')[0] ?? '',
+  );
   expect(existsSync(join(repo.path, 'executed'))).toBe(false);
 }, 30_000);
 

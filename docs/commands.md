@@ -26,7 +26,7 @@ proof flakes [--since Nd]    tasks ranked by ordinary contradictions
 proof lint                   check declarations against the staged tree
 proof check <cases.yaml>     run a requirement suite
 proof doctor                 store health and all declared dimension values
-proof stats [--set <name>] [--since Nd] [--by <dimension>] [--json]  timings, current RUN estimate and time saved
+proof stats [--never-green | [--since Nd] [--by <dimension>]] [--set <name>] [--json]  timings, current RUN estimate and time saved
 ```
 
 `run` exits 0 when every task is proven or green, 1 when a task is red/incomplete or a provider fails, 130/143 when interrupted;
@@ -393,6 +393,25 @@ An undecidable row omits `key` and explains the cause in `reason`.
 RUN rows with `needs` also include `providers`, the names a run would start;
 PROVEN and UNREACHED rows and tasks without needs omit `providers`.
 
+Plain `plan` ends with RUN, PROVEN and UNREACHED counts and an estimate for only the
+selected RUN tasks. It uses the same all-time timed-green medians as `stats`, including
+zero-second and dirty results. It sums unrounded task seconds, then prints minutes rounded
+to two decimal places. These are summed task minutes, not a prediction of parallel elapsed
+time. `unpriced` always counts RUN tasks without a timed green; their time is omitted.
+`plan --json` remains the decision array, without summary or timing fields.
+
+For `text` with a historical 20-second green, changed inputs and an unrecorded `audit` task:
+
+```sh
+proof plan
+```
+
+```text
+RUN text: no proof for key
+RUN audit: no proof for key
+summary: RUN 2, PROVEN 0, UNREACHED 0; estimated 0.33m; unpriced 1
+```
+
 For a committed `text` task selecting `src/text.ts`, using a fresh store with no proofs:
 
 ```sh
@@ -511,13 +530,35 @@ a task selects, a file hidden by `assume-unchanged` or
 `skip-worktree`, or a linked `node_modules` escaping into tracked files. Status's `trusted links`
 suffix restates the declaration rather than reporting an inspection.
 
-`proof stats [--set <name>] [--since Nd] [--by <dimension>] [--json]` reports the current declaration roster in
+`proof stats [--never-green | [--since Nd] [--by <dimension>]] [--set <name>] [--json]` reports the current declaration roster in
 its declared order. `--set` scopes every task, count, estimate and total to that set;
 an unknown set exits 2 as in `plan`. Removed or renamed tasks leave all figures.
 Each task's median uses every timed green result across keys, hosts and dates,
 including dirty results. An even sample averages its middle two values; untimed
 and non-green results do not price skips. Run counts include green, red and incomplete results,
 timed or untimed, in the current window; manual invalidation records are excluded.
+
+`stats --never-green` lists selected declared task ids with no green result under any key,
+one per line in declaration order, with no statistics trailer. Reds and incompletes do not
+count as green. Any green suffices, including an untimed or dirty result, an old key, or a
+result whose proof was invalidated. The inventory is all-time; offline it reflects only this
+machine's local history. It accepts `--set` and `--json` in either order. Combining it with
+`--since` or `--by`, or repeating it, exits 2 with usage. Empty text output has no lines;
+empty JSON is `[]`.
+
+For the example above, with both tasks in `sets: [push]`, these text commands each print `audit`:
+
+```sh
+proof stats --never-green
+proof stats --never-green --set push
+```
+
+These JSON commands each print `["audit"]`:
+
+```sh
+proof stats --never-green --json
+proof stats --set push --json --never-green
+```
 
 `--since` defaults to `30d` and accepts positive whole days with representable calendar
 boundaries. The current window includes today and the preceding N−1 local calendar days;

@@ -51,7 +51,7 @@ test('working bytes include staged/unstaged edits, untracked additions, deletion
   const before = repo.git('status', '--porcelain');
   const result = repo.cli(['why', 'gate'], env);
   expect(result.code).toBe(0);
-  expect(result.out.split('\n')[0]).toBe(repo.cli(['plan'], env).out.trim());
+  expect(result.out.split('\n')[0]).toBe(repo.cli(['plan'], env).out.split('\n')[0]);
   expect(changes(result.out)).toEqual([
     'changed file src/a.ts',
     'removed file src/b.ts',
@@ -220,7 +220,7 @@ test('working declarations compare semantic hashes and removed env names', () =>
   repo.write('proof.yaml', JSON.stringify(doc, null, 2));
   const cosmetic = repo.cli(['why', 'gate'], env);
   expect(cosmetic.code).toBe(0);
-  expect(cosmetic.out.split('\n')[0]).toBe(repo.cli(['plan'], env).out.trim());
+  expect(cosmetic.out.split('\n')[0]).toBe(repo.cli(['plan'], env).out.split('\n')[0]);
   expect(cosmetic.out.match(/^declaration .+$/m)?.[0]).toBe(
     original.out.match(/^declaration .+$/m)?.[0],
   );
