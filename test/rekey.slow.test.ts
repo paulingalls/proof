@@ -180,16 +180,24 @@ test('converging env variants choose the newest result and a contested sibling v
         ['MODE', '11507a0e2f5e69d5dfa40a62a1bd7b6ee57e6bcd85c67c9b8431b36fff21c437'],
       ]),
     );
+    await f.query(`INSERT INTO results (project, task, key, outcome, seconds, host, "commit", dirty, finished_at)
+      SELECT project, task, 'other-tree', outcome, seconds, host, "commit", dirty, '2025-01-01' FROM results WHERE id = 1`);
+    await f.query(
+      `INSERT INTO proofs SELECT project, task, key, 7, '[]' FROM results WHERE id = 7`,
+    );
+    await f.query('INSERT INTO observed_contests VALUES (7, ?, ?)', 'red', 'host');
     if (contested) await f.query('INSERT INTO observed_contests VALUES (1, ?, ?)', 'red', 'host');
     expect(f.cli(['rekey', '--apply'])).toContain(
       contested ? 'contested: 2' : 'already present: 1',
     );
     const row = f.plan().find((r) => r.task === 'env');
     expect(row?.state).toBe(contested ? 'RUN' : 'PROVEN');
-    if (!contested)
-      expect(
-        await f.query('SELECT result_id FROM proofs WHERE key = ?', row?.key as string),
-      ).toEqual([{ result_id: 6 }]);
+    if (contested) continue;
+    expect(await f.query('SELECT result_id FROM proofs WHERE key = ?', row?.key as string)).toEqual(
+      [{ result_id: 6 }],
+    );
+    await f.query("DELETE FROM proofs WHERE task = 'env' AND key != ?", row?.key as string);
+    expect(f.cli(['why', 'env'])).toContain('no inputs changed');
   }
 });
 

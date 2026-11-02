@@ -22,6 +22,16 @@ const reasons = [
 type Reason = (typeof reasons)[number];
 const dimensions = (identities: [string, string][]) =>
   JSON.stringify(identities.filter(([name]) => name.startsWith('dimension:')));
+function refusal(
+  row: Proof,
+  task: string,
+  current: ReturnType<typeof keyParts>,
+): Reason | undefined {
+  if (row.env_hashes === null) return 'null identities';
+  const identities = JSON.parse(row.env_hashes) as [string, string][];
+  if (dimensions(identities) !== dimensions(current.env)) return 'dimensions differ';
+  return serializeKey(task, current, identities) === row.key ? undefined : 'key differs';
+}
 
 export async function rekey(args: string[]) {
   if (args.length && (args.length !== 1 || args[0] !== '--apply')) throw new Error(rekeyUsage);
@@ -52,6 +62,7 @@ export async function rekey(args: string[]) {
         proofs.set(task, rows);
         const identity = JSON.stringify([task, key]);
         for (const row of rows) {
+          if (refusal(row, task, current)) continue;
           const proof = await lookup(project, task, row.key, backend.query, !backend.remote);
           const reds = backend.remote
             ? []
@@ -92,14 +103,10 @@ export async function rekey(args: string[]) {
             unchanged++;
             continue;
           }
-          let reason = veto.get(JSON.stringify([task, key]));
-          if (!reason && row.env_hashes === null) reason = 'null identities';
-          if (!reason) {
-            const identities = JSON.parse(row.env_hashes as string) as [string, string][];
-            if (dimensions(identities) !== dimensions(current.env)) reason = 'dimensions differ';
-            else if (serializeKey(task, current, identities) !== row.key) reason = 'key differs';
-            else if (present) reason = 'already present';
-          }
+          const reason =
+            refusal(row, task, current) ??
+            veto.get(JSON.stringify([task, key])) ??
+            (present ? 'already present' : undefined);
           if (reason) skipped.set(reason, (skipped.get(reason) ?? 0) + 1);
           else {
             carries.push({

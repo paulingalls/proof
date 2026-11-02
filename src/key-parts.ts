@@ -141,15 +141,14 @@ export function keyParts(task: Task, tree: RefTree, historical = false) {
   const env: [string, string][] = [];
   const dimensionValues: [string, string][] = [];
   if (!historical) {
-    const entries = new Map(env);
     for (const [name, command] of task.dimensions ?? []) {
       const resolved = dimension(name, command);
       if (resolved.value !== undefined) {
-        entries.set(`dimension:${name}`, hash(resolved.value));
+        env.push([`dimension:${name}`, hash(resolved.value)]);
         dimensionValues.push([name, resolved.value]);
       } else reasons.push(resolved.reason);
     }
-    env.splice(0, env.length, ...[...entries].sort(([a], [b]) => compare(a, b)));
+    env.sort(([a], [b]) => compare(a, b));
   }
   return {
     tree,
