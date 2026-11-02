@@ -22,6 +22,12 @@ deviate. Two longer documents hold the reasoning and detail, and you should read
 In Paul's words: "only running what actually needs to run after a change, nothing extra", and
 "anyone working on this project knew what needed to be tested and what didn't."
 
+Paul, 2026-11-02: `run --since <ref>` and `plan --since <ref>` bound unproven work to what
+the change reaches. An otherwise `no proof for key` task with an identical key at the ref is
+UNREACHED; it waits for the fresh super, which never uses `--since`. Proof identity and store
+state do not change. Environment alone does not drive selection: both keys use dimension
+values computed now from their respective declarations, without recorded values.
+
 **Customers on day one:**
 - **app-a** (`app-a`): a Bun and Python monorepo with about 230 tasks.
   Those span Bun and pytest units, DB tests, lint and typecheck, about 100 bash `verify-*.sh` gates (many against
@@ -173,7 +179,12 @@ The package has its own tests for its own behaviour, on synthetic repos it build
     tasks. R10's fresh super run checks the representative assumption.
 - **R8. Fail safe, never silent.**
   - An undecidable task runs: a glob that matches nothing, an unknown adapter, a dirty tracked input. `plan`
-    prints why for every task.
+    prints why for every task. With `--since <ref>`, only an otherwise `no proof for key`
+    decision may become UNREACHED when its complete key equals the ref's key. Current dirt,
+    undecidability, untrusted links, contested keys and valid proofs keep their decisions.
+    Absent tasks or undecidable inputs/declarations at the ref run and say why; an unknown ref
+    fails loudly. Unreached unproven tasks, including red-only keys, wait for the fresh super.
+    `--since` bounds selection, not proof identity; it cannot combine with `--fresh` or `--staged`.
   - Only clean trees publish proofs, except `run --staged`: Paul, 2026-10-30, an immutable index
     snapshot may publish. Plain `plan` and `run` retain the clean-tree rule.
 - **R9. Red against a stored green: contested.**

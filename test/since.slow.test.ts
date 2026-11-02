@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite';
 import { afterEach, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Repo } from './support/repo';
@@ -54,7 +54,18 @@ test('since narrows plan and run, selectors and jobs without recording unreached
   for (const selector of [[], ['--set', 'push'], ['--tasks', 'reached', 'unreached']]) {
     const s = scene();
     s.repo.commit({ reached: 'new' });
-    expect(s.rows().map((r) => r.state)).toEqual(['RUN', 'UNREACHED']);
+    if (selector.length)
+      s.repo.commit({
+        'proof.yaml': s.document({
+          tasks: { ...s.tasks, excluded: s.task('reached', { run: 'exit 1', sets: ['other'] }) },
+        }),
+      });
+    expect(
+      s
+        .rows()
+        .filter((r) => r.task !== 'excluded')
+        .map((r) => r.state),
+    ).toEqual(['RUN', 'UNREACHED']);
     const plain = s.cli('plan', '--since', s.base);
     expect(plain.out).toContain(`UNREACHED unreached: unreached since ${s.base}`);
     expect(s.cli('plan').out).toContain('RUN unreached: no proof for key');
@@ -166,7 +177,7 @@ test('unreadable historical declarations run rather than blocking selection', ()
   }
 });
 
-test('run, links and dimension declarations enter the comparison; machine values do not', () => {
+test('run, links and dimension declarations enter the comparison', () => {
   for (const field of ['run', 'links', 'dimensions']) {
     const s = scene();
     const original = s.rows()[0]?.key;
@@ -198,6 +209,12 @@ test('unreached tasks start no provider and earn no savings, including prior red
     }),
   });
   const base = s.repo.git('rev-parse', 'HEAD');
+  expect(s.cli('run', '--since', base).code).toBe(0);
+  expect(s.records('results')).toEqual([]);
+  const empty = JSON.parse(s.cli('stats', '--json').out);
+  expect(empty.tasks[0].runs).toBe(0);
+  expect(empty.saved.current.seconds).toBe(0);
+  expect(empty.saved.current.unpricedSkips).toBe(0);
   expect(s.cli('record', 'unreached', '--outcome', 'red').code).toBe(0);
   const result = s.cli('run', '--since', base);
   expect(result.code).toBe(0);
@@ -206,7 +223,9 @@ test('unreached tasks start no provider and earn no savings, including prior red
   expect(existsSync(join(s.dir, 'unreached'))).toBe(false);
   expect(s.records('results')).toEqual([{ task: 'unreached' }]);
   expect(s.records('skips')).toEqual([]);
-  expect(s.cli('stats', '--json').code).toBe(0);
+  const stats = JSON.parse(s.cli('stats', '--json').out);
+  expect(stats.saved.current.seconds).toBe(0);
+  expect(stats.saved.current.unpricedSkips).toBe(0);
 });
 
 test('unknown refs fail even with proof; mode conflicts and missing refs are usage errors', () => {
@@ -231,4 +250,53 @@ test('unknown refs fail even with proof; mode conflicts and missing refs are usa
     expect(s.cli('run', '--since', s.base, mode).code).toBe(2);
   }
   expect(existsSync(join(s.dir, 'reached'))).toBe(false);
+});
+
+test('dimension commands compare now at both refs, including changed commands', () => {
+  const s = scene();
+  const tool = join(s.dir, 'tool');
+  writeFileSync(tool, 'old');
+  const tasks = { ...s.tasks, reached: s.task('reached', { dimensions: ['tool'] }) };
+  const document = (command: string) => s.document({ tasks, dimensions: { tool: command } });
+  const base = s.repo.commit({ 'proof.yaml': document(`cat '${tool}'`) });
+  const oldKey = s.rows()[0]?.key;
+  writeFileSync(tool, 'new');
+  const now = JSON.parse(s.cli('plan', '--since', base, '--json').out);
+  expect(now[0].key).not.toBe(oldKey);
+  expect(now.map((row: { state: string }) => row.state)).toEqual(['UNREACHED', 'UNREACHED']);
+  s.repo.commit({ 'proof.yaml': document('printf different') });
+  expect(s.cli('run', '--since', base).out).toContain('green reached');
+  expect(existsSync(join(s.dir, 'reached'))).toBe(true);
+});
+
+test('all-proven selection resolves ref without running its generator', () => {
+  const s = scene();
+  const old = s.repo.commit({
+    'proof.yaml': s.document({
+      generate: { run: `touch '${s.dir}/generator'; exit 1`, inputs: ['reached'] },
+    }),
+  });
+  s.repo.commit({ 'proof.yaml': s.document() });
+  s.control();
+  for (const id of ['reached', 'unreached'])
+    expect(s.cli('record', id, '--outcome', 'green').code).toBe(0);
+  expect(s.cli('run', '--since', old).code).toBe(0);
+  expect(existsSync(join(s.dir, 'generator'))).toBe(false);
+});
+
+test('two reached tasks still execute concurrently beside unreached work', () => {
+  const s = scene();
+  const run = (id: string, other: string) =>
+    `touch '${s.dir}/${id}'; for n in $(seq 1 200); do test -f '${s.dir}/${other}' && exit 0; sleep 0.01; done; exit 1`;
+  const tasks = {
+    ...s.tasks,
+    reached: s.task('reached', { run: run('reached', 'second') }),
+    second: s.task('second', { run: run('second', 'reached') }),
+  };
+  const base = s.repo.commit({ 'proof.yaml': s.document({ tasks }), second: 'old' });
+  s.repo.commit({ reached: 'new', second: 'new' });
+  const result = s.cli('run', '--since', base, '--jobs', '2');
+  expect(result.code).toBe(0);
+  expect(s.records('results')).toHaveLength(2);
+  expect(existsSync(join(s.dir, 'unreached'))).toBe(false);
 });

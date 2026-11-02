@@ -6,6 +6,10 @@ clones and machines, so a green result earned on one machine is reused by every
 other machine with the same tree and declared dimensions.
 
 The goal: run only what a change can actually affect, and nothing extra.
+Use `proof run --since <ref>` to bound unproven work to tasks whose keys changed since
+that commit. Unchanged unproven tasks read `UNREACHED` and wait for the fresh super run;
+`proof plan --since <ref>` previews the same selection. Existing proofs still read `PROVEN`.
+The super uses `--fresh` and never `--since`. See [command details](docs/commands.md).
 
 ## How it works
 

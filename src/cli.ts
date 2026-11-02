@@ -138,7 +138,7 @@ if (command === '--version') {
           since = args[++i];
         else throw new Error(planUsage);
       }
-      const rows = await plan(set);
+      const rows = await plan(set, since);
       if (json) console.log(JSON.stringify(rows));
       else for (const row of rows) console.log(renderDecision(row));
     } else {

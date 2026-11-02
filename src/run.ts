@@ -1,7 +1,7 @@
 import { declarations, selectTasks } from './declarations';
 import { RefTree, resolveRef } from './git';
 import { Lanes } from './lanes';
-import { currentTree, decide, renderDecision } from './plan';
+import { currentTree, decide, renderDecision, Since } from './plan';
 import { Providers } from './providers';
 import { RunProcesses } from './run-process';
 import { runTask } from './run-task';
@@ -14,8 +14,10 @@ export async function run(args: string[]) {
   const fresh = args[0] === '--fresh';
   const staged = args[0] === '--staged';
   if (fresh || staged) args = args.slice(1);
-  if (args[0] === '--since') {
+  let sinceRef: string | undefined;
+  if (!fresh && !staged && args[0] === '--since') {
     if (!args[1] || args[1].startsWith('-')) throw new Error(runUsage);
+    sinceRef = args[1];
     args = args.slice(2);
   }
   let jobs = 1;
@@ -33,6 +35,7 @@ export async function run(args: string[]) {
     (args[0] !== '--tasks' || args.length < 2 || args.slice(1).some((id) => id.startsWith('--')))
   )
     throw new Error(runUsage);
+  const since = sinceRef === undefined ? undefined : new Since(sinceRef);
   const parent = staged ? resolveRef('HEAD') : undefined;
   const captured = staged ? RefTree.index() : undefined;
   const snapshot = captured
@@ -106,6 +109,7 @@ export async function run(args: string[]) {
         store,
         undefined,
         fresh,
+        since,
       );
       preview.set(id, renderDecision(row));
       console.log(renderDecision(row));
@@ -127,6 +131,7 @@ export async function run(args: string[]) {
           refresh,
           skipped: (id) => skipped.push(id),
           fresh,
+          since,
           live: jobs === 1,
           logFailed: () => {
             logFailed = true;

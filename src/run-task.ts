@@ -2,7 +2,14 @@ import { hostname } from 'node:os';
 import { key, selection } from './key';
 import type { Lanes } from './lanes';
 import { logSuffix } from './logs';
-import { type currentTree, decide, inspectTaskLinks, renderDecision, STAGED_SUFFIX } from './plan';
+import {
+  type currentTree,
+  decide,
+  inspectTaskLinks,
+  renderDecision,
+  type Since,
+  STAGED_SUFFIX,
+} from './plan';
 import { providerMismatch } from './provider-inputs';
 import { BASE_ENV, type Providers } from './providers';
 import type { RunProcesses } from './run-process';
@@ -15,6 +22,7 @@ type Context = {
   view: () => ReturnType<typeof currentTree>;
   refresh: () => ReturnType<typeof currentTree>;
   fresh: boolean;
+  since?: Since;
   live: boolean;
   logFailed: () => void;
   staged: boolean;
@@ -38,6 +46,7 @@ export async function runTask(
     view: currentView,
     refresh,
     fresh,
+    since,
     live,
     logFailed,
     staged,
@@ -71,6 +80,7 @@ export async function runTask(
     store,
     inspection,
     fresh,
+    since,
   );
   if (processes.cancelled && !providers.attempted(task.needs ?? [])) return;
   const printRevision = () => {
@@ -83,7 +93,7 @@ export async function runTask(
   let exhausted: string | undefined;
   try {
     let started = false;
-    if (decision.state !== 'PROVEN' && !processes.cancelled) {
+    if (decision.state === 'RUN' && !processes.cancelled) {
       ({ slot, exhausted } = lanes.allocate(lane));
       for (const name of exhausted ? [] : (task.needs ?? [])) {
         if (processes.cancelled) break;
@@ -121,10 +131,15 @@ export async function runTask(
         store,
         inspection,
         fresh,
+        since,
       );
       printRevision();
     }
     const { tree, project, dirty, declaration } = view;
+    if (decision.state === 'UNREACHED') {
+      summary.push(renderDecision(decision));
+      return;
+    }
     if (decision.state === 'PROVEN') {
       skipped(id);
       summary.push(`PROVEN ${id}: ${decision.reason}`);

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.20.0
+
+- `run --since <ref>` and `plan --since <ref>` leave unchanged unproven tasks UNREACHED.
+  Reached tasks run; current proofs, contested keys and dirty/undecidable inputs keep their
+  decisions. Unreached work starts no provider, records no result and earns no skip savings;
+  it waits for the fresh super run.
+
 ## 0.19.2
 
 - A sandbox that cannot be removed no longer aborts the run: it warns with the task and path left
