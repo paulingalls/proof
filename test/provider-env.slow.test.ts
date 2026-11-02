@@ -54,6 +54,7 @@ appendFileSync(process.env.CONTROL + '/events', 'start\\n');`,
       'observe.ts': `import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 const [control, name] = process.argv.slice(2);
 if (process.env.PROOF_PROVIDER_ENV !== undefined) process.exit(11);
+if (process.env.PROOF_RUN_PID !== undefined) process.exit(15);
 if (name.startsWith('independent')) {
   if (process.env.URL !== undefined) process.exit(12);
 } else {
@@ -106,7 +107,11 @@ for (const jobs of ['1', '2']) {
     });
     for (let run = 0; run < 2; run++) {
       const value = f.address();
-      const result = f.repo.cli(['run', '--fresh', '--jobs', jobs], { ...f.env, URL: 'caller' });
+      const result = f.repo.cli(['run', '--fresh', '--jobs', jobs], {
+        ...f.env,
+        URL: 'caller',
+        PROOF_RUN_PID: 'caller',
+      });
       expect(result.code).toBe(0);
       for (const name of ['first', 'second'])
         expect(readFileSync(join(f.control, name), 'utf8')).toBe(value);
@@ -116,6 +121,31 @@ for (const jobs of ['1', '2']) {
     expect(readFileSync(join(f.control, 'events'), 'utf8')).toBe('start\nstop\nstart\nstop\n');
   });
 }
+
+test('provider start and stop receive the proof pid alive throughout provider use', async () => {
+  const f = fixture();
+  f.commit(
+    {
+      gate: {
+        run: `kill -0 "$(cat '${f.control}/start-pid')" && ${f.mark('dependent')}`,
+        inputs: ['observe.ts'],
+        needs: ['stack'],
+      },
+    },
+    {
+      stack: {
+        start: 'echo "$PROOF_RUN_PID" > "$CONTROL/start-pid"',
+        stop: 'echo "$PROOF_RUN_PID" > "$CONTROL/stop-pid"; kill -0 "$PROOF_RUN_PID"',
+      },
+    },
+  );
+  const child = f.repo.spawnCli(['run'], { ...f.env, PROOF_RUN_PID: 'bogus' });
+  const result = await output(child);
+  expect(readFileSync(join(f.control, 'start-pid'), 'utf8').trim()).toBe(String(child.pid));
+  expect(readFileSync(join(f.control, 'stop-pid'), 'utf8').trim()).toBe(String(child.pid));
+  expect(result.code, result.out + result.err).toBe(0);
+  expect(readFileSync(join(f.control, 'events'), 'utf8')).toBe('dependent\n');
+});
 
 test('different provider addresses share one proof across clones', async () => {
   const db = await pg.database();
@@ -177,6 +207,11 @@ const rejections: {
     kind: 'PROOF_LANE_SLOT',
     payload: (v) => `PROOF_LANE_SLOT=${v}`,
     expected: "'PROOF_LANE_SLOT': reserved name",
+  },
+  {
+    kind: 'PROOF_RUN_PID',
+    payload: (v) => `PROOF_RUN_PID=${v}`,
+    expected: "'PROOF_RUN_PID': reserved name",
   },
   { kind: 'declared', payload: url, expected: "'URL'", env: ['URL'] },
   { kind: 'edited', payload: url, expected: "'URL'", edit: declareLater },
