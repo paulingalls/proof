@@ -1,6 +1,6 @@
 import { declarations } from './declarations';
 import { RefTree } from './git';
-import { matching, selects } from './key';
+import { matching, select } from './key';
 
 export function lint() {
   const tree = RefTree.index();
@@ -28,17 +28,24 @@ export function lint() {
     }
     if (!matched) findings.push(`coverage: unmatched pattern '${pattern}'`);
   }
+  const absentExempt = Object.keys(exempt).filter((path) => !tree.files.has(path));
+  const selections = new Map<string, Set<string>>();
+  const owned = new Set<string>();
+  for (const [id, task] of tasks) {
+    const paths = select(task, tree, absentExempt).paths;
+    for (const input of task.inputs) {
+      if (typeof input !== 'string' && 'path' in input) paths.add(input.path);
+    }
+    selections.set(id, paths);
+    for (const path of paths) owned.add(path);
+  }
   for (const path of covered) {
-    if (
-      ![...tasks.values()].some((task) => selects(task, path, tree)) &&
-      !Object.hasOwn(exempt, path)
-    )
-      findings.push(`unowned '${path}'`);
+    if (!owned.has(path) && !Object.hasOwn(exempt, path)) findings.push(`unowned '${path}'`);
   }
   for (const path of Object.keys(exempt)) {
     if (!tree.files.has(path)) findings.push(`exempt '${path}': no tracked file`);
-    for (const [id, task] of tasks) {
-      if (selects(task, path, tree)) findings.push(`exempt '${path}': selected by task '${id}'`);
+    for (const [id, paths] of selections) {
+      if (paths.has(path)) findings.push(`exempt '${path}': selected by task '${id}'`);
     }
   }
   return findings;

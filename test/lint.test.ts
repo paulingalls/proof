@@ -118,20 +118,74 @@ test('covered paths require ordered ownership or an exemption', () => {
   expect(r.cli(['lint'])).toEqual({ code: 0, out: '', err: '' });
 });
 
-test('exemptions are exact tracked paths unselected by any task, even outside coverage', () => {
+test('lint preserves finding order, absent exemptions and sticky projections', () => {
   const r = new Repo();
   repos.push(r);
   r.commit({
-    'proof.yaml': `${declaration.replace('[src/**]', '[{path: config/app.json, json: [name]}]')}exempt:
-  scripts/verify-*.sh: manual
-  config/app.json: external
-`,
-    'scripts/verify-x.sh': '',
-    'config/app.json': '{"name":"fixture"}',
+    'proof.yaml': JSON.stringify({
+      version: 1,
+      project: 'fixture',
+      tasks: {
+        first: {
+          run: 'true',
+          inputs: [
+            'gone/**',
+            { path: 'absent.json', json: ['name'] },
+            '!absent.json',
+            { 'imports-of': 'missing.ts' },
+            { maestro: 'missing.yaml' },
+            'src/**',
+            '!src/**',
+            'src/owned.ts',
+            { path: 'config.json', json: ['name'] },
+            '!config.json',
+            'absent-glob/**',
+          ],
+        },
+        second: {
+          run: 'true',
+          inputs: ['src/owned.ts', '!src/**', { 'imports-of': 'entry.ts' }],
+        },
+      },
+      coverage: ['z/**', 'src/**', '**/*.ts', 'nothing/**'],
+      exempt: {
+        'src/owned.ts': 'manual',
+        'absent-glob/file': 'manual',
+        'absent.json': 'manual',
+        'missing.ts': 'manual',
+        'missing.yaml': 'manual',
+        'config.json': 'manual',
+        'z/*.ts': 'manual',
+      },
+    }),
+    'z/unowned.ts': '',
+    'src/unowned.ts': '',
+    'src/owned.ts': '',
+    'entry.ts': "import './src/owned';",
+    'config.json': '{"name":"fixture"}',
   });
   expect(r.cli(['lint'])).toEqual({
     code: 1,
     err: '',
-    out: "exempt 'scripts/verify-*.sh': no tracked file\nexempt 'config/app.json': selected by task 'verify'\n",
+    out:
+      "task 'first': unmatched input 'gone/**'\n" +
+      "task 'first': missing input 'absent.json'\n" +
+      "task 'first': missing input 'missing.ts'\n" +
+      "task 'first': missing input 'missing.yaml'\n" +
+      "task 'first': unmatched input 'absent-glob/**'\n" +
+      "coverage: unmatched pattern 'nothing/**'\n" +
+      "unowned 'z/unowned.ts'\n" +
+      "unowned 'src/unowned.ts'\n" +
+      "exempt 'src/owned.ts': selected by task 'first'\n" +
+      "exempt 'src/owned.ts': selected by task 'second'\n" +
+      "exempt 'absent-glob/file': no tracked file\n" +
+      "exempt 'absent-glob/file': selected by task 'first'\n" +
+      "exempt 'absent.json': no tracked file\n" +
+      "exempt 'absent.json': selected by task 'first'\n" +
+      "exempt 'missing.ts': no tracked file\n" +
+      "exempt 'missing.ts': selected by task 'first'\n" +
+      "exempt 'missing.yaml': no tracked file\n" +
+      "exempt 'config.json': selected by task 'first'\n" +
+      "exempt 'z/*.ts': no tracked file\n",
   });
 });
