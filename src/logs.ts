@@ -29,11 +29,15 @@ function segment(name: string) {
   return name === '.' || name === '..' ? name.replaceAll('.', '%2E') : encodeURIComponent(name);
 }
 
+function shellArgument(path: string) {
+  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(path) ? path : `'${path.replaceAll("'", "'\"'\"'")}'`;
+}
+
 export function logSuffix(result: LogResult) {
   return result.error
     ? `; log failed: ${result.error}`
     : result.path
-      ? `; log: ${result.path}`
+      ? `; log: ${shellArgument(result.path)}`
       : '';
 }
 
@@ -84,6 +88,7 @@ export class Capture {
   private readonly path = join(this.root, `${this.id}.capture`);
   private readonly buffer = Buffer.alloc(CHUNK);
   private offset = 0;
+  private lastByte?: number;
   private error?: string;
   private timer?: ReturnType<typeof setInterval>;
 
@@ -106,6 +111,7 @@ export class Capture {
         this.offset += count;
         let written = 0;
         while (written < count) written += writeSync(1, buffer, written, count - written);
+        this.lastByte = buffer[count - 1];
       }
     } catch (error) {
       this.error = String(error);
@@ -115,8 +121,10 @@ export class Capture {
   display() {
     clearInterval(this.timer);
     try {
-      if (this.identity.live) this.tail(fstatSync(this.fd).size);
-      else {
+      if (this.identity.live) {
+        this.tail(fstatSync(this.fd).size);
+        if (this.lastByte !== undefined && this.lastByte !== 10) writeSync(1, '\n');
+      } else {
         const bytes = readFileSync(this.path);
         console.log(
           `--- ${this.identity.kind === 'providers' ? 'provider-' : ''}${this.identity.task}\n${bytes.toString().replace(/\n$/, '')}`,

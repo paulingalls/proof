@@ -5,7 +5,7 @@ import { Lanes } from './lanes';
 import { currentTree, decide, renderDecision, Since } from './plan';
 import { Providers } from './providers';
 import { RunProcesses } from './run-process';
-import { runTask } from './run-task';
+import { runTask, type TaskResult } from './run-task';
 import { Store } from './store';
 
 export const runUsage =
@@ -55,6 +55,19 @@ export async function run(args: string[]) {
   const store = await Store.open(selected.project);
   const summary: string[] = [];
   const skipped: string[] = [];
+  const counts: Record<TaskResult['outcome'], number> = {
+    green: 0,
+    red: 0,
+    incomplete: 0,
+    proven: 0,
+    unreached: 0,
+  };
+  let done = 0;
+  let notRecorded = 0;
+  const tally = () =>
+    Object.entries(counts)
+      .map(([outcome, count]) => `${outcome} ${count}`)
+      .join(', ') + (notRecorded ? `, not recorded ${notRecorded}` : '');
   let failed = false;
   let logFailed = false;
   const processes = new RunProcesses();
@@ -141,7 +154,7 @@ export async function run(args: string[]) {
       const taskSummary: string[] = [];
       summaries[index] = taskSummary;
       try {
-        await runTask(id, {
+        const result = await runTask(id, {
           lanes,
           lane,
           view: () => selected,
@@ -171,6 +184,12 @@ export async function run(args: string[]) {
             failed = true;
           },
         });
+        if (result) {
+          counts[result.outcome]++;
+          if (result.outcome !== 'incomplete') done++;
+          if (result.notRecorded) notRecorded++;
+          console.log(`progress: ${done}/${ids.length} done; ${tally()}; task ${id}`);
+        }
         unfinished.delete(id);
         runningNeeds.delete(id);
         if (processes.aborted) return;
@@ -221,7 +240,7 @@ export async function run(args: string[]) {
     await providers.stopExcept(new Set());
     const failures = providers.failures();
     if (failures.length) failed = true;
-    console.log([...summary, ...failures].join('\n'));
+    console.log([...summary, ...failures, `summary: ${tally()}`].join('\n'));
     return processes.interrupted
       ? processes.interrupted === 'SIGINT'
         ? 130

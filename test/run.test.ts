@@ -291,6 +291,10 @@ test('no-key tasks still materialize all available inputs and report unrecorded 
     expect(result.out).toContain(
       `${id === 'redless' ? 'red' : 'green'} ${id}; not recorded: ${reason}`,
     );
+  const counts = 'green 3, red 1, incomplete 0, proven 0, unreached 0, not recorded 4';
+  expect(result.out).toContain(`progress: 4/4 done; ${counts}; task redless\n`);
+  expect(result.out).toEndWith(`summary: ${counts}\n`);
+  expect(result.out.match(/^(green|red) /gm)).toHaveLength(4);
   expect(rows(env, 'results')).toEqual([]);
   expect(readdirSync(env.TMPDIR)).toEqual([]);
 });
