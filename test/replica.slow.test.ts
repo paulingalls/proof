@@ -14,7 +14,7 @@ beforeAll(async () => {
 }, 180_000);
 afterAll(async () => {
   await postgres?.close();
-}, 30_000);
+});
 afterEach(() => {
   for (const repo of repos.splice(0)) repo.close();
   for (const path of paths.splice(0)) rmSync(path, { recursive: true, force: true });
@@ -151,7 +151,7 @@ test('offline results stay local across reopen and online reads never merge loca
   } finally {
     await postgres.restart();
   }
-}, 30_000);
+});
 
 for (const reds of [1, 2]) {
   test(`${reds} unshared reds veto the shared green after reconnect until a clean local green`, async () => {
@@ -188,7 +188,7 @@ for (const reds of [1, 2]) {
     expect(run.out).toContain('executed-lint');
     expect(run.out).toContain('green lint; proof published; shared');
     expect(repo.cli(['plan'], a).out).toContain('PROVEN lint');
-  }, 30_000);
+  });
 }
 
 test('a stalled handshake falls back once within five seconds for all tasks', async () => {
@@ -211,7 +211,7 @@ test('a stalled handshake falls back once within five seconds for all tasks', as
     await child.exited;
     endpoint.stop(true);
   }
-}, 10_000);
+});
 
 test('without a remote configured the local lifecycle has no sharing diagnostics', async () => {
   const { repo, a } = await setup();
@@ -262,7 +262,7 @@ for (const reds of [1, 2]) {
       } finally {
         await postgres.restart();
       }
-    }, 30_000);
+    });
   }
 }
 
@@ -320,7 +320,7 @@ test('losing Postgres after planning retains results and makes only the attempte
     await child.exited;
     if (stopped) await postgres.restart();
   }
-}, 30_000);
+});
 
 for (const outcome of ['green', 'incomplete', 'red']) {
   test(`local ${outcome} and observed contest commit before the remote commit is lost`, async () => {
@@ -366,7 +366,7 @@ for (const outcome of ['green', 'incomplete', 'red']) {
       await child.exited;
       await locker`SELECT pg_advisory_unlock(123456)`;
     }
-  }, 30_000);
+  });
 }
 
 test('a terminated shared proof read falls back to the local proof once', async () => {
@@ -398,7 +398,7 @@ test('a terminated shared proof read falls back to the local proof once', async 
     await child.exited;
     await locker`ROLLBACK`;
   }
-}, 30_000);
+});
 
 for (const failure of ['schema', 'authentication', 'query']) {
   test(`${failure} errors stay loud with a usable replica`, async () => {
@@ -423,5 +423,5 @@ for (const failure of ['schema', 'authentication', 'query']) {
       expect(result.err).not.toContain('using this machine');
       expect(result.out).not.toMatch(/PROVEN|executed-/);
     }
-  }, 15_000);
+  });
 }

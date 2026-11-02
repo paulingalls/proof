@@ -122,7 +122,7 @@ test('AC4 unsupported exports name the package and cannot publish proof', () => 
     r.cli(['record', 'a', '--outcome', 'green'], env);
     expect(plan(r, env)[0]?.state).toBe('RUN');
   }
-}, 15000);
+});
 test('AC5 conditional exports preserve object order and edge kind', () => {
   const r = fixture({
     'packages/shared/package.json':

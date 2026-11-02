@@ -65,7 +65,7 @@ test('present invalid store configuration fails naming its source, never its val
       }
     }
   }
-}, 30_000);
+});
 
 test('invalid environment overrides the file and unreadable configuration fails loudly', () => {
   const repo = fixture();
@@ -103,7 +103,7 @@ beforeAll(async () => {
 }, 180_000);
 afterAll(async () => {
   await postgres?.close();
-}, 30_000);
+});
 
 test('owned scope removes its container even when the scope throws', async () => {
   const owned = await new Postgres().start();
@@ -173,7 +173,7 @@ test('remote green is reused across clones with provenance, precise duration and
       PROOF_STATE_DIR: directory(),
     }).out,
   ).toContain('PROVEN lint');
-}, 30_000);
+});
 
 test('contested transitions retain the same contradiction anchors and incomplete contests nothing', async () => {
   const { sql, record, plan } = await setup();
@@ -199,7 +199,7 @@ test('contested transitions retain the same contradiction anchors and incomplete
     { green_result: results[4].id, red_result: results[6].id, kind: 'ordinary', deleted_proof: 1 },
   ]);
   expect(await sql`SELECT * FROM proofs`).toHaveLength(0);
-}, 30_000);
+});
 
 test('dirty green stores history only; dirty-input red cannot contest but unrelated dirtiness can', async () => {
   const { repo, sql, record, plan } = await setup();
@@ -219,7 +219,7 @@ test('dirty green stores history only; dirty-input red cannot contest but unrela
   expect(
     (await sql`SELECT dirty FROM results ORDER BY id`).map((r: { dirty: number }) => r.dirty),
   ).toEqual([1, 0, 1, 0]);
-}, 30_000);
+});
 
 test('run publishes remotely and a second clone skips without executing', async () => {
   const { repo, env, sql } = await setup();
@@ -233,7 +233,7 @@ test('run publishes remotely and a second clone skips without executing', async 
   expect(second.out).toContain('PROVEN lint');
   expect(second.out).not.toContain('postgres-task-marker');
   expect(await sql`SELECT outcome FROM results`).toEqual([{ outcome: 'green' }]);
-}, 30_000);
+});
 
 for (const table of ['proofs', 'contradictions']) {
   test(`a failing ${table} update rolls back the result and retains the original proof`, async () => {
@@ -257,7 +257,7 @@ for (const table of ['proofs', 'contradictions']) {
     const shared = repo.cli(['plan'], { ...env, PROOF_STATE_DIR: directory() });
     expect(shared.code).toBe(0);
     expect(shared.out).toContain('PROVEN lint');
-  }, 30_000);
+  });
 }
 
 test('a reader never observes an inserted result before its proof update commits', async () => {
@@ -284,7 +284,7 @@ test('a reader never observes an inserted result before its proof update commits
   expect((await done).code).toBe(0);
   expect(await sql`SELECT * FROM results`).toHaveLength(1);
   expect(await sql`SELECT * FROM proofs`).toHaveLength(1);
-}, 30_000);
+});
 
 for (const backend of ['postgres', 'sqlite']) {
   test(`${backend} refuses newer schemas for plan, record and run without modifying history`, async () => {
@@ -317,7 +317,7 @@ for (const backend of ['postgres', 'sqlite']) {
     } finally {
       local?.close();
     }
-  }, 30_000);
+  });
 }
 
 test('an unversioned SQLite history is adopted without losing its proof', () => {
@@ -384,7 +384,7 @@ for (const outcome of ['green', 'red', 'initialize']) {
       ]);
       plan('RUN lint: no proof');
     } else expect(results.map((r: { outcome: string }) => r.outcome)).toEqual(['green', 'green']);
-  }, 30_000);
+  });
 }
 
 test('interrupting a blocked proof read does not start the task', async () => {
@@ -410,7 +410,7 @@ test('interrupting a blocked proof read does not start the task', async () => {
   expect(result.code).toBe(130);
   expect(result.out).not.toContain('postgres-task-marker');
   expect(await sql`SELECT * FROM results`).toHaveLength(0);
-}, 30_000);
+});
 
 test('failed connections name the redacted store without leaking any password', async () => {
   const repo = fixture();

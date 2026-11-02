@@ -112,7 +112,7 @@ test('decodes keys and tracks mapping boundaries in accepted YAML and JSON', () 
     expect(result.code).toBe(2);
     expect(result.err).toContain(`line ${line}: duplicate key '${line === 1 ? 'lint' : 'tasks'}'`);
   }
-}, 15_000);
+});
 
 test('reports included file positions and refuses keys needing external context', () => {
   repo = new Repo();
@@ -236,4 +236,4 @@ test('carry is boolean selection metadata across declaration readers', () => {
       expect(result.err).toContain("task 'lint': carry must be a boolean");
     }
   }
-}, 30_000);
+});

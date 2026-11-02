@@ -65,7 +65,7 @@ test('serial stdout and stderr arrive live exactly once', async () => {
     await stop(child);
     await reading;
   }
-}, 15000);
+});
 
 test('SIGTERM reaches a task while the live tail is behind a slow stdout', async () => {
   const f = fixture({
@@ -88,7 +88,7 @@ test('SIGTERM reaches a task while the live tail is behind a slow stdout', async
     child.kill('SIGKILL');
     await reading;
   }
-}, 15000);
+});
 
 test('SIGTERM keeps incomplete bytes after the handler and skips unstarted tasks', async () => {
   const f = fixture(
@@ -122,7 +122,7 @@ setInterval(() => {}, 100);`,
   } finally {
     await stop(child);
   }
-}, 15000);
+});
 
 test('parallel captures separate a red from a green', () => {
   const f = fixture(
@@ -309,7 +309,7 @@ test('each task keeps its newest ten reds and a later green preserves them', () 
   f.mark('succeed');
   expect(f.run('--tasks', 'a').code).toBe(0);
   expect(readdirSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/tasks/a'))).toHaveLength(10);
-}, 15000);
+});
 
 test('provider retention cannot prune a task with the same printed label', () => {
   const f = fixture(
@@ -323,7 +323,7 @@ test('provider retention cannot prune a task with the same printed label', () =>
     expect(result.out).toContain("provider 'stack' start failed: exit 1; log: ");
   }
   expect(readFileSync(path, 'utf8')).toBe('task-diagnostic\n');
-}, 15000);
+});
 
 test('captures finalized in the same millisecond retain distinct bytes', () => {
   const f = fixture({ a: task('cat scratch/control; false') });
@@ -419,4 +419,4 @@ test('retained private bytes and paths never enter either store', async () => {
   } finally {
     await pg.close();
   }
-}, 30000);
+});

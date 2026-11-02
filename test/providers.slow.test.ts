@@ -410,7 +410,7 @@ writeFileSync(process.env.CONTROL + '/ready', String(process.pid));`,
         await cli.exited;
         await output;
       }
-    }, 15000);
+    });
   }
 }
 
@@ -450,7 +450,7 @@ writeFileSync(process.env.CONTROL + '/stopped', 'yes');`,
     await cli.exited;
     await output;
   }
-}, 15000);
+});
 
 for (const blocked of [false, true]) {
   test(`fresh selects proven dependents and preserves provider lifecycle; blocked=${blocked}`, () => {

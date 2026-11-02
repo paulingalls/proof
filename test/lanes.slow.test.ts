@@ -44,7 +44,7 @@ test('lane declaration errors reach every declaration reader', () => {
     'proof.d/tasks.yaml': JSON.stringify({ tasks: { t: { ...task('true'), lane: 'missing' } } }),
   });
   expect(f.repo.cli(['lint'], f.env).err).toContain("task 't': unknown lane 'missing'");
-}, 30000);
+});
 
 test('provider lanes and reserved slot env reach every reader', () => {
   const f = fixture({ t: task('true') });
@@ -242,7 +242,7 @@ for (const bypass of [false, true]) {
       f.mark('release');
       await stop(running.child);
     }
-  }, 15000);
+  });
 }
 
 for (const saturated of [false, true]) {
@@ -300,5 +300,5 @@ for (const saturated of [false, true]) {
       for (const name of ['release-a', 'release-b', 'release-solo', 'release']) f.mark(name);
       await stop(running.child);
     }
-  }, 15000);
+  });
 }

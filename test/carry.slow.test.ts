@@ -89,7 +89,7 @@ for (const shared of [false, true])
     expect(f.plan().state).toBe('RUN');
     f.cli(['record', 'journey', '--outcome', 'green']);
     expect(f.plan().state).toBe('PROVEN');
-  }, 30_000);
+  });
 
 test('historical eligibility counts opt-outs, byte/mode changes and declaration boundaries', () => {
   for (const [name, reason] of [
@@ -159,7 +159,7 @@ test('historical eligibility counts opt-outs, byte/mode changes and declaration 
     expect(f.query('SELECT * FROM proofs'), name).toEqual(before);
     expect(f.plan().state, name).toBe('RUN');
   }
-}, 30_000);
+});
 
 test('narrowing, frozen projection members and literal brackets carry from the original result', () => {
   for (const scenario of ['narrow', 'projection', 'brackets', 'newest']) {
@@ -191,7 +191,7 @@ test('narrowing, frozen projection members and literal brackets carry from the o
     expect(f.cli(['rekey', '--apply']).out).toContain('local: carried 1');
     expect(f.plan().state).toBe('PROVEN');
   }
-}, 15_000);
+});
 
 test('source contests, destination vetoes and remote-only unshared reds block publication', async () => {
   for (const kind of ['source', 'red', 'manual', 'unshared']) {
@@ -218,7 +218,7 @@ test('source contests, destination vetoes and remote-only unshared reds block pu
     expect(f.plan().state).toBe('RUN');
     expect(await remote.sql`SELECT * FROM proofs WHERE key != ${source}`).toHaveLength(0);
   }
-}, 30_000);
+});
 
 test('generated historical declarations are shared by tasks and backends and retain the generator cache', async () => {
   const remote = await pg.database();
@@ -264,7 +264,7 @@ await Bun.write(process.env.PROOF_DECLARATIONS + '/tasks.yaml', JSON.stringify({
     version: 'newer',
   });
   expect(f.cli(['rekey', '--apply']).out).toContain('declaration differs: 2');
-}, 30_000);
+});
 
 for (const [manifest, reads] of [
   [{ version: '2', exports: './a.ts' }, 'carried 1'],

@@ -88,7 +88,7 @@ test('unlisted commands and doctor use SQLite without contacting the file endpoi
   } finally {
     listener.stop(true);
   }
-}, 30_000);
+});
 
 let postgres: Postgres;
 beforeAll(async () => {
@@ -96,7 +96,7 @@ beforeAll(async () => {
 }, 180_000);
 afterAll(async () => {
   await postgres?.close();
-}, 30_000);
+});
 
 for (const mode of ['listed', 'url-only', 'override']) {
   test(`${mode} selection shares proof across fresh-state clones`, async () => {
@@ -144,5 +144,5 @@ for (const mode of ['listed', 'url-only', 'override']) {
     } finally {
       listener.stop(true);
     }
-  }, 30_000);
+  });
 }

@@ -121,7 +121,7 @@ test('unkeyed declarations validate all files and representatives before task se
     }),
   );
   cli(['plan']);
-}, 30000);
+});
 test('unkeyed bytes stay in sandboxes while only representatives key them', () => {
   const { r, doc, cli } = fixture();
   expect(cli(['run'])).toContain('proof published');
@@ -172,7 +172,7 @@ test('unkeyed bytes stay in sandboxes while only representatives key them', () =
   doc.tasks.representative.keyed?.pop();
   r.commit({ 'proof.yaml': JSON.stringify(doc) });
   expect(cli(['why', 'closure'])).toContain('now keyed leaf.ts');
-}, 30000);
+});
 
 test('an included file extends unkeyed, as a generated list does', () => {
   const { r, doc, cli } = fixture();
@@ -196,4 +196,4 @@ test('an included file extends unkeyed, as a generated list does', () => {
   const after = keys();
   expect(after.reader).toBe(before.reader);
   expect(after.smoke).not.toBe(before.smoke);
-}, 30_000);
+});

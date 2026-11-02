@@ -80,7 +80,7 @@ test('doctor checks the configured store and config file', async () => {
   expect(configured.code).toBe(0);
   expect(configured.err).toBe('');
   report(configured.out, endpoint, state);
-}, 30_000);
+});
 
 for (const failure of ['schema', 'authentication', 'query']) {
   test(`doctor keeps ${failure} errors loud with a usable replica`, async () => {
@@ -105,7 +105,7 @@ for (const failure of ['schema', 'authentication', 'query']) {
     expect(result.err).not.toContain('wrong-password');
     expect(result.err).not.toContain('using this machine');
     expect(result.out).toBe('');
-  }, 30_000);
+  });
 }
 
 test('doctor reports an outage even with a populated replica', async () => {

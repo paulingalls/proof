@@ -14,7 +14,7 @@ beforeAll(async () => {
 }, 180_000);
 afterAll(async () => {
   await postgres?.close();
-}, 30_000);
+});
 afterEach(() => {
   for (const repo of repos.splice(0)) repo.close();
   for (const path of paths.splice(0)) rmSync(path, { recursive: true, force: true });
@@ -216,4 +216,4 @@ test('v0.14.1 stores remain schema 2 and both real clients preserve proof and sk
   ]);
   expect(await sql`SELECT version FROM schema_version`).toEqual([{ version: 2 }]);
   expect(await sql`SELECT task, count FROM skips`).toEqual([{ task: 'a', count: 1 }]);
-}, 30_000);
+});
