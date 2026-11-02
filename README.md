@@ -239,6 +239,7 @@ exempt:
   Gitignore local dotenv files: nonignored untracked files prevent publication under the
   clean-tree rule. To read a tracked dotenv file, also list its ordinary path as an input;
   this materializes it and keys its bytes. Links cannot reach tracked files.
+  An untracked dirty path at or below a task's declared link is not an input of that task.
 - **Dimensions** declare machine values only for tasks that depend on them:
   ```yaml
   dimensions: {tool: 'printf demo'}

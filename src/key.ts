@@ -39,7 +39,20 @@ function* candidates(available: string[], pattern: string, dirty: string[]) {
   yield* dirty;
 }
 
-export function select(task: Task, tree: RefTree, dirty: string[] = [], working = false) {
+export function select(
+  task: Task,
+  tree: RefTree,
+  dirty: string[] = [],
+  working = false,
+  committed: RefTree = tree,
+) {
+  const linked = new Set(
+    dirty.filter(
+      (path) =>
+        !committed.files.has(path) &&
+        task.links?.some((link) => path === link || path.startsWith(`${link}/`)),
+    ),
+  );
   const view = source(tree, working ? dirty : undefined);
   const paths = new Set<string>();
   const manifests = new Set<string>();
@@ -70,6 +83,7 @@ export function select(task: Task, tree: RefTree, dirty: string[] = [], working 
       ...matching(tree, positive),
       ...(negative ? [...dirty, ...paths] : dirty).filter((path) => glob.match(path)),
     ]) {
+      if (linked.has(path)) continue;
       matched = true;
       if (negative) {
         paths.delete(path);
