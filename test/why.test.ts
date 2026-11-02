@@ -43,7 +43,7 @@ test('why prints plan decision and current parts without executing, validates ta
   repo.commit({ 'proof.yaml': JSON.stringify(doc) });
   const result = repo.cli(['why', 'gate'], env, join(repo.path, 'src'));
   expect(result.code).toBe(0);
-  expect(result.out.split('\n')[0]).toBe(repo.cli(['plan'], env).out.trim());
+  expect(result.out.split('\n')[0]).toBe(repo.cli(['plan'], env).out.split('\n')[0]);
   expect(result.out).toContain(
     `delivered keyed file src/a 100644 ${repo.git('rev-parse', 'HEAD:src/a')}`,
   );

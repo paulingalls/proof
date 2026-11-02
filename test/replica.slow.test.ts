@@ -67,7 +67,7 @@ test('online record and run survive an outage without importing another machineâ
   const { repo, clone, a, b, sql, record, rows } = await setup();
   record('green');
   expect(repo.cli(['run', '--tasks', 'check'], a).code).toBe(0);
-  expect(clone.cli(['plan'], b).out.match(/PROVEN/g)).toHaveLength(2);
+  expect(clone.cli(['plan'], b).out.match(/^PROVEN /gm)).toHaveLength(2);
   expect(
     rows('SELECT task, outcome, host, "commit", finished_at FROM results ORDER BY id'),
   ).toEqual(await sql`SELECT task, outcome, host, "commit", finished_at FROM results ORDER BY id`);
@@ -86,7 +86,7 @@ test('online record and run survive an outage without importing another machineâ
     ]);
     const other = clone.cli(['plan'], b);
     fallback(other);
-    expect(other.out).not.toContain('PROVEN');
+    expect(other.out).not.toMatch(/^PROVEN /m);
   } finally {
     await postgres.restart();
   }
@@ -112,7 +112,7 @@ test('offline results stay local across reopen and online reads never merge loca
       { outcome: 'incomplete' },
       { outcome: 'green' },
     ]);
-    expect(repo.cli(['plan'], a).out.match(/PROVEN/g)).toHaveLength(2);
+    expect(repo.cli(['plan'], a).out.match(/^PROVEN /gm)).toHaveLength(2);
   } finally {
     await postgres.restart();
   }
@@ -123,12 +123,12 @@ test('offline results stay local across reopen and online reads never merge loca
   ] as const) {
     const result = target.cli(['plan'], env);
     expect(result.code).toBe(0);
-    expect(result.out).not.toContain('PROVEN');
+    expect(result.out).not.toMatch(/^PROVEN /m);
   }
   expect(await sql`SELECT * FROM results`).toHaveLength(0);
   postgres.stop();
   try {
-    expect(repo.cli(['plan'], a).out.match(/PROVEN/g)).toHaveLength(2);
+    expect(repo.cli(['plan'], a).out.match(/^PROVEN /gm)).toHaveLength(2);
   } finally {
     await postgres.restart();
   }
@@ -204,7 +204,7 @@ test('a stalled handshake falls back once within five seconds for all tasks', as
     const result = await output(child);
     fallback(result);
     expect(performance.now() - started).toBeLessThan(5000);
-    expect(result.out.match(/RUN/g)).toHaveLength(2);
+    expect(result.out.match(/^RUN /gm)).toHaveLength(2);
   } finally {
     clearTimeout(deadline);
     child.kill();
@@ -222,7 +222,7 @@ test('without a remote configured the local lifecycle has no sharing diagnostics
     expect(result.err).toBe('');
     expect(result.out).not.toMatch(/replica|store|shared|sharing/);
   }
-  expect(repo.cli(['plan'], env).out.match(/PROVEN/g)).toHaveLength(2);
+  expect(repo.cli(['plan'], env).out.match(/^PROVEN /gm)).toHaveLength(2);
 });
 
 for (const reds of [1, 2]) {
@@ -234,7 +234,7 @@ for (const reds of [1, 2]) {
       for (let i = 0; i < 2; i++) {
         const result = observer === 'plan' ? repo.cli(['plan'], a) : record('incomplete');
         expect(result.code).toBe(0);
-        expect(result.out).not.toContain('PROVEN');
+        expect(result.out).not.toMatch(/^PROVEN /m);
       }
       expect(clone.cli(['plan'], { ...b, PROOF_STATE_DIR: state() }).code).toBe(0);
       expect(rows()).toEqual(
@@ -247,14 +247,14 @@ for (const reds of [1, 2]) {
         const result = repo.cli(['plan'], a);
         fallback(result);
         expect(result.out).toContain('RUN lint: contested:');
-        expect(result.out).not.toContain('PROVEN');
+        expect(result.out).not.toMatch(/^PROVEN /m);
         const local = { PROOF_STATE_DIR: a.PROOF_STATE_DIR };
-        expect(repo.cli(['plan'], local).out).not.toContain('PROVEN');
+        expect(repo.cli(['plan'], local).out).not.toMatch(/^PROVEN /m);
         record('incomplete');
         repo.write('src/a.ts', 'dirty');
         record('green');
         repo.git('restore', '.');
-        expect(repo.cli(['plan'], a).out).not.toContain('PROVEN');
+        expect(repo.cli(['plan'], a).out).not.toMatch(/^PROVEN /m);
         record('red');
         expect(rows('SELECT * FROM proofs')).toHaveLength(0);
         record('green');
@@ -313,7 +313,7 @@ test('losing Postgres after planning retains results and makes only the attempte
     expect(result.out).toContain('green lint; proof published; sharing uncertain');
     expect(result.out).toContain('green check; proof published; not shared');
     expect(rows()).toEqual([{ outcome: 'green' }, { outcome: 'green' }]);
-    expect(repo.cli(['plan'], a).out.match(/PROVEN/g)).toHaveLength(2);
+    expect(repo.cli(['plan'], a).out.match(/^PROVEN /gm)).toHaveLength(2);
   } finally {
     clearTimeout(deadline);
     child.kill();
@@ -421,7 +421,7 @@ for (const failure of ['schema', 'authentication', 'query']) {
       expect(result.code).toBe(2);
       expect(result.err).toContain(expected);
       expect(result.err).not.toContain('using this machine');
-      expect(result.out).not.toMatch(/PROVEN|executed-/);
+      expect(result.out).not.toMatch(/^PROVEN |executed-/m);
     }
   });
 }

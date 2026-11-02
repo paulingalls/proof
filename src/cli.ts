@@ -138,9 +138,12 @@ if (command === '--version') {
           since = args[++i];
         else throw new Error(planUsage);
       }
-      const rows = await plan(set, since);
+      const { rows, summary } = await plan(set, since, !json);
       if (json) console.log(JSON.stringify(rows));
-      else for (const row of rows) console.log(renderDecision(row));
+      else {
+        for (const row of rows) console.log(renderDecision(row));
+        console.log(summary);
+      }
     } else {
       if (args.length !== 1 || !args[0]) throw new Error(checkUsage);
       process.exitCode = await check(args[0]);

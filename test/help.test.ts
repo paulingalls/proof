@@ -29,7 +29,8 @@ const usages: Record<string, string> = {
   doctor: 'usage: proof doctor',
   status: 'usage: proof status --ref <ref> [--set <name>] [--json]',
   why: 'usage: proof why <task>',
-  stats: 'usage: proof stats [--set <name>] [--since Nd] [--by <dimension>] [--json]',
+  stats:
+    'usage: proof stats [--never-green | [--since Nd] [--by <dimension>]] [--set <name>] [--json]',
   flakes: 'usage: proof flakes [--since Nd]',
   invalidate: 'usage: proof invalidate --task <t> [--key k | --all]',
   help: 'usage: proof help [<command>]',
@@ -198,4 +199,9 @@ test('rekey help describes permanent opt-in carry', () => {
   const out = repo.cli(['help', 'rekey']).out;
   expect(out).toContain('carry: true');
   expect(out.toLowerCase()).not.toContain('temporar');
+});
+
+test('plan and stats help describe totals and never-green inventory', () => {
+  expect(repo.cli(['help', 'plan']).out).toContain('totals');
+  expect(repo.cli(['help', 'stats']).out).toContain('never-green');
 });

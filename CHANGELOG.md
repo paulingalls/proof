@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.24.0
+
+- Plain `plan` ends with RUN, PROVEN and UNREACHED totals, estimated RUN minutes and
+  the number of tasks without timing. Plan JSON is unchanged.
+- `stats --never-green` lists selected tasks with no all-time green result, with optional
+  `--set` and `--json` output. Existing timing and savings figures are unchanged.
+
 ## 0.23.1
 
 - Plans inspect each distinct link set once, reusing the result across tasks. Execution
