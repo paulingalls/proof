@@ -182,7 +182,16 @@ test('v0.14.1 stores remain schema 2 and both real clients preserve proof and sk
   ).toEqual([]);
   const before = await sql`SELECT key, env_hashes FROM proofs`;
   expect(cli('record', 'a', '--outcome', 'green', '--seconds', '20').code).toBe(0);
-  expect(await sql`SELECT key, env_hashes FROM proofs`).toEqual(before);
+  const proofs = await sql`SELECT key, env_hashes FROM proofs`;
+  expect(proofs).toHaveLength(2);
+  expect(proofs).toEqual(expect.arrayContaining(before));
+  const current = proofs.find(
+    (proof: { key: string; env_hashes: string }) => proof.key !== before[0]?.key,
+  );
+  expect(JSON.parse(current?.env_hashes).map(([name]: [string, string]) => name)).toEqual([
+    'dimension:arch',
+    'dimension:platform',
+  ]);
   expect(await sql`SELECT name, value FROM dimension_values ORDER BY name`).toEqual([
     { name: 'arch', value: 'arm64' },
     { name: 'platform', value: 'ios' },
@@ -196,7 +205,7 @@ test('v0.14.1 stores remain schema 2 and both real clients preserve proof and sk
   for (const query of [
     'SELECT version FROM schema_version',
     'SELECT task, count FROM skips',
-    'SELECT key, env_hashes FROM proofs',
+    'SELECT key, env_hashes FROM proofs ORDER BY key',
     'SELECT name, value FROM dimension_values ORDER BY name',
     'SELECT outcome, seconds FROM results ORDER BY id',
   ])
