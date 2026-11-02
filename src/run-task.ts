@@ -149,7 +149,9 @@ export async function runTask(
       let unbuilt: string | undefined;
       let log = '';
       try {
-        sandbox?.materialize(selection(task, tree, dirty), tree, dirty, staged);
+        // Dirt that reaches no input must not change what runs: the proof names the committed bytes.
+        const visible = input.key === undefined ? dirty : [];
+        sandbox?.materialize(selection(task, tree, visible), tree, visible, staged);
         sandbox?.link(task.links ?? [], inspection);
       } catch (error) {
         // Unattended, the backstop finishes every task it can; a person running `run` is told now.

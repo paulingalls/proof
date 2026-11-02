@@ -139,3 +139,19 @@ test('an unselected declaration changed during execution blocks publication', ()
   repo.git('restore', '.');
   expect(cli('plan').out).toContain('RUN writer: no proof for key');
 });
+
+test('unrelated dirt builds the committed sandbox, so an ignored file cannot shadow it', () => {
+  const { repo, cli } = fixture();
+  repo.commit({
+    'proof.yaml': doc({ closure: task([{ 'imports-of': 'entry.ts' }], 'test -f x.js') }),
+    '.gitignore': 'x.ts\n',
+    'entry.ts': "import './x';\n",
+    'x.js': 'export {};\n',
+    'notes.md': 'clean',
+  });
+  repo.write('x.ts', 'export {};\n');
+  repo.write('notes.md', 'dirty');
+  const result = cli('run');
+  expect(result.code, result.out).toBe(0);
+  expect(result.out).toContain('green closure; proof published');
+});
