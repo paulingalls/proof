@@ -106,18 +106,23 @@ test('super-only validates before selection in every declaration reader', () => 
       expect(result.err + result.out).toContain(pattern);
     }
   }
-  for (const extra of [
-    { tasks: { ...doc.tasks, direct: { ...doc.tasks.direct, keyed: ['test.sh'] } } },
-    {
-      unkeyed: ['test.*'],
-      tasks: { ...doc.tasks, rep: { ...task(['test.sh']), keyed: ['test.sh'] } },
-    },
-  ]) {
+  for (const [diagnostic, extra] of [
+    [
+      'is super-only',
+      { tasks: { ...doc.tasks, direct: { ...doc.tasks.direct, keyed: ['test.sh'] } } },
+    ],
+    [
+      'is also unkeyed',
+      {
+        unkeyed: ['test.*'],
+        tasks: { ...doc.tasks, rep: { ...task(['test.sh']), keyed: ['test.sh'] } },
+      },
+    ],
+  ] as const) {
     r.commit({ 'proof.yaml': JSON.stringify({ ...doc, ...extra }) });
     const result = raw(['plan']);
     expect(result.code, result.err + result.out).toBe(2);
-    expect(result.err).toContain('super-only');
-    expect(result.err).toContain('test.sh');
+    expect(result.err).toContain(`'test.sh' ${diagnostic}`);
   }
 });
 
@@ -141,7 +146,6 @@ test('dirty received super-only files do not publish; unrelated tasks do', () =>
   expect(out).toContain('green direct');
   expect(out).toContain('no proof published');
   expect(out).toContain("dirty input 'test.sh'");
-  expect(out).toContain('proof published');
   r.git('restore', 'test.sh');
   expect(plan().find((row) => row.task === 'direct')?.state).toBe('RUN');
   expect(plan().find((row) => row.task === 'control')?.state).toBe('PROVEN');
