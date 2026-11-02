@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.17.1
+
+- A declared link may be a symlink: an untracked path at or below a task's or generator's `links` is
+  no longer an input, which failed generated declarations and left tasks undecidable.
+- A `node_modules` shared with another checkout resolves workspace packages to this tree, not that
+  checkout's source.
+
 ## 0.17.0
 
 - `proof stats` and `--json` report this machine's generator cache hits, runs and median seconds when
