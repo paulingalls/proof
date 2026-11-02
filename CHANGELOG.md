@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.19.1
+
+- A failed provider start now ends the run summary, after every task line, with its exit code or
+  problem, the number of tasks it blocked, its log path and the tail of that log. Each blocked task's
+  `incomplete` line names the provider.
+
 ## 0.19.0
 
 - A task can declare `carry: true`. `proof rekey` then carries its green to a changed key when `run`,
