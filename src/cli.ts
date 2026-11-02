@@ -18,6 +18,7 @@ import { invalidate } from './invalidate';
 import { lint } from './lint';
 import { plan, renderDecision } from './plan';
 import { record } from './record';
+import { rekey } from './rekey';
 import { run } from './run';
 import { stats } from './stats';
 import { status } from './status';
@@ -29,6 +30,7 @@ const commands = [
   'check',
   'plan',
   'record',
+  'rekey',
   'lint',
   'run',
   'doctor',
@@ -63,7 +65,9 @@ if (command === '--version') {
     const top = Bun.spawnSync(['git', 'rev-parse', '--show-toplevel']);
     if (top.exitCode !== 0) throw new Error(top.stderr.toString().trim());
     process.chdir(top.stdout.toString().trim());
-    if (command === 'invalidate') {
+    if (command === 'rekey') {
+      await rekey(args);
+    } else if (command === 'invalidate') {
       console.log(await invalidate(args));
     } else if (command === 'flakes') {
       await flakes(args);

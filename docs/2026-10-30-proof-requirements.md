@@ -65,7 +65,7 @@ The package has its own tests for its own behaviour, on synthetic repos it build
     in a temporary sandbox; the generator and its inputs are versioned and reviewed instead of its
     output (Paul, 2026-11-01).
   - What has been proven lives in one shared store.
-  - "What must run" is one deterministic lookup: the same tree and environment give the same answer on any
+  - "What must run" is one deterministic lookup: the same tree and declared dimensions give the same answer on any
     clone or machine.
 - **R2. No diff base.** A key is computed from the tree itself, never from a diff against a merge-base or
   branch point. This removes app-a's root cause: `scripts/static-gates.sh:2` diffs against
@@ -78,11 +78,15 @@ The package has its own tests for its own behaviour, on synthetic repos it build
   - task id
   - scheme version
   - the declaration's *meaning* (not its YAML text, so cosmetic edits don't re-prove)
-  - the content of the task's inputs: blob hashes of derived and declared files, json projections, and value
-    hashes of declared env names
-  - a small environment class
+  - the content of the task's tree-derived inputs: blob hashes of derived and declared files and projections
+  - declared dimension identities
 
   Nothing else goes into the key.
+  - **Amendment, Paul, 2026-11-02:** `env` is a sandbox pass-through allowlist only.
+    `{dotenv}` remains accepted but is ignored: changed values or an unavailable file cannot
+    change a key or decidability. Remove it and use `links` for ignored-file access.
+    Tracked `dotenv-keys` remains tree-derived. Keep scheme 4: no-env and dimension-only
+    keys stay unchanged.
   - Paul, 2026-10-30: `package.json#version` is excluded at every depth and through every selection
     route, including direct imports, paths and globs. An explicit `{path: package.json, json: [version]}`
     opts in. For a whole-selected valid JSON object, key exact bytes with only the first
@@ -101,17 +105,17 @@ The package has its own tests for its own behaviour, on synthetic repos it build
     projections and files reached through `imports-of` and `maestro`; task `keyed` restores
     their existing contributions for representatives. Traversal continues through excluded
     files, so their imports still key. Sandboxes retain exact bytes, extending the existing
-    key-versus-sandbox split. Env value tuples remain keyed. No key-scheme change; without
+    key-versus-sandbox split. Environment values do not enter keys. No key-scheme change; without
     `unkeyed`, keys are unchanged. R8's dirty-input rule still applies, and R10's fresh super
     run is the backstop.
 - **R4. Providers govern lifecycle, never keys.** Providers are the shared stack, a test database, the iOS app
   build and the web export. They start only when some RUN task needs them. A task's key holds the task's own
   inputs, never a provider's whole input set. A stack gate's inputs include a coarse named set `$stack` (the
-  backend source it exercises) and the stack's real identity: the included env-file values the stack reads.
+  backend source it exercises). Environment values do not enter keys.
   - Paul, 2026-10-30: drop the provider-key class (absent, dummy or real). Real keys run only in
     the super run, which ignores proofs, so a dummy green cannot stand in for a real run.
     A class in the key would hide super reds from dummy proofs and prevent reuse of super greens.
-    Repos exclude provider keys from dotenv identity.
+    Provider exports do not enter keys.
   - Journeys (native and web) exercise the running backend, so their inputs include `$stack` too: a backend
     change re-runs them. Never a stale PROVEN; a repo narrows `$stack` per journey if that costs too much
     (Paul, 2026-10-30, resolving design §4.2 against §1.2 cases 4, 7 and 10).
@@ -120,6 +124,9 @@ The package has its own tests for its own behaviour, on synthetic repos it build
     backend change that breaks only those stays green until R10's super run. That run is the
     backstop and must run regularly; a miss it finds becomes a representative or a selection case.
     Cases 4, 7 and 10 stand at their narrower sets: 69 to 6, 276 to 7, 80 to 7 tasks.
+  - **Amendment, Paul, 2026-11-02:** stack environment and dotenv values no longer key
+    tasks. Keys cover tree-derived inputs and declared dimensions only; `links` supplies
+    ignored-file access and `env` forwards caller values into sandboxes.
 - **R5. Derive, then declare.**
   - **Derived:** the import closure, from the language's own tooling rather than hand-written globs:
     Bun/TypeScript via `bun build --metafile` or the TypeScript program (honouring tsconfig paths and workspace
@@ -182,10 +189,11 @@ The package has its own tests for its own behaviour, on synthetic repos it build
   - **Connection string:** from the environment or user config, never in the repo.
   - **Moving hosts** is `pg_dump`/restore, or starting empty: it's a cache, so loss costs time, never
     correctness.
-- **R13. Metadata only:** task, key, outcome, host, env class, commit, seconds, timestamps,
-  per-declared-env-name absent-or-value hashes, contradiction records. Paul, 2026-10-30: store these
-  env identities per proof for `why`; never env values. Never logs or output: app-a's logs can contain
+- **R13. Metadata only:** task, key, outcome, host, commit, seconds, timestamps,
+  dimension hashes and contradiction records. Never logs or output: app-a's logs can contain
   private personal data.
+  - **Amendment, Paul, 2026-11-02:** new proofs store only `dimension:` identities in
+    `env_hashes`; `why` compares dimensions only. No schema change; historical rows stay.
   - **Amendment, Paul, 2026-11-01:** declared non-secret dimension values may be stored per
     result. This is a scoped exception for dimension stdout declaring facts, not general command
     output. A dimension must not print a secret, even when reading ambient env. Task env values,
@@ -209,7 +217,7 @@ The package has its own tests for its own behaviour, on synthetic repos it build
 ### The package
 - **R18. TypeScript on Bun, zero runtime dependencies, MIT,** on npm under a scoped name (plain `proof`,
   `proven` and similar are taken).
-  - **Core:** parser and lint, hashing over the git index, env class, key, store client (`Bun.sql`,
+  - **Core:** parser and lint, hashing over the git index, declared dimensions, key, store client (`Bun.sql`,
     `bun:sqlite`), planner, executor, sandboxes, providers and lanes, CLI.
   - **Shipped adapters:** as in R5.
   - Repo adapters under `proof.d/adapters/` dropped 2026-10-30: no current consumer needs it

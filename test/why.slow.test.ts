@@ -231,7 +231,7 @@ test('working declarations compare semantic hashes and removed env names', () =>
   const changed = repo.cli(['why', 'gate'], env);
   expect(changed.code).toBe(0);
   expect(changed.out).toContain('declaration changed');
-  expect(changes(changed.out)).toEqual(['changed env PROOF_WHY_MODE']);
+  expect(changes(changed.out)).toEqual([]);
 }, 30_000);
 
 test('dirty directories and nested repositories are unavailable, and deleted projections are removed', () => {
@@ -274,7 +274,7 @@ test('a working import cannot traverse an unsupported nested repository', () => 
   expect(changes(result.out)).toEqual(['changed file src/a.ts']);
 }, 30_000);
 
-test('publication stores env identities for record and run; why names members and env only', () => {
+test('publication excludes env identities and why ignores historical env hashes', () => {
   for (const publisher of ['record', 'run']) {
     const { repo, env } = fixture(['src/**', { path: 'config.json', json: ['selected'] }]);
     const doc = JSON.parse(repo.git('show', 'HEAD:proof.yaml'));
@@ -292,10 +292,13 @@ test('publication stores env identities for record and run; why names members an
       const row = db
         .query('SELECT env_hashes FROM proofs ORDER BY result_id DESC LIMIT 1')
         .get() as { env_hashes: string };
-      expect(JSON.parse(row.env_hashes)).toEqual([
-        ['PROOF_WHY_EMPTY', new Bun.CryptoHasher('sha256').update('').digest('hex')],
-        ['PROOF_WHY_MODE', new Bun.CryptoHasher('sha256').update('private-original').digest('hex')],
-      ]);
+      expect(JSON.parse(row.env_hashes)).toEqual([]);
+      db.query('UPDATE proofs SET env_hashes = ?').run(
+        JSON.stringify([
+          ['PROOF_WHY_MODE', 'historical'],
+          ['stack.conf:FLAG', 'historical'],
+        ]),
+      );
     } finally {
       db.close();
     }
@@ -305,11 +308,7 @@ test('publication stores env identities for record and run; why names members an
     repo.commit({ 'config.json': '{"selected":2,"irrelevant":"changed"}' });
     const result = repo.cli(['why', 'gate'], { ...env, PROOF_WHY_MODE: 'private-new' });
     expect(result.code).toBe(0);
-    expect(changes(result.out)).toEqual([
-      'changed member config.json selected',
-      'changed env PROOF_WHY_EMPTY',
-      'changed env PROOF_WHY_MODE',
-    ]);
+    expect(changes(result.out)).toEqual(['changed member config.json selected']);
     expect(result.out + result.err).not.toContain('private-original');
     expect(result.out + result.err).not.toContain('private-new');
   }
@@ -374,7 +373,7 @@ test('why prefers matching dimensions, including contested and offline proofs, b
       (result) => result.out.split('\n').filter((line) => line === notice).length,
     ),
   }).toEqual({ baselines: [a, b, a, a, b], notices: [0, 1, 0, 0, 1] });
-  expect(changes(matching.out)).toEqual(['changed file src/a.ts', 'changed env PROOF_WHY_MODE']);
+  expect(changes(matching.out)).toEqual(['changed file src/a.ts']);
   expect(changes(missing.out)).toEqual(['changed env dimension:platform']);
   expect(offline.err.trim().split('\n')).toEqual([
     expect.stringMatching(/^store unreachable \(.+\); using this machine's own proofs$/),

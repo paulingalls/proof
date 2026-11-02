@@ -186,14 +186,14 @@ test('invalid committed declarations stay invalid despite a working repair', () 
   expect(result.out).toBe('');
 });
 
-test('caller declared env selects the proof and unreachable store uses the replica once', () => {
+test('caller declared env preserves the proof and unreachable store uses the replica once', () => {
   const { repo, env } = fixture({ gate: { ...task(), env: ['PROOF_STATUS_MODE'] } });
   const same = { ...env, PROOF_STATUS_MODE: 'a' };
   record(repo, same);
   expect(status(repo, same).code).toBe(0);
   const changed = status(repo, { ...same, PROOF_STATUS_MODE: 'b' });
-  expect(changed.code).toBe(1);
-  expect(JSON.parse(changed.out)[0].reason).toBe('no proof for key');
+  expect(changed.code).toBe(0);
+  expect(JSON.parse(changed.out)[0].state).toBe('PROVEN');
   const listener = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } });
   const port = listener.port;
   listener.stop(true);

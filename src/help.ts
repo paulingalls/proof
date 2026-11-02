@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { flakesUsage } from './flakes';
 import { invalidateUsage } from './invalidate';
 import { recordUsage } from './record';
+import { rekeyUsage } from './rekey';
 import { runUsage } from './run';
 import { statsUsage } from './stats';
 import { whyUsage } from './why';
@@ -22,6 +23,10 @@ const commands: Record<string, [string, string]> = {
   doctor: [doctorUsage, 'Check store health and declared dimension values.'],
   run: [runUsage, 'Run selected tasks and record their results.'],
   record: [recordUsage, 'Record an externally obtained task result.'],
+  rekey: [
+    rekeyUsage,
+    'Temporarily carry unchanged HEAD proofs to dimension-only keys; dry run by default.',
+  ],
   invalidate: [invalidateUsage, 'Delete proofs with a manual audit record.'],
   flakes: [flakesUsage, 'Report tasks ranked by contradictions.'],
   stats: [
@@ -60,7 +65,7 @@ proof.yaml root fields:
 
 Task fields:
   run: command (required); inputs: nonempty input list (required).
-  env: list of keyed environment names; links: list of trusted checkout paths.
+  env: pass-through allowlist of caller environment names; links: list of trusted checkout paths.
   needs: list of provider names; sets: list of task selection groups.
   lane: declared lane name, or reserved solo (no root declaration needed).
   dimensions: list of root dimension names; keyed: file patterns restoring key contribution.
@@ -72,7 +77,7 @@ Provider fields:
 Input forms:
   Strings/globs, ordered quoted '!' negation, and $name references to named inputs.
   {path, json: [members]}, {path, dotenv-keys: true}, {dotenv, exclude?: [names]},
-  {imports-of: entry}, {maestro: flow}.
+  {imports-of: entry}, {maestro: flow}. {dotenv} is deprecated and ignored; use links.
 
 Configuration environment:
   PROOF_STORE: Postgres URL; overrides the store configuration file.

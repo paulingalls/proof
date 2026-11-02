@@ -3,7 +3,7 @@
 `proof` tells anyone working on a repository exactly which tests and gates must
 run after a change, and which are already proven. It shares that proof across
 clones and machines, so a green result earned on one machine is reused by every
-other machine with the same tree and environment.
+other machine with the same tree and declared dimensions.
 
 The goal: run only what a change can actually affect, and nothing extra.
 
@@ -12,14 +12,13 @@ The goal: run only what a change can actually affect, and nothing extra.
 - **Declarations live in the repo.** `proof.yaml` (plus optional included or generated declarations)
   says what each task depends on. TypeScript inputs come from the import closure
   (a Python import graph is planned). You declare only what imports cannot see,
-  such as fixtures, SQL, spawned scripts and env names.
+  such as fixtures, SQL, spawned scripts and runtime files.
 - **A key is computed from the tree, never from a diff.** A task's key hashes its id,
-  the meaning of its declaration, the content of its inputs, and a small environment
-  class. The same tree and environment give the same answer on any clone or
+  the meaning of its declaration, the content of its tree-derived inputs, and declared dimensions. The same tree and declared dimensions give the same answer on any clone or
   machine (OS, CPU and Bun version are deliberately not in the key), and a key can
   be computed for any ref without a checkout.
 - **Proofs live in one shared store.** Postgres (optional) stores metadata only:
-  task, key, outcome, host, timings, per-name env hashes, declared dimension values and
+  task, key, outcome, host, timings, dimension hashes, declared dimension values and
   contradictions, never logs. Each machine
   keeps a local SQLite copy of its own results.
 - **Declarations are enforced, not trusted.** Tasks run in a sandbox holding only
@@ -89,7 +88,7 @@ tasks:
       - {imports-of: test/math.test.ts}
       - 'fixtures/**'
     sets: [commit, push]       # repository-owned task boundaries
-    env: [CI]                  # env names that reach the task and enter its key
+    env: [CI]                  # caller env names passed into the sandbox
     links: [node_modules]      # untracked paths the sandbox links in
 coverage: ['src/**', 'scripts/**']
 exempt:
@@ -107,7 +106,7 @@ exempt:
 
   Ordinary globs consider tracked paths and untracked paths that Git does not ignore. An ignored literal
   input is missing: it stays outside the sandbox and prevents recording, with its path reported.
-  Use `links` for ignored file access and `{dotenv: path}` for dotenv value identities.
+  Use `links` for ignored file access. Remove deprecated `{dotenv: path}` inputs; they are ignored.
 - **Closure manifests**: a `package.json` reached only as import resolver metadata keys
   `name`, `main`, `module`, `type`, `exports`, `imports`, `workspaces`, `extends` and
   `compilerOptions`. A committed `version` bump or changelog edit therefore preserves the closure
@@ -197,8 +196,7 @@ exempt:
   This applies to direct inputs, JSON and dotenv-name projections, resolver manifest members,
   and files reached through `imports-of` or `maestro`. Traversal continues through an unkeyed
   file, so its imports still key. Sandboxes keep exact bytes, and dirty inputs still RUN.
-  `{dotenv: path}` env values stay keyed: those values identify the stack and the sandbox
-  does not receive that file. The commit first adopting `unkeyed` moves affected keys once;
+  Environment values and deprecated `{dotenv: path}` inputs do not enter keys. The commit first adopting `unkeyed` moves affected keys once;
   subsequent committed file edits retain proof for nonrepresentatives. Repos without
   `unkeyed` keep their existing keys. `why` lists each received unkeyed path.
 - **Maestro inputs**, such as `{maestro: flows/journey.yaml}`, select the flow and its
@@ -211,34 +209,21 @@ exempt:
   task undecidable, naming the flow and reference. Declare other runtime reads, such as
   `assertScreenshot` reference images, with globs. For a declared task `a`, use
   `proof plan --json`, `proof run --tasks a`, and `proof lint` to inspect, execute and check ownership.
-- **Dotenv identity** has two forms:
+- **Dotenv names** are tree-derived inputs:
   ```yaml
   inputs:
-    - {path: .env.example, dotenv-keys: true}
-    - {dotenv: .env.docker, exclude: [A, API_KEY]}
+    - {path: example.conf, dotenv-keys: true}
   ```
   `dotenv-keys` projects sorted unique names from a tracked file at the requested ref.
   Committed value-only changes preserve proof; dirty tracked edits run undecidable.
-  `dotenv` reads the invocation checkout at every ref, including `status --ref`; each included
-  name contributes a value hash under `<file>:<NAME>`. Omit `exclude` to include every name;
-  when supplied it must be a nonempty list. Reordering or repeating declarations changes nothing.
-  Ordinary `env` names cannot contain `:`. Values never enter proof metadata or diagnostics;
-  `proof why gate` reports, for example, `changed env .env.docker:FLAG`.
+  Blank lines, comments, optional `export`, empty values and single-line quotes are accepted.
+  Missing, unreadable or malformed tracked files run undecidable without printing source.
 
-  Both forms accept blank lines, comments, optional `export`, whitespace around `=`, empty
-  values and single-line single or double quotes. Unquoted inline comments need whitespace
-  before `#`; quoted `#` is literal. After closing quotes, only whitespace or a whitespace-led
-  comment is allowed. Escapes protect double quotes but are not decoded; there is no variable
-  expansion or command substitution. Repeated assignments use the last value. Unsupported
-  syntax makes the task undecidable with a file and line number, without printing source.
-  Missing or unreadable files also run undecidable and publish nothing. `proof lint` validates
-  checkout paths without requiring dotenv files to exist or be tracked.
-
-  `dotenv` provides identity only: it neither supplies task environment variables nor copies
-  the file into the sandbox. A task reading an ignored file adds `links: [.env.docker]`.
-  Gitignore local dotenv files: nonignored untracked files prevent publication under the
-  clean-tree rule. To read a tracked dotenv file, also list its ordinary path as an input;
-  this materializes it and keys its bytes. Links cannot reach tracked files.
+  `{dotenv: path, exclude: [names]}` is deprecated and ignored, even if the file is missing
+  or malformed. Remove it and use `links: [stack.conf]` when a task needs an ignored file.
+  `env` is only a pass-through allowlist; caller values, including absence, never enter keys.
+  To read and key a tracked file's bytes, list its ordinary path as an input. Links cannot
+  reach tracked files. Nonignored untracked files still prevent clean publication.
   An untracked dirty path at or below a task's declared link is not an input of that task.
 - **Dimensions** declare machine values only for tasks that depend on them:
   ```yaml
@@ -318,7 +303,8 @@ Providers execute through `sh -c` in the checkout with the caller's environment.
 keep their sandbox and declared environment, plus exports from their needed providers.
 `start` receives `PROOF_PROVIDER_ENV`, the path of a private mode-600 file in the state directory.
 It may write literal `NAME=value` lines there; proof reads and removes it after startup.
-`URL` above belongs outside task `env`: provider exports never enter keys or store records, so
+`URL` above must stay outside task `env` to avoid a duplicate export name. Exports never enter
+keys or store records, so
 clones with different resource addresses can share proofs. Tasks without `needs: [stack]` receive
 none of its exports. Empty files preserve the existing lifecycle. See [the export rules](docs/commands.md#provider-environment)
 for names, conflicts and privacy. Included tasks use the root provider names;
@@ -361,7 +347,12 @@ Both print the same usage and description; `proof run -h` also works. Every comm
 these help forms.
 
 `plan`, `run`, `why`, `status`, `record`, `invalidate`, `flakes`, `stats`, `check`, `lint`,
-`doctor` and `help`. Every flag, output line and exit code is in [docs/commands.md](docs/commands.md).
+`doctor`, `rekey` and `help`. Every flag, output line and exit code is in [docs/commands.md](docs/commands.md).
+
+`proof rekey [--apply]` is a temporary migration command, removed in the following release.
+On a clean HEAD it carries valid older proofs to dimension-only keys without running tasks.
+Run `proof rekey` to preview counts, then `proof rekey --apply` to write them. See
+[rekey details](docs/commands.md#rekey) for refusals and backend behavior.
 
 ## Sharing proofs across machines
 
@@ -394,7 +385,7 @@ suite. The shape, using Docker and [Tailscale](https://tailscale.com):
 
 If the store is unreachable, `proof` says so and uses that machine's own proofs; results recorded
 meanwhile aren't uploaded later. `invalidate` deletes locally but exits 2 if shared deletion cannot
-be confirmed, warning that the shared proof may survive. The store holds metadata only (task, key, outcome, host, timings, per-name env hashes, declared
+be confirmed, warning that the shared proof may survive. The store holds metadata only (task, key, outcome, host, timings, dimension hashes, declared
 dimension values), never logs or general command output. It's a cache: losing it costs re-runs, never correctness.
 
 ## How this repo uses proof

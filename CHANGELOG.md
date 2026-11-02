@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.18.0
+
+- A task's key is now its tree-derived inputs plus declared dimensions. `env` only passes values into
+  the sandbox, and `{dotenv}` inputs are accepted but ignored; use `links` for ignored files. Make a
+  value a dimension if it changes what a task proves.
+- Tasks with env or dotenv inputs re-key once. `proof rekey [--apply]` carries proofs that are still
+  valid for this tree to their new keys, without running anything.
+
 ## 0.17.2
 
 - `proof why` compares with the newest proof holding this machine's dimension values, and says so when

@@ -33,19 +33,19 @@ function success(result: ReturnType<Repo['cli']>) {
 }
 const record = ['record', 'lint', '--outcome', 'green'];
 
-test('declared values, absence and empty strings select distinct proofs', () => {
+test('declared values, absence and empty strings preserve proof', () => {
   const { repo, state } = fixture(['MODE']);
   expect(success(repo.cli(record, { ...state, MODE: 'a' }))).toContain('proof published');
   for (const [MODE, expected] of [
     ['a', 'PROVEN lint'],
-    ['b', 'RUN lint: no proof for key'],
-    [undefined, 'RUN lint: no proof for key'],
+    ['b', 'PROVEN lint'],
+    [undefined, 'PROVEN lint'],
   ] as const) {
     expect(success(repo.cli(['plan'], { ...state, MODE }))).toContain(expected);
   }
   expect(success(repo.cli(record, state))).toContain('proof published');
   for (const MODE of ['', 'absent']) {
-    expect(success(repo.cli(['plan'], { ...state, MODE }))).toContain('RUN lint: no proof for key');
+    expect(success(repo.cli(['plan'], { ...state, MODE }))).toContain('PROVEN lint');
   }
   expect(success(repo.cli(['plan'], state))).toContain('PROVEN lint');
   expect(success(repo.cli(['plan'], { ...state, UNDECLARED: 'changed' }))).toContain('PROVEN lint');
@@ -64,11 +64,11 @@ test('check compares env declarations as sets with name-bearing entries', () => 
   ])
     refs.push(repo.commit({ 'proof.yaml': declaration(env) }));
   const cases = [
-    { name: 'add', from: refs[0], to: refs[1], expect: ['lint'] },
-    { name: 'extend', from: refs[1], to: refs[2], expect: ['lint'] },
+    { name: 'add', from: refs[0], to: refs[1], expect: [] },
+    { name: 'extend', from: refs[1], to: refs[2], expect: [] },
     { name: 'reorder', from: refs[2], to: refs[3], expect: [] },
     { name: 'repeat', from: refs[3], to: refs[4], expect: [] },
-    { name: 'replace', from: refs[5], to: refs[6], expect: ['lint'] },
+    { name: 'replace', from: refs[5], to: refs[6], expect: [] },
   ];
   repo.write('.git/cases.yaml', JSON.stringify(cases));
   const out = success(repo.cli(['check', '.git/cases.yaml'], { ...state, MODE: 'a', OTHER: 'a' }));
@@ -139,14 +139,32 @@ test('recorded env values never reach store bytes or CLI output', () => {
     expect(out + err).not.toContain('secret-value');
 });
 
-test('nonempty env preserves the released version-4 key', () => {
+test('nonempty env uses the pinned no-env version-4 key', () => {
   const { repo, state } = fixture(['MODE']);
   expect(success(repo.cli(record, { ...state, MODE: 'a' }))).toContain('proof published');
   const db = new Database(join(state.PROOF_STATE_DIR, 'proof.db'));
   try {
-    const releasedHash = 'fb7dd85b03e39fac3c9ea4c73dc1f92bf819eabeae8c536ddc145498f1f5e1cf';
+    const releasedHash = '8a638ff8a65e59fb52ec72596e701aa262def4383b69816aab9e11003aa985f9';
     expect(db.query('SELECT key FROM proofs').all()).toEqual([{ key: releasedHash }]);
   } finally {
     db.close();
+  }
+});
+
+test('allowlisted values still reach fresh sandboxes while ordinary runs reuse proof', () => {
+  const { repo, state } = fixture(['MODE']);
+  const doc = JSON.parse(declaration(['MODE']));
+  doc.tasks.lint.run = `printf "marker:%s:hidden:%s" "\${MODE-unset}" "\${UNDECLARED-unset}"`;
+  repo.commit({ 'proof.yaml': JSON.stringify(doc) });
+  let key: string | undefined;
+  for (const MODE of ['first', 'second', '', undefined]) {
+    const env = { ...state, MODE, UNDECLARED: 'hidden' };
+    const out = success(repo.cli(['run', '--fresh'], env));
+    expect(out).toContain(`marker:${MODE ?? 'unset'}:hidden:unset`);
+    const row = JSON.parse(success(repo.cli(['plan', '--json'], env)))[0];
+    key ??= row.key;
+    expect(row.key).toBe(key);
+    expect(row.state).toBe('PROVEN');
+    expect(success(repo.cli(['run'], env))).not.toContain('marker:');
   }
 });

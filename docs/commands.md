@@ -224,7 +224,7 @@ proof, including for a contested key. Incomplete results and interrupts delete n
 
 Ordinary globs consider tracked paths and untracked paths that Git does not ignore. An ignored literal
 input is missing: it stays outside the sandbox and prevents recording, with its path reported.
-Use `links` for ignored file access and `{dotenv: path}` for dotenv value identities.
+Use `links` for ignored file access. Remove deprecated `{dotenv: path}` inputs; they are ignored.
 
 A dirty tree still executes (a dirty declaration runs without recording) and records results, but says `no proof published` with a reason.
 A red over dirty selected inputs cannot delete proof of the committed bytes; unrelated dirt
@@ -262,7 +262,7 @@ Committing the input edit gives plan a different key. Plan exits 0 throughout;
 status exits 1 here because the task has no proof.
 
 `proof why <task>` starts with the task's `plan` decision, then prints its current key
-parts: selected paths with file identities and modes, JSON member identities, declared env and dimension names
+parts: selected paths with file identities and modes, JSON member identities, declared dimension names
 (without values), and the declaration hash. These parts use the files on disk, including staged
 and unstaged edits, deletions and untracked additions that Git does not ignore. Git decides whether a
 tracked path is clean, so a line-ending or LFS filter never reads as a change; blob ids of
@@ -310,9 +310,8 @@ no proof has these dimension values; dimensions differ; comparing with newest pr
 For tasks without dimensions, the baseline remains the newest surviving proof across all keys.
 Newest means greatest finish time, then result id; the comparison names its commit, host and time.
 Historical inputs and declarations come from that commit's Git blobs.
-Changes list added, removed and changed paths or JSON members, changed env names, and
-`declaration changed` when the command or links changed. Env comparisons use stored hashes,
-never today's env as a substitute for historical values. Mode changes count too.
+Changes list added, removed and changed paths or JSON members, changed dimensions, and
+`declaration changed` when the command or links changed. Dimension comparisons use stored hashes; historical env and dotenv identities are ignored. Mode changes count too.
 
 With no differences it says `no inputs changed`, or `no comparable inputs changed` when something
 couldn't be compared; unresolved inputs print their reasons and available parts. Older proofs say
@@ -325,11 +324,9 @@ is authoritative while online; an unreachable store announces fallback once and 
 machine's own proofs.
 
 `proof status --ref <ref> [--set <name>] [--json]` judges selected tasks using that ref's committed
-`proof.yaml`, included declarations and input bytes, plus the caller's declared env and
-dimension values.
+`proof.yaml`, included declarations and input bytes, plus this machine's declared dimension values.
 It resolves branches, commit ids, lightweight tags and annotated tags without checking out the
-ref, running tasks or starting providers. Input bytes come from the ref; env, dotenv and dimension
-values come from this invocation. For example:
+ref, running tasks or starting providers. Input bytes come from the ref; dimension values come from this invocation. Env and deprecated dotenv inputs do not enter keys. For example:
 
 ```sh
 bunx proof status --ref HEAD --json
@@ -343,8 +340,7 @@ any selected task is RUN, and 2 for an unknown ref, invalid declarations, usage 
 unreachable store uses the local replica and reports the fallback on stderr, keeping JSON
 stdout parseable.
 
-Status reads the ref's committed files and declarations, declared env, checkout dotenv values,
-and dimension commands evaluated on the current machine. `plan` also looks at this checkout,
+Status reads the ref's committed files and declarations, plus dimension commands evaluated on the current machine. `plan` also looks at this checkout,
 so `status --ref HEAD` can say PROVEN where
 `plan` says RUN when the checkout has something the commit doesn't: an uncommitted, unignored file
 a task selects, a file hidden by `assume-unchanged` or
@@ -513,6 +509,46 @@ manual veto or replay on reconnect. Another clone learns the deletion when plann
 a locally retained proof then runs offline with `contested: red at <commit>`, using the
 existing contest representation for the manual deletion. See [store operations](store.md).
 
+
+## Rekey
+
+`proof rekey [--apply]` temporarily migrates scheme-4 proofs made before environment values
+stopped keying. It will be removed in the following release. It selects every declared task
+at committed HEAD and refuses any dirty checkout, including unrelated changes. It resolves
+current dimensions and uses the existing declaration reader (including generated declarations),
+but never runs tasks or starts providers.
+
+```sh
+proof rekey
+proof rekey --apply
+```
+
+Without `--apply`, no proof or result rows are written. Both modes open and initialize the
+normal stores, so opening an older schema still migrates it. With `--apply`, each backend
+inserts proofs in one transaction under the new keys, pointing to its own existing result ids.
+Old proof rows, results, timestamps and dimension values stay intact. Repeating apply writes
+nothing new. No remote results are copied into the local replica.
+
+Each backend prints `local:` or `shared:`, a carried (or would-carry) proof count, skipped proof
+count, unchanged proof count, and undecidable task count. It also prints each skipped-proof
+reason with its count, including zero: `contested`, `destination rejected`, `null identities`,
+`dimensions differ`, `key differs`, `already present`. Undecidable counts are tasks; the other
+counts are proof rows. Already-current keys count as unchanged, including legacy NULL metadata.
+
+A candidate must have stored identities matching this machine's dimension identities, and its
+old key must recompute exactly from HEAD's declaration, tree inputs and all stored identities.
+NULL identities cannot be reconstructed. Changed inputs or commands/links are not carried.
+Multiple valid env variants converging on one key choose the newest result (finish time, then
+result id); the remaining variants count as already present. A contested source in either
+backend vetoes that destination on both, including sibling variants. A contested destination,
+or any red or manual result there, also refuses a carry, preventing migration from undoing a
+fresh red or invalidation. Existing destination proofs are never overwritten.
+
+A configured unreachable store exits 2 in either mode before carrying any proofs; there is no
+local fallback. Both backends are read before writes. Transactions are per backend, not across
+backends: a later failure may leave valid earlier carries; rerun idempotently. Run this migration
+in a quiet window; it does not coordinate with concurrent result writers. Ordinary and fresh
+red/contest rules continue under carried keys.
 
 ## Generated declarations
 

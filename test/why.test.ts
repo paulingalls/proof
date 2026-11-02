@@ -46,7 +46,7 @@ test('why prints plan decision and current parts without executing, validates ta
   expect(result.out.split('\n')[0]).toBe(repo.cli(['plan'], env).out.trim());
   expect(result.out).toContain(`file src/a 100644 ${repo.git('rev-parse', 'HEAD:src/a')}`);
   expect(result.out).toContain('member config.json selected 100644 ');
-  expect(result.out).toContain('env PROOF_WHY_MODE\n');
+  expect(result.out).not.toContain('env PROOF_WHY_MODE\n');
   expect(result.out).toMatch(/declaration [a-f0-9]{64}/);
   expect(result.out).toContain('no proof for this task');
   expect(existsSync(join(repo.path, 'executed'))).toBe(false);

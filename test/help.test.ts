@@ -23,6 +23,7 @@ const usages: Record<string, string> = {
   check: 'usage: proof check <cases.yaml>',
   plan: 'usage: proof plan [--set <name>] [--json]',
   record: 'usage: proof record <task> --outcome green|red|incomplete [--seconds N]',
+  rekey: 'usage: proof rekey [--apply]',
   lint: 'usage: proof lint',
   run: 'usage: proof run [--fresh | --staged] [--jobs N] [--tasks <id> ... | --set <name>]',
   doctor: 'usage: proof doctor',
