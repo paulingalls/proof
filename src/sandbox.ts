@@ -123,9 +123,10 @@ export function inspectLinks(
           if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
           throw error;
         }
-        if (within(repo, target) && !inRoots(target)) {
+        if (!inRoots(target)) {
           const mapped = packageName ? names(file)?.get(packageName) : undefined;
-          if (mapped !== undefined && target === resolve(repo, mapped)) {
+          // A node_modules shared with another checkout resolves workspaces into that checkout.
+          if (mapped !== undefined && (target === resolve(repo, mapped) || !within(repo, target))) {
             const entry = layout.entries.find((entry) => entry.path === file);
             if (entry) entry.redirect = mapped;
             if (
@@ -136,8 +137,10 @@ export function inspectLinks(
               escapes.push(`workspace redirect changed '${file}'`);
             return;
           }
-          escapes.push(`link escape '${file}' -> '${target}'`);
-          return;
+          if (within(repo, target)) {
+            escapes.push(`link escape '${file}' -> '${target}'`);
+            return;
+          }
         }
         if (!packageName) return;
         const manifest = join(file, 'package.json');

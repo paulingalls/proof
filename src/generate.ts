@@ -104,7 +104,7 @@ function attempt(
       throw new Error('dotenv inputs are not supported');
     const view = dirty.length ? new WorkingTree(tree, dirty) : tree;
     const present = dirty.filter((path) => view.files.has(path));
-    const selected = select(decl, view, present, dirty.length > 0);
+    const selected = select(decl, view, present, dirty.length > 0, tree);
     if (selected.reason) throw new Error(selected.reason);
     for (const input of decl.inputs) {
       if (typeof input !== 'string' && 'path' in input) selected.paths.add(input.path);

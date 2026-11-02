@@ -1,5 +1,13 @@
 import { afterEach, expect, test } from 'bun:test';
-import { chmodSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { Repo } from './support/repo';
 
@@ -251,3 +259,33 @@ test('an unwritable event directory reports the failure without changing lint re
     chmodSync(env.PROOF_STATE_DIR, 0o755);
   }
 });
+
+for (const link of ['node_modules', 'apps/x/node_modules']) {
+  test(`generator with declared symlink ${link} preserves rows cold, warm and edited`, () => {
+    const env = fixture();
+    r.commit({
+      'proof.yaml': root
+        .replace('[generator.sh, declarations]', "['**']")
+        .concat(`  links: [${link}]\n`),
+      '.gitignore': 'node_modules/\n',
+      'generator.sh': `test "$(cat ${link}/example/payload)" = installed || exit 9; cp declarations "$PROOF_DECLARATIONS/tasks.yaml"`,
+      unrelated: 'before',
+    });
+    r.write(`${link}/example/payload`, 'installed');
+    const baseline = rows(env);
+    for (const row of baseline) {
+      expect(row.key).toBeString();
+      expect(row.key).not.toBe('');
+    }
+    const target = join(r.path, '.git/dependencies');
+    const moved = Bun.spawnSync(['mv', join(r.path, link), target]);
+    expect(moved.exitCode).toBe(0);
+    symlinkSync(target, join(r.path, link));
+    expect(r.git('status', '--porcelain', '--untracked-files=all')).toBe(`?? ${link}`);
+    const cold = { PROOF_STATE_DIR: `${env.PROOF_STATE_DIR}-symlink` };
+    expect(rows(cold)).toEqual(baseline);
+    expect(rows(cold)).toEqual(baseline);
+    r.write('unrelated', 'after');
+    expect(rows(cold)).toEqual(baseline);
+  });
+}
