@@ -1,5 +1,6 @@
 import { declarations, selectTasks } from './declarations';
 import { RefTree, resolveRef } from './git';
+import { key } from './key';
 import { Lanes } from './lanes';
 import { currentTree, decide, renderDecision } from './plan';
 import { Providers } from './providers';
@@ -105,6 +106,22 @@ export async function run(args: string[]) {
       );
       preview.set(id, renderDecision(row));
       console.log(renderDecision(row));
+    }
+    if (initial.dirty.length) {
+      const refusals = ids.flatMap((id) => {
+        const task = initial.tasks.get(id);
+        if (!task) throw new Error(`undeclared task '${id}'`);
+        const reason = initial.declaration
+          ? `dirty declaration '${initial.declaration}'`
+          : key(id, task, initial.tree).key !== undefined
+            ? key(id, task, initial.tree, initial.dirty).reason
+            : undefined;
+        return reason ? [reason] : [];
+      });
+      if (refusals.length)
+        console.log(
+          `warning: ${refusals.length} ${refusals.length === 1 ? 'task cannot' : 'tasks cannot'} publish: ${refusals[0]}`,
+        );
     }
     const unfinished = new Set(ids);
     const runningNeeds = new Map<string, Set<string>>();

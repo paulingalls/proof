@@ -140,7 +140,8 @@ export async function runTask(
     const current = declaration
       ? { reason: `dirty declaration '${declaration}'`, key: undefined }
       : key(id, task, tree);
-    const dirtyInputs = fresh && key(id, task, tree, dirty).key === undefined;
+    const input = key(id, task, tree, dirty);
+    const dirtyInputs = fresh && input.key === undefined;
     const sandbox = blocked ? undefined : new Sandbox();
     try {
       let seconds: number | null = null;
@@ -180,14 +181,14 @@ export async function runTask(
       }
       if (outcome !== 'green') fail();
       const after = refresh();
-      let unpublished = baseline.dirty.length ? `dirty path '${baseline.dirty[0]}'` : undefined;
+      let unpublished = input.reason;
       if (!staged && !unpublished) {
         if (after.tree.commit !== baseline.tree.commit) unpublished = 'HEAD changed';
         else {
           const changed = sandbox?.changed();
-          const added = after.dirty.find((path) => !baseline.dirty.includes(path));
           if (changed) unpublished = `selected path changed '${changed}'`;
-          else if (added) unpublished = `new dirty path '${added}'`;
+          else if (after.declaration) unpublished = `dirty declaration '${after.declaration}'`;
+          else unpublished = key(id, task, after.tree, after.dirty).reason;
         }
       }
       // Providers run in the checkout, so one can serve bytes this snapshot doesn't hold.

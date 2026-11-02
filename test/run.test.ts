@@ -100,7 +100,7 @@ test('runs sequentially, streams without storing output, records captured keys a
   expect(rows(env, 'results')).toHaveLength(3);
 });
 
-test('unchanged endpoint guard rejects HEAD moves, selected edits and new dirty paths', () => {
+test('endpoint guard rejects HEAD moves and selected edits but allows unrelated dirt', () => {
   const { repo, env, run } = fixture({});
   repo.commit({
     'proof.yaml': JSON.stringify({
@@ -135,8 +135,8 @@ test('unchanged endpoint guard rejects HEAD moves, selected edits and new dirty 
   });
   const next = run();
   expect(next.code).toBe(0);
-  expect(next.out).toContain("no proof published: new dirty path 'unrelated'");
-  expect(rows(env, 'proofs')).toEqual([]);
+  expect(next.out).toContain('green unrelated; proof published');
+  expect(repo.cli(['plan'], env).out).toContain('PROVEN unrelated');
 });
 
 test('dirty inputs use working bytes, executable mode, deleted absence and full projection', () => {
@@ -159,12 +159,18 @@ test('dirty inputs use working bytes, executable mode, deleted absence and full 
   expect(result.code).toBe(0);
   expect(result.out).toContain('green dirty');
   expect(result.out).toContain('undecidable: dirty input');
-  expect(result.out).toContain('no proof published: dirty path');
+  expect(result.out).toContain('no proof published: dirty input');
   expect(rows(env, 'results').map((r) => [r.task, r.outcome, r.dirty])).toEqual([
     ['dirty', 'green', 1],
-    ['clean', 'green', 1],
+    ['clean', 'green', 0],
   ]);
-  expect(rows(env, 'proofs')).toEqual([]);
+  expect(rows(env, 'proofs').map((r) => r.task)).toEqual(['clean']);
+  expect(result.out).toContain('green clean; proof published');
+  expect(
+    JSON.parse(repo.cli(['plan', '--json'], env).out)
+      .filter((r: { state: string }) => r.state === 'PROVEN')
+      .map((r: { task: string }) => r.task),
+  ).toEqual(['clean']);
   expect(readdirSync(env.TMPDIR)).toEqual([]);
 });
 
@@ -395,7 +401,7 @@ test('runs from a subdirectory as from the repo root', () => {
   repo.write('src/a.ts', 'working');
   const result = repo.cli(['run'], env, join(repo.path, 'sub'));
   expect(result.out).toContain('green ok');
-  expect(result.out).toContain("no proof published: dirty path 'src/a.ts'");
+  expect(result.out).toContain("no proof published: dirty input 'src/a.ts'");
   expect(result.code).toBe(0);
 });
 

@@ -310,3 +310,24 @@ for (const interrupted of [false, true]) {
     f.clean(result, value);
   });
 }
+
+for (const startupDirt of [false, true]) {
+  test(`provider dependent publishes under unrelated dirt; startup=${startupDirt}`, () => {
+    const f = fixture();
+    const value = f.address();
+    f.commit(
+      { gate: f.task('gate') },
+      {
+        stack: { start: `${f.start}${startupDirt ? '; touch notes' : ''}`, stop: f.mark('stop') },
+      },
+    );
+    if (!startupDirt) f.repo.write('notes', 'unrelated');
+    const result = f.cli('run');
+    expect(result.code, result.err).toBe(0);
+    expect(result.out).toContain('green gate; proof published');
+    expect(f.cli('plan').out).toContain('PROVEN gate');
+    expect(readFileSync(join(f.control, 'gate'), 'utf8')).toBe(value);
+    expect(readFileSync(join(f.control, 'events'), 'utf8')).toBe('start\nstop\n');
+    f.clean(result, value);
+  });
+}

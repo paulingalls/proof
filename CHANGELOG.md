@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.19.3
+
+- Dirty paths block publication only for tasks selecting them, including selected `unkeyed` files.
+  Unrelated dirt permits proofs from `run`, fresh runs and `record`, including provider dependents.
+  Runs warn before execution when initial dirt blocks requested tasks.
+
 ## 0.19.2
 
 - A sandbox that cannot be removed no longer aborts the run: it warns with the task and path left

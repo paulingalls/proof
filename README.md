@@ -65,9 +65,10 @@ bunx proof plan    # PROVEN math ... / PROVEN text ...
 Edit `src/text.ts` (imported by `test/text.test.ts`) and commit: `plan` now says `RUN text` and
 keeps `math` PROVEN, and `run` runs only `text`.
 
-Plain `run` publishes proofs only from a clean tree. With uncommitted changes to a task's inputs,
-that task runs every time and publishes nothing. A commit hook can use `proof run --staged`
-to prove the index instead: its green is reusable after committing those staged bytes, including
+Plain `run` publishes when a task's selected inputs are clean, even with unrelated dirt.
+Uncommitted changes to selected inputs, including `unkeyed` files, make that task run every time
+and publish nothing. A dirty declaration prevents every task from publishing. A commit hook can
+use `proof run --staged` to prove the index instead: its green is reusable after committing those staged bytes, including
 at push or in CI.
 
 ## Declaring tasks
@@ -223,7 +224,7 @@ exempt:
   or malformed. Remove it and use `links: [stack.conf]` when a task needs an ignored file.
   `env` is only a pass-through allowlist; caller values, including absence, never enter keys.
   To read and key a tracked file's bytes, list its ordinary path as an input. Links cannot
-  reach tracked files. Nonignored untracked files still prevent clean publication.
+  reach tracked files. Nonignored untracked files prevent publication only for tasks selecting them.
   An untracked dirty path at or below a task's declared link is not an input of that task.
 - **Dimensions** declare machine values only for tasks that depend on them:
   ```yaml
@@ -313,9 +314,9 @@ exports. `PROOF_LANES=ios=1 proof run --jobs 3` replaces the declared limit for 
 see [lane scheduling and failures](docs/commands.md#provider-environment) for details.
 
 A failed start prevents its dependents from executing and records `incomplete`; existing proofs
-and contests stay intact. Dirty inputs use the existing committed-key recording path with the
-dirty flag. A dirty declaration or uncomputable committed input instead prints `not recorded`
-with a reason. Independent tasks still run. A failed start or stop names the provider and makes
+and contests stay intact. Selected dirty inputs use the existing committed-key recording path
+with the dirty flag; unrelated dirt leaves that flag clear, including for provider dependents.
+A dirty declaration or uncomputable committed input instead prints `not recorded` with a reason. Independent tasks still run. A failed start or stop names the provider and makes
 `run` exit 1; other stops still run and recorded task results are retained.
 
 SIGINT/SIGTERM reaches the running task or start process group. No further tasks or providers
