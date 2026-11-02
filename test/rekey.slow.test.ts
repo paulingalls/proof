@@ -242,7 +242,7 @@ test('refusals count proofs by reason and undecidable tasks separately', async (
     expect(f.plan().find((row) => row.task === task)?.state, name).toBe('RUN');
     if (name === 'null') expect(f.plan().find((row) => row.task === 'plain')?.state).toBe('PROVEN');
   }
-}, 30_000);
+});
 
 test('dirty HEAD and invalid syntax refuse; unavailable store refuses both modes before any carry', async () => {
   const f = fixture();
@@ -304,4 +304,4 @@ test('fresh reds still reject carried proofs', async () => {
   expect(f.cli(['rekey', '--apply'])).toContain('destination rejected');
   f.cli(['run', '--fresh', '--tasks', 'mixed']);
   expect(f.plan().find((r) => r.task === 'mixed')?.state).toBe('PROVEN');
-}, 30_000);
+});

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.20.0
+
+- `run --since <ref>` and `plan --since <ref>` leave unchanged unproven tasks UNREACHED.
+  Reached tasks run; current proofs, contested keys and dirty/undecidable inputs keep their
+  decisions. Unreached work starts no provider, records no result and earns no skip savings;
+  it waits for the fresh super run.
+
 ## 0.19.3
 
 - Dirty paths block publication only for tasks selecting them, including selected `unkeyed` files.

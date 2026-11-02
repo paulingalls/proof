@@ -66,7 +66,7 @@ test('working bytes include staged/unstaged edits, untracked additions, deletion
     `file src/binary 100644 ${repo.git('hash-object', '--no-filters', 'src/binary')}`,
   );
   expect(repo.git('status', '--porcelain')).toBe(before);
-}, 30_000);
+});
 
 test('working closure follows new dependencies; a broken closure never invents removals', () => {
   const { repo, env } = fixture([{ 'imports-of': 'src/a.ts' }]);
@@ -84,7 +84,7 @@ test('working closure follows new dependencies; a broken closure never invents r
   expect(broken.code).toBe(0);
   expect(broken.out).toContain('unresolved import');
   expect(changes(broken.out)).toEqual(['changed file src/a.ts']);
-}, 30_000);
+});
 
 test('unavailable selected entries preserve valid parts without fabricated removals', () => {
   const { repo, env } = fixture(['src/**', { path: 'config.json', json: ['selected'] }]);
@@ -102,7 +102,7 @@ test('unavailable selected entries preserve valid parts without fabricated remov
   expect(deleted.code).toBe(0);
   expect(deleted.out).toContain("unmatched input 'src/**'");
   expect(changes(deleted.out)).toEqual(['removed file src/a.ts', 'removed file src/b.ts']);
-}, 30_000);
+});
 
 test('legacy proofs migrate without inventing env metadata and can be replaced', () => {
   const { repo, env } = fixture();
@@ -133,7 +133,7 @@ test('legacy proofs migrate without inventing env metadata and can be replaced',
   } finally {
     db.close();
   }
-}, 30_000);
+});
 
 test('unreachable proof commit prints current parts only; available invalid history fails loudly', () => {
   const { repo, env } = fixture();
@@ -167,7 +167,7 @@ test('unreachable proof commit prints current parts only; available invalid hist
   expect(broken.out).toContain('file src/a.ts');
   expect(broken.err).toContain('version must be 1');
   expect(broken.out).not.toContain('proof commit unavailable');
-}, 30_000);
+});
 
 test('git decides whether a tracked path is clean, whatever its filters or type', () => {
   const { repo, env } = fixture();
@@ -184,7 +184,7 @@ test('git decides whether a tracked path is clean, whatever its filters or type'
   expect(result.out).toContain(`file src/link 120000 ${repo.git('rev-parse', 'HEAD:src/link')}`);
   expect(changes(result.out)).toEqual([]);
   expect(result.out).toContain('no inputs changed');
-}, 30_000);
+});
 
 test('an import into a committed gitlink is unavailable, not an added file', () => {
   const { repo, env } = fixture([{ 'imports-of': 'src/a.ts' }]);
@@ -197,7 +197,7 @@ test('an import into a committed gitlink is unavailable, not an added file', () 
   expect(result.code).toBe(0);
   expect(result.out).not.toContain('src/sub/a.ts');
   expect(changes(result.out)).toEqual(['changed file src/a.ts']);
-}, 30_000);
+});
 
 test('an unresolved input with nothing else changed claims only what was compared', () => {
   const { repo, env } = fixture([{ 'imports-of': 'src/a.ts' }]);
@@ -208,7 +208,7 @@ test('an unresolved input with nothing else changed claims only what was compare
   const result = repo.cli(['why', 'gate'], env);
   expect(changes(result.out)).toEqual([]);
   expect(result.out).toContain('no comparable inputs changed');
-}, 30_000);
+});
 
 test('working declarations compare semantic hashes and removed env names', () => {
   const { repo, env } = fixture();
@@ -232,7 +232,7 @@ test('working declarations compare semantic hashes and removed env names', () =>
   expect(changed.code).toBe(0);
   expect(changed.out).toContain('declaration changed');
   expect(changes(changed.out)).toEqual([]);
-}, 30_000);
+});
 
 test('dirty directories and nested repositories are unavailable, and deleted projections are removed', () => {
   const { repo, env } = fixture(['src/**', { path: 'config.json', json: ['selected'] }]);
@@ -249,7 +249,7 @@ test('dirty directories and nested repositories are unavailable, and deleted pro
     'added file src/a.ts/nested',
     'removed member config.json selected',
   ]);
-}, 30_000);
+});
 
 test('an invalid projection does not hide a known file deselection', () => {
   const { repo, env } = fixture(['src/**', { path: 'config.json', json: ['selected'] }]);
@@ -261,7 +261,7 @@ test('an invalid projection does not hide a known file deselection', () => {
   expect(result.code).toBe(0);
   expect(result.out).toContain("input 'config.json': invalid JSON");
   expect(changes(result.out)).toEqual(['removed file src/b.ts']);
-}, 30_000);
+});
 
 test('a working import cannot traverse an unsupported nested repository', () => {
   const { repo, env } = fixture([{ 'imports-of': 'src/a.ts' }]);
@@ -272,7 +272,7 @@ test('a working import cannot traverse an unsupported nested repository', () => 
   expect(result.code).toBe(0);
   expect(result.out).toContain('unresolved import');
   expect(changes(result.out)).toEqual(['changed file src/a.ts']);
-}, 30_000);
+});
 
 test('publication excludes env identities and why ignores historical env hashes', () => {
   for (const publisher of ['record', 'run']) {
@@ -312,7 +312,7 @@ test('publication excludes env identities and why ignores historical env hashes'
     expect(result.out + result.err).not.toContain('private-original');
     expect(result.out + result.err).not.toContain('private-new');
   }
-}, 30_000);
+});
 
 test('unavailable closure metadata cannot turn still-present workspace inputs into removals', () => {
   const { repo, env } = fixture([{ 'imports-of': 'src/a.ts' }]);
@@ -329,7 +329,7 @@ test('unavailable closure metadata cannot turn still-present workspace inputs in
   expect(result.code).toBe(0);
   expect(result.out).toContain("unavailable input 'package.json'");
   expect(changes(result.out)).toEqual([]);
-}, 30_000);
+});
 
 test('why prefers matching dimensions, including contested and offline proofs, before legacy fallback', () => {
   const { repo, env } = fixture();
@@ -380,4 +380,4 @@ test('why prefers matching dimensions, including contested and offline proofs, b
   ]);
   expect(fallback.out).toContain('env comparison unavailable');
   expect(changes(fallback.out)).toEqual(['changed file src/a.ts']);
-}, 30_000);
+});

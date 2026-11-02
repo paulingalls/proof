@@ -10,9 +10,10 @@ import { workspaces } from './workspaces';
 
 export const STAGED_SUFFIX = ' (staged)';
 
-export async function plan(set?: string) {
+export async function plan(set?: string, since?: string) {
+  const baseline = since === undefined ? undefined : new Since(since);
   const view = currentTree();
-  return planTree({ ...view, tasks: selectTasks(view.tasks, set) });
+  return planTree({ ...view, tasks: selectTasks(view.tasks, set) }, undefined, baseline);
 }
 
 export async function planTree(
@@ -30,13 +31,25 @@ export async function planTree(
     declaration?: string;
   },
   inspect?: (task: Task) => ReturnType<typeof inspectTaskLinks>,
+  since?: Since,
 ) {
   const store = await Store.open(project);
   try {
     const rows = [];
     for (const [task, decl] of tasks)
       rows.push(
-        await decide(task, decl, tree, dirty, declaration, project, store, inspect?.(decl)),
+        await decide(
+          task,
+          decl,
+          tree,
+          dirty,
+          declaration,
+          project,
+          store,
+          inspect?.(decl),
+          false,
+          since,
+        ),
       );
     return rows;
   } catch (error) {
@@ -79,6 +92,7 @@ export async function decide(
   store: Store,
   inspection = inspectTaskLinks(decl, tree, dirty),
   fresh = false,
+  since?: Since,
 ) {
   const links = [
     ...(inspection.trusted.length ? [`trusted links: ${inspection.trusted.join(', ')}`] : []),
@@ -108,13 +122,50 @@ export async function decide(
         state: 'RUN',
         reason: `contested: red at ${proof.red_commit} on ${proof.red_host} after green`,
       };
-    return proof
-      ? {
-          ...identity,
-          state: 'PROVEN',
-          reason: `proven at ${proof.commit} on ${proof.host} ${proof.finished_at}`,
-        }
-      : { ...identity, state: 'RUN', reason: 'no proof for key' };
+    if (proof)
+      return {
+        ...identity,
+        state: 'PROVEN',
+        reason: `proven at ${proof.commit} on ${proof.host} ${proof.finished_at}`,
+      };
+    return {
+      ...identity,
+      ...(since?.compare(task, current.key) ?? { state: 'RUN', reason: 'no proof for key' }),
+    };
+  }
+}
+
+export class Since {
+  private readonly tree: RefTree;
+  private tasks?: Map<string, Task>;
+  private error?: string;
+  private readonly keys = new Map<string, ReturnType<typeof key>>();
+
+  constructor(readonly ref: string) {
+    this.tree = new RefTree(ref);
+  }
+
+  compare(id: string, current: string) {
+    if (!this.tasks && !this.error) {
+      try {
+        this.tasks = declarations(this.tree).tasks;
+      } catch (error) {
+        this.error = error instanceof Error ? error.message : String(error);
+      }
+    }
+    if (this.error) return { state: 'RUN', reason: `undecidable at ${this.ref}: ${this.error}` };
+    const task = this.tasks?.get(id);
+    if (!task) return { state: 'RUN', reason: `task absent at ${this.ref}` };
+    let old = this.keys.get(id);
+    if (!old) {
+      old = key(id, task, this.tree);
+      this.keys.set(id, old);
+    }
+    if (old.key === undefined)
+      return { state: 'RUN', reason: `undecidable at ${this.ref}: ${old.reason}` };
+    return old.key === current
+      ? { state: 'UNREACHED', reason: `unreached since ${this.ref}` }
+      : { state: 'RUN', reason: `key changed since ${this.ref}` };
   }
 }
 

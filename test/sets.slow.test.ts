@@ -69,7 +69,7 @@ test('task sets bound what runs and proofs carry between them', () => {
     expect(log()).toBe(before + delta);
   }
   rows('plan', 'a:PROVEN b:PROVEN d:PROVEN c:PROVEN');
-}, 30_000);
+});
 
 test('historical views select from the requested ref', () => {
   const { repo, task, declare, log, cli, rows } = scene();
@@ -97,7 +97,7 @@ test('historical views select from the requested ref', () => {
   expect(cli('run --set working').out).toContain('not recorded: dirty declaration');
   expect(log()).toBe(`${earned}earned\n`);
   rows('status --ref HEAD --set push', 'earned:PROVEN');
-}, 30_000);
+});
 
 test('selector usage errors run nothing', () => {
   const { task, declare, log, rejected } = scene();
@@ -110,17 +110,17 @@ test('selector usage errors run nothing', () => {
   ])
     rejected(
       `run ${args}`,
-      'usage: proof run [--fresh | --staged] [--jobs N] [--tasks <id> ... | --set <name>]',
+      'usage: proof run [--fresh | --staged | --since <ref>] [--jobs N] [--tasks <id> ... | --set <name>]',
     );
   for (const command of ['plan', 'status --ref HEAD']) {
     for (const args of ['--set', '--set push --set commit'])
       rejected(
         `${command} ${args}`,
-        `usage: proof ${command.replace('HEAD', '<ref>')} [--set <name>] [--json]`,
+        `usage: proof ${command.replace('HEAD', '<ref>')}${command === 'plan' ? ' [--since <ref>]' : ''} [--set <name>] [--json]`,
       );
   }
   expect(log()).toBe('');
-}, 30_000);
+});
 
 test('unknown and invalid sets name what is known', () => {
   const { task, declare, rejected } = scene();
@@ -137,4 +137,4 @@ test('unknown and invalid sets name what is known', () => {
     declare({ bad: task('bad', sets) });
     rejected('run', `ref 'HEAD' proof.yaml task 'bad'${message}`);
   }
-}, 30_000);
+});

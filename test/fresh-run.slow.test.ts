@@ -109,7 +109,7 @@ for (const remote of [false, true]) {
       );
       expect(result.out).toContain(`deleted proof shared first ${before[0]?.key}`);
     }
-  }, 30_000);
+  });
 
   test(`fresh dirty input cannot delete, unrelated dirt can; remote=${remote}`, async () => {
     const database = remote ? await postgres.database() : undefined;
@@ -152,7 +152,7 @@ for (const remote of [false, true]) {
         { kind: 'super', deleted_proof: 1 },
       ]);
     }
-  }, 30_000);
+  });
 }
 
 test('a task whose sandbox cannot be built fails alone in fresh and aborts ordinary run', () => {
@@ -179,7 +179,7 @@ test('a task whose sandbox cannot be built fails alone in fresh and aborts ordin
   expect(fresh.out).toContain('green later; proof published');
   expect(repo.cli(['plan'], env).out).toContain('PROVEN broken');
   expect(repo.cli(['run', '--tasks', 'unproven'], env).code).toBe(2);
-}, 30_000);
+});
 
 test('fresh captures dirty closure eligibility before a command removes its shadow', () => {
   const f = fixture();
@@ -223,7 +223,7 @@ test('fresh green resolves a remote contest without removing its history', async
   expect(await database.sql`SELECT kind, deleted_proof FROM contradictions`).toEqual([
     { kind: 'ordinary', deleted_proof: 0 },
   ]);
-}, 30_000);
+});
 
 test('store owns deletion when a second clone publishes after fresh preview', async () => {
   const database = await postgres.database();
@@ -262,7 +262,7 @@ test('store owns deletion when a second clone publishes after fresh preview', as
     await child.exited;
     await done;
   }
-}, 30_000);
+});
 
 test('another clone observes a super deletion and remembers it offline', async () => {
   const database = await postgres.database();
@@ -372,4 +372,4 @@ test('lost shared commit reports local deletion only and preserves its veto', as
     await child.exited;
     await done;
   }
-}, 30_000);
+});

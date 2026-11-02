@@ -72,7 +72,7 @@ test('flakes ranks ordinary counts, separates super, scopes project and calendar
   expect(cli(['flakes', '--since', '7d']).out).toBe('ordinary task super\n0 a 1\n');
   db.query("UPDATE contradictions SET recorded_at = ? WHERE kind = 'super'").run(ago(40));
   expect(cli(['flakes', '--since', '7d']).out).toBe('no contradictions in 7d\n');
-}, 30_000);
+});
 
 test('manual deletion audits atomically, restores cleanly and leaves stats and flakes alone', () => {
   const { cli, db, record, repo } = fixture();
@@ -116,7 +116,7 @@ test('manual deletion audits atomically, restores cleanly and leaves stats and f
   expect(cli(['invalidate', '--task', 'b']).out).toContain('deleted 1');
   record('b', 'green');
   expect(cli(['plan']).out).toContain('PROVEN b:');
-}, 30_000);
+});
 
 test('a rejected manual audit rolls back the proof deletion and result', () => {
   const { cli, db, record } = fixture();
@@ -173,7 +173,7 @@ test('explicit selectors clear stale tasks and isolate keys, tasks and projects'
   record('a', 'green');
   repo.git('checkout', '-');
   expect(cli(['invalidate', '--task', 'a', '--all']).out).toContain('deleted 1');
-}, 30_000);
+});
 
 test('usage and undecidable HEAD keys fail before mutation; explicit selectors bypass inputs', () => {
   const { cli, repo, db, record } = fixture();
@@ -223,7 +223,7 @@ test('usage and undecidable HEAD keys fail before mutation; explicit selectors b
   expect(db.query('SELECT * FROM proofs').all()).toHaveLength(1);
   expect(db.query('SELECT * FROM contradictions').all()).toHaveLength(0);
   expect(cli(['invalidate', '--task', 'a', '--all']).out).toContain('deleted 1');
-}, 30_000);
+});
 
 test('shared deletion locks the key, reaches clones, and fails loudly after local-only deletion', async () => {
   const postgres = await new Postgres(true).start();

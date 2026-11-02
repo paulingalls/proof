@@ -62,7 +62,7 @@ writeFileSync('scratch/ready-' + id, 'yes');`,
         if (f.has(`leader-${id}`)) killGroup(Number(f.read(`leader-${id}`)));
       await stop(child);
     }
-  }, 20000);
+  });
 }
 
 for (const fresh of [false, true]) {
@@ -122,5 +122,5 @@ writeFileSync('scratch/ended', 'yes');`,
       if (pid) killGroup(pid);
       await stop(child);
     }
-  }, 20000);
+  });
 }

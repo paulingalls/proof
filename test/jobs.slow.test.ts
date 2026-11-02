@@ -22,7 +22,7 @@ test('default and explicit jobs=1 preserve the serial transcript', () => {
     expect(readFileSync(path as string, 'utf8')).toBe('a-out\na-err\n');
     expect({ ...result, out: result.out.replace(path as string, '<log>') }).toEqual(expected);
   }
-}, 15000);
+});
 
 test('jobs requires one positive safe integer before the selector', () => {
   const f = fixture({ a: task('true') });
@@ -39,11 +39,11 @@ test('jobs requires one positive safe integer before the selector', () => {
     const result = f.run(...args);
     expect(result.code).toBe(2);
     expect(result.err).toContain(
-      'usage: proof run [--fresh | --staged] [--jobs N] [--tasks <id> ... | --set <name>]',
+      'usage: proof run [--fresh | --staged | --since <ref>] [--jobs N] [--tasks <id> ... | --set <name>]',
     );
   }
   expect(f.run('--jobs', '2').code).toBe(0);
-}, 15000);
+});
 
 test('two mutual-marker tasks need two jobs, without timing assertions', () => {
   for (const jobs of ['1', '2']) {
@@ -76,7 +76,7 @@ process.exit(existsSync('scratch/failed') ? 1 : 0);`,
       jobs === '2' ? ['green', 'green'] : ['red', 'red'],
     );
   }
-}, 15000);
+});
 
 test('dispatch is bounded and a free slot starts the next declared task', async () => {
   const f = fixture(
@@ -99,7 +99,7 @@ test('dispatch is bounded and a free slot starts the next declared task', async 
     for (const id of ['a', 'b', 'c']) f.mark(`release-${id}`);
     await stop(child);
   }
-}, 15000);
+});
 
 test('one awaited provider stays ready for running and pending dependents', async () => {
   const f = fixture(
@@ -133,7 +133,7 @@ test('one awaited provider stays ready for running and pending dependents', asyn
     f.mark('release');
     await stop(child);
   }
-}, 15000);
+});
 
 test('failed shared startup records three incomplete dependents and lets unrelated work finish', async () => {
   const f = fixture(
@@ -183,7 +183,7 @@ test('failed shared startup records three incomplete dependents and lets unrelat
     f.mark('failed');
     await stop(child);
   }
-}, 15000);
+});
 
 test('eight simultaneous greens retain every result and matching proof locally', () => {
   const ids = Array.from({ length: 8 }, (_, index) => `task${index}`);
@@ -216,7 +216,7 @@ test('eight simultaneous greens retain every result and matching proof locally',
   expect(JSON.parse(plan.out).map((r: { state: string }) => r.state)).toEqual(
     ids.map(() => 'PROVEN'),
   );
-}, 15000);
+});
 
 test('completed task blocks combine streams without interleaving or storing output', async () => {
   const f = fixture({
@@ -251,7 +251,7 @@ test('completed task blocks combine streams without interleaving or storing outp
     f.mark('release-b');
     await stop(child);
   }
-}, 15000);
+});
 
 for (const committed of [false, true]) {
   test(`both provider waiters refresh after input edit, committed=${committed}`, async () => {
@@ -292,7 +292,7 @@ for (const committed of [false, true]) {
       f.mark('release');
       await stop(child);
     }
-  }, 15000);
+  });
 }
 
 test('queued PROVEN task refreshes its decision before dispatch', async () => {
@@ -324,7 +324,7 @@ test('queued PROVEN task refreshes its decision before dispatch', async () => {
     f.mark('release-b');
     await stop(child);
   }
-}, 15000);
+});
 
 test('staged startup remembers restored unstaged bytes for concurrent dependents', () => {
   const f = fixture(
@@ -349,7 +349,7 @@ test('staged startup remembers restored unstaged bytes for concurrent dependents
     expect(result.out).toContain(`${id}; no proof published: provider can see unstaged 'input'`);
   expect(f.rows('proofs')).toEqual(proofs);
   expect(f.rows('contradictions')).toEqual(contests);
-}, 15000);
+});
 
 test('a declaration edit cannot release a provider still used by a running task', async () => {
   const f = fixture(
@@ -378,4 +378,4 @@ test('a declaration edit cannot release a provider still used by a running task'
     f.mark('release-b');
     await stop(child);
   }
-}, 15000);
+});

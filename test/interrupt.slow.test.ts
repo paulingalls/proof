@@ -206,7 +206,7 @@ renameSync(control + '/pending', control + '/ready');`,
       for (const path of [control, state, temporary])
         rmSync(path, { recursive: true, force: true });
     }
-  }, 15000);
+  });
 }
 
 test('a second SIGINT kills a task whose background child ignores the first', async () => {
@@ -250,4 +250,4 @@ test('a second SIGINT kills a task whose background child ignores the first', as
     repo.close();
     for (const path of [control, state, temporary]) rmSync(path, { recursive: true, force: true });
   }
-}, 15000);
+});

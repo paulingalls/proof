@@ -16,10 +16,10 @@ retain the command's normal errors. An unknown command exits 2 and lists valid c
 
 ```
 proof help [<command>]       general help or one command's usage
-proof plan [--set <name>] [--json]  what must run, and why
+proof plan [--since <ref>] [--set <name>] [--json]  what must run, and why
 proof why <task>            current key parts and changes since the newest proof
 proof status --ref <ref> [--set <name>] [--json]  proof state at a committed ref
-proof run [--fresh | --staged] [--jobs N] [--tasks <id> ... | --set <name>]  run tasks and record each result
+proof run [--fresh | --staged | --since <ref>] [--jobs N] [--tasks <id> ... | --set <name>]  run tasks and record each result
 proof record <task> --outcome green|red|incomplete [--seconds N]
 proof invalidate --task <t> [--key k | --all]  delete proofs with a manual audit
 proof flakes [--since Nd]    tasks ranked by ordinary contradictions
@@ -276,12 +276,46 @@ share whose commit is uncertain says `sharing uncertain` and claims no shared de
 Reconnection does not replay results. Schedule fresh runs in the repository using cron or
 launchd; proof provides no scheduler.
 
+`run --since <ref>` narrows the current roster by comparing complete task keys with a
+branch, tag or commit, without checking it out. It changes only the ordinary `no proof for key`
+decision: equal keys read `UNREACHED task: unreached since <ref>`; different keys run with
+`key changed since <ref>`. This also leaves a key whose only result is red unreached.
+Valid current proofs remain PROVEN, even if the task was absent or undecidable at the ref;
+contested keys still run. Current dirty declarations, dirty selected inputs, undecidable keys
+and untrusted links still run with their existing reasons. An absent historical task runs with
+`task absent at <ref>`; undecidable historical inputs or unreadable declarations (including a
+missing `proof.yaml` or failing generator) run with `undecidable at <ref>: <reason>`.
+
+Both keys use dimensions computed now from each declaration, without recorded historical
+values, and the comparison is the key alone. Changes to `run`, `links` or a dimension's value differ. A tool update
+alone with the same dimension command leaves work unreached: environment does not drive this
+selection. Unreached unproven work waits for the fresh super, which never uses `--since`.
+
+The flag composes with `--set` or `--tasks` and preserves `--jobs` scheduling. In `run`, put it
+first, before `--jobs` and the selector; `plan` accepts options in any order. Unknown refs fail
+with exit 2 even when every task is proven. Missing/repeated refs and combinations with
+`--fresh` or `--staged` are usage errors. Unreached tasks start no providers, execute nothing,
+record no result and count no savings in `stats`; an all-unreached run exits 0.
+
+On a two-commit repository with `reached` changed and `unreached` unchanged:
+
+```sh
+proof plan --since HEAD~1 --json
+proof run --since HEAD~1 --jobs 2 --set push
+proof run --since HEAD~1 --tasks reached unreached
+```
+
+The first run executes only `reached`; repeating it reads PROVEN for `reached` and UNREACHED
+for `unreached`. `plan --since` (plain or JSON) previews those same decisions with the distinct
+UNREACHED state. `status --ref` is unchanged: without proof it still reads RUN. Unlike this Git
+ref flag, `stats --since` and `flakes --since` accept a day window such as `7d`.
+
 `plan --json` and `status --ref <ref> --json` return arrays of task decisions.
 Each row has `task`, `state` and `reason`. A decidable row also has `key`, the
 64-character lowercase hexadecimal key that `run` records, even when no proof exists.
 An undecidable row omits `key` and explains the cause in `reason`.
 RUN rows with `needs` also include `providers`, the names a run would start;
-PROVEN rows and tasks without needs omit `providers`.
+PROVEN and UNREACHED rows and tasks without needs omit `providers`.
 
 For a committed `text` task selecting `src/text.ts`, using a fresh store with no proofs:
 

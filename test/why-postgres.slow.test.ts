@@ -100,7 +100,7 @@ test('newest remote proof crosses clone/key boundaries without importing remote 
   expect(readFileSync(join(env.PROOF_STATE_DIR, 'proof.db')).includes('remote-private')).toBe(
     false,
   );
-}, 30_000);
+});
 
 test('remote and replica schema-one proofs migrate preserving files and unavailable env', async () => {
   const { sql, PROOF_STORE } = await postgres.database();
@@ -124,4 +124,4 @@ test('remote and replica schema-one proofs migrate preserving files and unavaila
   } finally {
     db.close();
   }
-}, 30_000);
+});

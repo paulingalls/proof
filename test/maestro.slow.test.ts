@@ -82,7 +82,7 @@ test('nested containers, hooks, cycles and aliases select only reached flow and 
   const result = r.check(cases);
   expect(result.code, result.err + result.out).toBe(0);
   expect(result.out).toBe(cases.map(({ name }) => `PASS ${name}\n`).join(''));
-}, 15000);
+});
 
 test('undecidable flows name references and still run without recording', () => {
   const cases = [
