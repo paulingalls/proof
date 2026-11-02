@@ -510,6 +510,46 @@ a locally retained proof then runs offline with `contested: red at <commit>`, us
 existing contest representation for the manual deletion. See [store operations](store.md).
 
 
+## Rekey
+
+`proof rekey [--apply]` temporarily migrates scheme-4 proofs made before environment values
+stopped keying. It will be removed in the following release. It selects every declared task
+at committed HEAD and refuses any dirty checkout, including unrelated changes. It resolves
+current dimensions and uses the existing declaration reader (including generated declarations),
+but never runs tasks or starts providers.
+
+```sh
+proof rekey
+proof rekey --apply
+```
+
+Without `--apply`, no proof or result rows are written. Both modes open and initialize the
+normal stores, so opening an older schema still migrates it. With `--apply`, each backend
+inserts proofs in one transaction under the new keys, pointing to its own existing result ids.
+Old proof rows, results, timestamps and dimension values stay intact. Repeating apply writes
+nothing new. No remote results are copied into the local replica.
+
+Each backend prints `local:` or `shared:`, a carried (or would-carry) proof count, skipped proof
+count, unchanged proof count, and undecidable task count. It also prints each skipped-proof
+reason with its count, including zero: `contested`, `destination rejected`, `null identities`,
+`dimensions differ`, `key differs`, `already present`. Undecidable counts are tasks; the other
+counts are proof rows. Already-current keys count as unchanged, including legacy NULL metadata.
+
+A candidate must have stored identities matching this machine's dimension identities, and its
+old key must recompute exactly from HEAD's declaration, tree inputs and all stored identities.
+NULL identities cannot be reconstructed. Changed inputs or commands/links are not carried.
+Multiple valid env variants converging on one key choose the newest result (finish time, then
+result id); the remaining variants count as already present. A contested source in either
+backend vetoes that destination on both, including sibling variants. A contested destination,
+or any red or manual result there, also refuses a carry, preventing migration from undoing a
+fresh red or invalidation. Existing destination proofs are never overwritten.
+
+A configured unreachable store exits 2 in either mode before carrying any proofs; there is no
+local fallback. Both backends are read before writes. Transactions are per backend, not across
+backends: a later failure may leave valid earlier carries; rerun idempotently. Run this migration
+in a quiet window; it does not coordinate with concurrent result writers. Ordinary and fresh
+red/contest rules continue under carried keys.
+
 ## Generated declarations
 
 Root `generate: {run, inputs, links?}` runs `run` through `sh -c` in the same input sandbox as a

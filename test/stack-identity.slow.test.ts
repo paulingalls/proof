@@ -120,51 +120,45 @@ test('checkout dotenv values, missing and malformed files never enter either sto
 
 test('missing and malformed tracked dotenv projections run undecidable without publication or leaks', () => {
   const secret = 'invalid-private-marker';
-  for (const projection of [true]) {
-    const path = projection ? 'example.conf' : 'stack.conf';
-    const input = projection ? { path, 'dotenv-keys': true } : { dotenv: path };
-    const f = fixture([input], projection ? { [path]: 'A=valid' } : {});
-    if (!projection) f.repo.write(path, 'A=valid');
-    expect(success(f.cli('run'))).toContain('green gate');
-    const db = new Database(join(f.env.PROOF_STATE_DIR, 'proof.db'));
-    const before = db.query('SELECT * FROM results').all();
-    for (const bad of [
-      undefined,
-      `A=ok\n${secret}`,
-      `A=ok\nB="${secret}`,
-      `A=ok\nB='x'tail`,
-      `A=ok\nB="x"#tail`,
-    ]) {
-      if (bad === undefined) {
-        rmSync(join(f.repo.path, path));
-        if (projection) {
-          f.repo.git('add', path);
-          f.repo.git('commit', '-qm', 'remove');
-        }
-      } else if (projection) f.repo.commit({ [path]: bad });
-      else f.repo.write(path, bad);
-      for (const args of [['plan'], ['why', 'gate'], ['run']]) {
-        const r = f.cli(...args);
-        const out = success(r);
-        expect(out).toContain('undecidable');
-        expect(out).toContain(path);
-        if (bad !== undefined) expect(out).toContain('line 2');
-        expect(out + r.err).not.toContain(secret);
-      }
-      expect(db.query('SELECT * FROM results').all()).toEqual(before);
+  const path = 'example.conf';
+  const input = { path, 'dotenv-keys': true };
+  const f = fixture([input], { [path]: 'A=valid' });
+  expect(success(f.cli('run'))).toContain('green gate');
+  const db = new Database(join(f.env.PROOF_STATE_DIR, 'proof.db'));
+  const before = db.query('SELECT * FROM results').all();
+  for (const bad of [
+    undefined,
+    `A=ok\n${secret}`,
+    `A=ok\nB="${secret}`,
+    `A=ok\nB='x'tail`,
+    `A=ok\nB="x"#tail`,
+  ]) {
+    if (bad === undefined) {
+      rmSync(join(f.repo.path, path));
+      f.repo.git('add', path);
+      f.repo.git('commit', '-qm', 'remove');
+    } else f.repo.commit({ [path]: bad });
+    for (const args of [['plan'], ['why', 'gate'], ['run']]) {
+      const r = f.cli(...args);
+      const out = success(r);
+      expect(out).toContain('undecidable');
+      expect(out).toContain(path);
+      if (bad !== undefined) expect(out).toContain('line 2');
+      expect(out + r.err).not.toContain(secret);
     }
-    db.close();
+    expect(db.query('SELECT * FROM results').all()).toEqual(before);
   }
+  db.close();
 });
 
-test('tracked dotenv values use checkout at old refs; ignored links provide access', () => {
+test('deprecated dotenv declarations ignore tracked values at old refs; ignored links provide access', () => {
   const f = fixture(
-    [{ dotenv: 'stack.conf' }],
-    { 'stack.conf': 'A=old' },
-    { run: 'test ! -f stack.conf' },
+    [{ dotenv: 'tracked.conf' }],
+    { 'tracked.conf': 'A=old' },
+    { run: 'test ! -f tracked.conf' },
   );
   const a = f.repo.git('rev-parse', 'HEAD');
-  f.repo.commit({ 'stack.conf': 'A=new' });
+  f.repo.commit({ 'tracked.conf': 'A=new' });
   expect(success(f.cli('run'))).toContain('green gate');
   expect(success(f.cli('status', '--ref', a))).toContain('PROVEN gate');
   const linked = fixture(

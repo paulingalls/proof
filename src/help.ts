@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { flakesUsage } from './flakes';
 import { invalidateUsage } from './invalidate';
 import { recordUsage } from './record';
+import { rekeyUsage } from './rekey';
 import { runUsage } from './run';
 import { statsUsage } from './stats';
 import { whyUsage } from './why';
@@ -22,6 +23,10 @@ const commands: Record<string, [string, string]> = {
   doctor: [doctorUsage, 'Check store health and declared dimension values.'],
   run: [runUsage, 'Run selected tasks and record their results.'],
   record: [recordUsage, 'Record an externally obtained task result.'],
+  rekey: [
+    rekeyUsage,
+    'Temporarily carry unchanged HEAD proofs to dimension-only keys; dry run by default.',
+  ],
   invalidate: [invalidateUsage, 'Delete proofs with a manual audit record.'],
   flakes: [flakesUsage, 'Report tasks ranked by contradictions.'],
   stats: [

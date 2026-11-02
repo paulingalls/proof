@@ -217,7 +217,7 @@ The package has its own tests for its own behaviour, on synthetic repos it build
 ### The package
 - **R18. TypeScript on Bun, zero runtime dependencies, MIT,** on npm under a scoped name (plain `proof`,
   `proven` and similar are taken).
-  - **Core:** parser and lint, hashing over the git index, env class, key, store client (`Bun.sql`,
+  - **Core:** parser and lint, hashing over the git index, declared dimensions, key, store client (`Bun.sql`,
     `bun:sqlite`), planner, executor, sandboxes, providers and lanes, CLI.
   - **Shipped adapters:** as in R5.
   - Repo adapters under `proof.d/adapters/` dropped 2026-10-30: no current consumer needs it

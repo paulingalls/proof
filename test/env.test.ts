@@ -154,7 +154,7 @@ test('nonempty env uses the pinned no-env version-4 key', () => {
 test('allowlisted values still reach fresh sandboxes while ordinary runs reuse proof', () => {
   const { repo, state } = fixture(['MODE']);
   const doc = JSON.parse(declaration(['MODE']));
-  doc.tasks.lint.run = 'printf "marker:%s:hidden:%s" "${MODE-unset}" "${UNDECLARED-unset}"';
+  doc.tasks.lint.run = `printf "marker:%s:hidden:%s" "\${MODE-unset}" "\${UNDECLARED-unset}"`;
   repo.commit({ 'proof.yaml': JSON.stringify(doc) });
   let key: string | undefined;
   for (const MODE of ['first', 'second', '', undefined]) {

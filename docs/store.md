@@ -83,6 +83,12 @@ Nullable `proofs.env_hashes` is JSON name/identity pairs: NULL denotes unavailab
 metadata; `[]` denotes no dimensions. Opening older stores preserves results and proofs
 without backfilling identities.
 
+The temporary [`proof rekey [--apply]`](commands.md#rekey) command carries valid historical
+proofs to dimension-only keys without creating results. Proof keys can therefore differ from
+the referenced result's original key; result id, project and task still agree. Each backend
+uses one transaction, retains old rows and refuses contested or rejected destinations across
+both backends. Dry run writes no proofs, and an unreachable store fails instead of falling back.
+
 Declared dimension values are non-secret facts. `record` and `run` also write their resolved,
 trimmed values for every result outcome, in the result transaction on each backend. A dimension
 must not print a secret, even if its command reads ambient env. General command output and logs

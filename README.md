@@ -303,7 +303,7 @@ Providers execute through `sh -c` in the checkout with the caller's environment.
 keep their sandbox and declared environment, plus exports from their needed providers.
 `start` receives `PROOF_PROVIDER_ENV`, the path of a private mode-600 file in the state directory.
 It may write literal `NAME=value` lines there; proof reads and removes it after startup.
-`URL` above belongs outside task `env`: provider exports never enter keys or store records, so
+`URL` above arrives through provider exports and need not appear in task `env`. Exports never enter keys or store records, so
 clones with different resource addresses can share proofs. Tasks without `needs: [stack]` receive
 none of its exports. Empty files preserve the existing lifecycle. See [the export rules](docs/commands.md#provider-environment)
 for names, conflicts and privacy. Included tasks use the root provider names;
@@ -347,6 +347,11 @@ these help forms.
 
 `plan`, `run`, `why`, `status`, `record`, `invalidate`, `flakes`, `stats`, `check`, `lint`,
 `doctor` and `help`. Every flag, output line and exit code is in [docs/commands.md](docs/commands.md).
+
+`proof rekey [--apply]` is a temporary migration command, removed in the following release.
+On a clean HEAD it carries valid older proofs to dimension-only keys without running tasks.
+Run `proof rekey` to preview counts, then `proof rekey --apply` to write them. See
+[rekey details](docs/commands.md#rekey) for refusals and backend behavior.
 
 ## Sharing proofs across machines
 

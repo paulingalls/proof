@@ -108,7 +108,7 @@ export class Store {
   async proof(project: string, task: string, key: string) {
     if (this.remote && !this.offline) {
       try {
-        const proof = await this.lookup(project, task, key, this.remote.query, false);
+        const proof = await lookup(project, task, key, this.remote.query, false);
         await this.observe(project, task, key, this.remote.query, proof);
         const [red] = await this.local.query<{ red_commit: string; red_host: string }>(
           `SELECT r."commit" AS red_commit, r.host AS red_host
@@ -123,7 +123,7 @@ export class Store {
         this.fallback(error);
       }
     }
-    return this.lookup(project, task, key, this.local.query, true);
+    return lookup(project, task, key, this.local.query, true);
   }
 
   async proofHistory(project: string, task: string) {
@@ -146,7 +146,7 @@ export class Store {
       finished_at: string;
     }>(
       `SELECT p.key, p.env_hashes, r."commit", r.host, r.finished_at FROM proofs p JOIN results r
-      ON r.id = p.result_id AND r.project = p.project AND r.task = p.task AND r.key = p.key
+      ON r.id = p.result_id AND r.project = p.project AND r.task = p.task
       WHERE p.project = ? AND p.task = ?
       ORDER BY r.finished_at DESC, p.result_id DESC`,
       project,
@@ -178,27 +178,6 @@ export class Store {
         key,
       );
     }
-  }
-
-  private async lookup(project: string, task: string, key: string, query: Query, local: boolean) {
-    const [proof] = await query<Proof>(
-      `
-      SELECT p.result_id, r."commit", r.host, r.finished_at,
-        ${local ? 'COALESCE(red."commit", o.red_commit)' : 'red."commit"'} AS red_commit,
-        ${local ? 'COALESCE(red.host, o.red_host)' : 'red.host'} AS red_host
-      FROM proofs p JOIN results r
-      ON r.id = p.result_id AND r.project = p.project AND r.task = p.task AND r.key = p.key
-      LEFT JOIN contradictions c ON c.project = p.project AND c.task = p.task AND c.key = p.key
-        AND c.green_result = p.result_id AND c.deleted_proof = 0
-      LEFT JOIN results red ON red.id = c.red_result
-      ${local ? 'LEFT JOIN observed_contests o ON o.result_id = p.result_id' : ''}
-      WHERE p.project = ? AND p.task = ? AND p.key = ?
-    `,
-      project,
-      task,
-      key,
-    );
-    return proof;
   }
 
   async record(
@@ -251,7 +230,7 @@ export class Store {
           );
         let deleted = false;
         if (outcome === 'red' && !dirtyInputs) {
-          const proof = await this.lookup(project, task, key, query, !backend.remote);
+          const proof = await lookup(project, task, key, query, !backend.remote);
           if (proof) {
             deleted = mode === 'super' || proof.red_commit !== null;
             await query(
@@ -298,7 +277,7 @@ export class Store {
             );
         }
         if (backend.remote) {
-          const proof = await this.lookup(project, task, key, query, false);
+          const proof = await lookup(project, task, key, query, false);
           await this.observe(project, task, key, query, proof);
         }
         return { id: result.id, deleted };
@@ -356,7 +335,7 @@ export class Store {
         deleted += await backend.transaction(
           JSON.stringify([project, task, key]),
           async (query) => {
-            const proof = await this.lookup(project, task, key, query, !backend.remote);
+            const proof = await lookup(project, task, key, query, !backend.remote);
             if (!proof) return 0;
             const [result] = await query<{ id: number | string }>(
               `INSERT INTO results (project, task, key, outcome, seconds, host, "commit", dirty, finished_at)
@@ -471,4 +450,31 @@ export class Store {
       throw result.reason;
     }
   }
+}
+
+export async function lookup(
+  project: string,
+  task: string,
+  key: string,
+  query: Query,
+  local: boolean,
+) {
+  const [proof] = await query<Proof>(
+    `
+      SELECT p.result_id, r."commit", r.host, r.finished_at,
+        ${local ? 'COALESCE(red."commit", o.red_commit)' : 'red."commit"'} AS red_commit,
+        ${local ? 'COALESCE(red.host, o.red_host)' : 'red.host'} AS red_host
+      FROM proofs p JOIN results r
+      ON r.id = p.result_id AND r.project = p.project AND r.task = p.task
+      LEFT JOIN contradictions c ON c.project = p.project AND c.task = p.task AND c.key = p.key
+        AND c.green_result = p.result_id AND c.deleted_proof = 0
+      LEFT JOIN results red ON red.id = c.red_result
+      ${local ? 'LEFT JOIN observed_contests o ON o.result_id = p.result_id' : ''}
+      WHERE p.project = ? AND p.task = ? AND p.key = ?
+    `,
+    project,
+    task,
+    key,
+  );
+  return proof;
 }
