@@ -270,7 +270,7 @@ and untrusted links still run with their existing reasons. An absent historical 
 missing `proof.yaml` or failing generator) run with `undecidable at <ref>: <reason>`.
 
 Both keys use dimensions computed now from each declaration, without recorded historical
-values. Changes to `run`, `links` or dimension declarations enter the comparison. A tool update
+values, and the comparison is the key alone. Changes to `run`, `links` or a dimension's value differ. A tool update
 alone with the same dimension command leaves work unreached: environment does not drive this
 selection. Unreached unproven work waits for the fresh super, which never uses `--since`.
 

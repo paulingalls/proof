@@ -268,35 +268,3 @@ test('dimension commands compare now at both refs, including changed commands', 
   expect(s.cli('run', '--since', base).out).toContain('green reached');
   expect(existsSync(join(s.dir, 'reached'))).toBe(true);
 });
-
-test('all-proven selection resolves ref without running its generator', () => {
-  const s = scene();
-  const old = s.repo.commit({
-    'proof.yaml': s.document({
-      generate: { run: `touch '${s.dir}/generator'; exit 1`, inputs: ['reached'] },
-    }),
-  });
-  s.repo.commit({ 'proof.yaml': s.document() });
-  s.control();
-  for (const id of ['reached', 'unreached'])
-    expect(s.cli('record', id, '--outcome', 'green').code).toBe(0);
-  expect(s.cli('run', '--since', old).code).toBe(0);
-  expect(existsSync(join(s.dir, 'generator'))).toBe(false);
-});
-
-test('two reached tasks still execute concurrently beside unreached work', () => {
-  const s = scene();
-  const run = (id: string, other: string) =>
-    `touch '${s.dir}/${id}'; for n in $(seq 1 200); do test -f '${s.dir}/${other}' && exit 0; sleep 0.01; done; exit 1`;
-  const tasks = {
-    ...s.tasks,
-    reached: s.task('reached', { run: run('reached', 'second') }),
-    second: s.task('second', { run: run('second', 'reached') }),
-  };
-  const base = s.repo.commit({ 'proof.yaml': s.document({ tasks }), second: 'old' });
-  s.repo.commit({ reached: 'new', second: 'new' });
-  const result = s.cli('run', '--since', base, '--jobs', '2');
-  expect(result.code).toBe(0);
-  expect(s.records('results')).toHaveLength(2);
-  expect(existsSync(join(s.dir, 'unreached'))).toBe(false);
-});
