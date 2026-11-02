@@ -50,7 +50,18 @@ const declared = {
     'dimensions',
     'unkeyed',
   ],
-  'Task fields': ['run', 'inputs', 'env', 'links', 'needs', 'sets', 'lane', 'dimensions', 'keyed'],
+  'Task fields': [
+    'run',
+    'inputs',
+    'env',
+    'links',
+    'needs',
+    'sets',
+    'lane',
+    'dimensions',
+    'keyed',
+    'carry',
+  ],
   'Provider fields': ['start', 'stop', 'lane'],
 };
 
@@ -179,4 +190,10 @@ test('installed reference paths resolve from a relocated module with spaces', ()
   } finally {
     rmSync(copy, { recursive: true, force: true });
   }
+});
+
+test('rekey help describes permanent opt-in carry', () => {
+  const out = repo.cli(['help', 'rekey']).out;
+  expect(out).toContain('carry: true');
+  expect(out.toLowerCase()).not.toContain('temporar');
 });

@@ -82,6 +82,20 @@ The package has its own tests for its own behaviour, on synthetic repos it build
   - declared dimension identities
 
   Nothing else goes into the key.
+  - **Amendment, Paul, 2026-11-02**, relayed by app-a's lead and confirmed to this project's
+    lead ("ok, let it know"): `rekey` is permanent. An explicit boolean task `carry: true`
+    permits carrying its newest surviving green with this machine's dimension identities
+    across declaration changes to an unproven current key. Require a clean tree, available
+    source commit C, equal `run`/`links`, equal dimensions, unchanged current input modes and
+    blobs (projection-only paths compare members), and no deletion of C's selected inputs.
+    Inputs merely no longer declared may carry. Read C's declarations from C, including its
+    generator through the existing cache. Refuse contested sources and vetoed destinations.
+    Print each carried task, C and every added input file; default to dry run, `--apply` writes
+    an ordinary proof referencing the existing result. No change at decide time: R1/R2 stand.
+    `carry` does not enter keys. Tasks without the opt-in retain only the env-move rekey path:
+    a file absent from the historical sandbox could change test discovery and what ran.
+    This extends rekey and deletes no mechanism; it avoids rerunning green journeys solely
+    because selection was tuned.
   - **Amendment, Paul, 2026-11-02:** `env` is a sandbox pass-through allowlist only.
     `{dotenv}` remains accepted but is ignored: changed values or an unavailable file cannot
     change a key or decidability. Remove it and use `links` for ignored-file access.

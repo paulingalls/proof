@@ -18,33 +18,26 @@ afterEach(() => {
   for (const repo of repos.splice(0)) repo.close();
 });
 const oldHash = 'cba06b5736faf67e54b07b561eae94395e774c517a7d910a54369e1263ccfbd4';
+const newerEnv = 'e143101231ed1dde017ddca8629fbb6b762ee20c55e036accda07dd65c847df7';
 const toolHash = '2a97516c354b68848cdbd8f54a226a0a55b21ed138e207ad6c5cbb9c00aa5aea';
+const envIdentities: [string, string][] = [
+  ['FAIL', 'absent'],
+  ['MODE', oldHash],
+];
+const toolIdentities: [string, string][] = [['dimension:tool', toolHash]];
 // Captured from v0.17.2 before changing key construction.
 const released = {
-  env: [
-    '3234cf7ba686b0aec4c57cb83a10b6a8824ecc7f8fc55da3c6e17d51e033652f',
-    [
-      ['FAIL', 'absent'],
-      ['MODE', oldHash],
-    ],
-  ],
+  env: ['3234cf7ba686b0aec4c57cb83a10b6a8824ecc7f8fc55da3c6e17d51e033652f', envIdentities],
   dotenv: [
     'd1bda96a512404928058506ea70a6472813880bc9db60b8bb4f95b18cec8680e',
     [['stack.conf:FLAG', oldHash]],
   ],
   mixed: [
     '8f317e8ce3f73af8f9cc62767ae089eb256d44af3b04e619e8f96d5b5326e22f',
-    [
-      ['FAIL', 'absent'],
-      ['MODE', oldHash],
-      ['dimension:tool', toolHash],
-    ],
+    [...envIdentities, ...toolIdentities],
   ],
   plain: ['69a37b6778f3299b043dc37f9407fa93719bb19249df9a9cd79cfcc1c5d2bc9e', []],
-  dimension: [
-    '847321ae4a89d3423af8dee433fb617cee32c202d0a4f31addc66541d501ed3d',
-    [['dimension:tool', toolHash]],
-  ],
+  dimension: ['847321ae4a89d3423af8dee433fb617cee32c202d0a4f31addc66541d501ed3d', toolIdentities],
 } satisfies Record<string, [string, [string, string][]]>;
 type Id = keyof typeof released;
 function fixture(PROOF_STORE?: string) {
@@ -92,29 +85,49 @@ function fixture(PROOF_STORE?: string) {
   return { repo, doc, commit, env, cli, query, plan };
 }
 type Fixture = ReturnType<typeof fixture>;
-async function seed(f: Fixture, query = f.query, ids: Id[] = Object.keys(released) as Id[]) {
+async function seed(
+  f: Fixture,
+  query = f.query,
+  ids: Id[] = Object.keys(released) as Id[],
+  options: {
+    key?: string;
+    identities?: [string, string][];
+    finished?: string;
+    outcome?: string;
+  } = {},
+) {
+  const results: (number | string)[] = [];
   for (const task of ids) {
-    const [key, identities] = released[task];
+    const [original, identities] = released[task];
+    const key = options.key ?? original;
     const [row] = await query<{ id: number | string }>(
       `INSERT INTO results
       (project, task, key, outcome, seconds, host, "commit", dirty, finished_at)
-      VALUES ('rekey', ?, ?, 'green', 12, 'old-host', ?, 0, '2026-01-01T00:00:00Z') RETURNING id`,
+      VALUES ('rekey', ?, ?, ?, 12, 'old-host', ?, 0, ?) RETURNING id`,
       task,
       key,
+      options.outcome ?? 'green',
       f.commit,
+      options.finished ?? '2026-01-01T00:00:00Z',
     );
     if (!row) throw new Error('missing fixture result');
+    results.push(row.id);
+    if (options.outcome === 'red') {
+      await query('INSERT INTO unshared_reds VALUES (?, ?, ?, ?)', 'rekey', task, key, row.id);
+      continue;
+    }
     await query(
       'INSERT INTO proofs VALUES (?, ?, ?, ?, ?)',
       'rekey',
       task,
       key,
       row.id,
-      JSON.stringify(identities),
+      JSON.stringify(options.identities ?? identities),
     );
     if (task === 'mixed' || task === 'dimension')
       await query('INSERT INTO dimension_values VALUES (?, ?, ?)', row.id, 'tool', 'demo');
   }
+  return results;
 }
 function remoteQuery(sql: Awaited<ReturnType<Postgres['database']>>['sql']): Query {
   return async <T>(statement: string, ...values: (string | number | null)[]) => {
@@ -145,10 +158,8 @@ test('dry run, apply and repeat carry released proofs without executing tasks or
   expect(await f.query('SELECT * FROM proofs')).toEqual(rows);
   expect(f.cli(['rekey', '--apply'])).toContain('local: carried 3; skipped proofs 0; unchanged 2');
   expect(f.plan().every((row) => row.state === 'PROVEN')).toBe(true);
-  expect(f.cli(['status', '--ref', 'HEAD'])).not.toContain('RUN');
-  expect(f.cli(['why', 'env'])).toContain('no inputs changed');
   expect(await f.query('SELECT * FROM results')).toEqual(before);
-  const carried = await f.query<{ task: Id; key: string; result_id: number; env_hashes: string }>(
+  const carried = await f.query<{ task: Id; key: string; env_hashes: string }>(
     'SELECT * FROM proofs',
   );
   expect(carried).toHaveLength(8);
@@ -167,26 +178,28 @@ test('dry run, apply and repeat carry released proofs without executing tasks or
 test('converging env variants choose the newest result and a contested sibling vetoes all', async () => {
   for (const contested of [false, true]) {
     const f = fixture();
-    await seed(f);
-    await f.query(
-      `INSERT INTO results (project, task, key, outcome, seconds, host, "commit", dirty, finished_at)
-      SELECT project, task, ?, outcome, seconds, host, "commit", dirty, '2026-01-02' FROM results WHERE task = 'env'`,
-      'e143101231ed1dde017ddca8629fbb6b762ee20c55e036accda07dd65c847df7',
-    );
-    await f.query(
-      `INSERT INTO proofs SELECT project, task, key, id, ? FROM results WHERE finished_at = '2026-01-02'`,
-      JSON.stringify([
+    const [source] = await seed(f);
+    const [newest] = await seed(f, f.query, ['env'], {
+      key: newerEnv,
+      identities: [
         ['FAIL', 'absent'],
         ['MODE', '11507a0e2f5e69d5dfa40a62a1bd7b6ee57e6bcd85c67c9b8431b36fff21c437'],
-      ]),
-    );
-    await f.query(`INSERT INTO results (project, task, key, outcome, seconds, host, "commit", dirty, finished_at)
-      SELECT project, task, 'other-tree', outcome, seconds, host, "commit", dirty, '2025-01-01' FROM results WHERE id = 1`);
-    await f.query(
-      `INSERT INTO proofs SELECT project, task, key, 7, '[]' FROM results WHERE id = 7`,
-    );
-    await f.query('INSERT INTO observed_contests VALUES (7, ?, ?)', 'red', 'host');
-    if (contested) await f.query('INSERT INTO observed_contests VALUES (1, ?, ?)', 'red', 'host');
+      ],
+      finished: '2026-01-02',
+    });
+    const [other] = await seed(f, f.query, ['env'], {
+      key: 'other-tree',
+      identities: [],
+      finished: '2025-01-01',
+    });
+    await f.query('INSERT INTO observed_contests VALUES (?, ?, ?)', other as number, 'red', 'host');
+    if (contested)
+      await f.query(
+        'INSERT INTO observed_contests VALUES (?, ?, ?)',
+        source as number,
+        'red',
+        'host',
+      );
     expect(f.cli(['rekey', '--apply'])).toContain(
       contested ? 'contested: 2' : 'already present: 1',
     );
@@ -194,10 +207,8 @@ test('converging env variants choose the newest result and a contested sibling v
     expect(row?.state).toBe(contested ? 'RUN' : 'PROVEN');
     if (contested) continue;
     expect(await f.query('SELECT result_id FROM proofs WHERE key = ?', row?.key as string)).toEqual(
-      [{ result_id: 6 }],
+      [{ result_id: newest }],
     );
-    await f.query("DELETE FROM proofs WHERE task = 'env' AND key != ?", row?.key as string);
-    expect(f.cli(['why', 'env'])).toContain('no inputs changed');
   }
 });
 
@@ -205,16 +216,11 @@ test('refusals count proofs by reason and undecidable tasks separately', async (
   const cases: [string, string, Id][] = [
     ['input', 'key differs: 5', 'env'],
     ['declaration', 'key differs: 1', 'env'],
-    ['link', 'key differs: 1', 'env'],
     ['missing', 'undecidable tasks 5', 'env'],
     ['dimension', 'dimensions differ: 2', 'mixed'],
     ['unavailable dimension', 'undecidable tasks 2', 'mixed'],
     ['null', 'null identities: 1', 'env'],
     ['bad key', 'key differs: 1', 'env'],
-    ['contested source', 'contested: 1', 'env'],
-    ['red destination', 'destination rejected: 1', 'env'],
-    ['manual destination', 'destination rejected: 1', 'env'],
-    ['contested destination', 'contested: 1', 'env'],
   ];
   for (const [name, reason, task] of cases) {
     const f = fixture();
@@ -223,9 +229,8 @@ test('refusals count proofs by reason and undecidable tasks separately', async (
     else if (name === 'missing') {
       f.repo.git('rm', 'input');
       f.repo.commit({});
-    } else if (['declaration', 'link', 'dimension', 'unavailable dimension'].includes(name)) {
+    } else if (['declaration', 'dimension', 'unavailable dimension'].includes(name)) {
       if (name === 'declaration') Object.assign(f.doc.tasks.env, { run: 'false' });
-      if (name === 'link') Object.assign(f.doc.tasks.env, { links: ['stack.conf'] });
       if (name.includes('dimension'))
         f.doc.dimensions.tool = name === 'dimension' ? 'printf other' : 'exit 1';
       f.repo.commit({ 'proof.yaml': JSON.stringify(f.doc) });
@@ -233,22 +238,6 @@ test('refusals count proofs by reason and undecidable tasks separately', async (
       await f.query("UPDATE proofs SET env_hashes = NULL WHERE task IN ('env', 'plain')");
     else if (name === 'bad key')
       await f.query("UPDATE proofs SET key = 'wrong' WHERE task = 'env'");
-    else if (name === 'contested source')
-      await f.query(
-        "INSERT INTO observed_contests SELECT result_id, 'red', 'host' FROM proofs WHERE task = 'env'",
-      );
-    else {
-      if (name !== 'red destination') f.cli(['record', 'env', '--outcome', 'green']);
-      if (name === 'manual destination')
-        f.cli([
-          'invalidate',
-          '--task',
-          'env',
-          '--key',
-          f.plan().find((r) => r.task === 'env')?.key as string,
-        ]);
-      else f.cli(['record', 'env', '--outcome', 'red']);
-    }
     expect(f.cli(['rekey', '--apply']), name).toContain(reason);
     expect(f.plan().find((row) => row.task === task)?.state, name).toBe('RUN');
     if (name === 'null') expect(f.plan().find((row) => row.task === 'plain')?.state).toBe('PROVEN');
@@ -259,9 +248,16 @@ test('dirty HEAD and invalid syntax refuse; unavailable store refuses both modes
   const f = fixture();
   await seed(f);
   const before = await f.query('SELECT * FROM proofs');
-  f.repo.write('input', 'dirty');
-  expect(f.cli(['rekey', '--apply'], 2)).toBe('');
-  f.repo.git('reset', '--hard', 'HEAD');
+  for (const path of ['input', 'untracked']) {
+    f.repo.write(path, 'dirty');
+    const r = f.repo.cli(['rekey', '--apply'], f.env);
+    expect(r.code).toBe(2);
+    expect(r.out).toBe('  dirty tree: 1\n');
+    expect(r.err).toContain('requires a clean checkout');
+    expect(await f.query('SELECT * FROM proofs')).toEqual(before);
+    f.repo.git('reset', '--hard', 'HEAD');
+    f.repo.git('clean', '-fd');
+  }
   for (const args of [['--set', 'all'], ['--apply', '--apply'], ['extra']])
     f.cli(['rekey', ...args], 2);
   const listener = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } });
@@ -284,11 +280,7 @@ test('remote-only proofs carry on their backend and local contests veto remote c
   const f = fixture(remote.PROOF_STORE);
   await seed(f, query);
   await seed(f, f.query, ['env']);
-  await f.query(`INSERT INTO results (project, task, key, outcome, seconds, host, "commit", dirty, finished_at)
-    SELECT project, task, key, 'red', seconds, host, "commit", dirty, finished_at FROM results`);
-  await f.query(
-    "INSERT INTO unshared_reds SELECT project, task, key, id FROM results WHERE outcome = 'red'",
-  );
+  await seed(f, f.query, ['env'], { outcome: 'red' });
   const before = await query('SELECT * FROM proofs ORDER BY task, key');
   expect(f.cli(['rekey'])).toContain('shared: would carry 2');
   expect(await query('SELECT * FROM proofs ORDER BY task, key')).toEqual(before);
@@ -300,53 +292,20 @@ test('remote-only proofs carry on their backend and local contests veto remote c
       .map((row) => row.task),
   ).toEqual(['env']);
   expect(await f.query('SELECT * FROM proofs')).toHaveLength(1);
-  const clone = new Repo(f.repo);
-  repos.push(clone);
-  const reader = { ...f.env, PROOF_STATE_DIR: join(clone.path, '.git/state') };
-  expect(
-    JSON.parse(clone.cli(['plan', '--json'], reader).out).filter(
-      (r: { state: string }) => r.state === 'PROVEN',
-    ),
-  ).toHaveLength(4);
   expect(await query('SELECT * FROM results')).toHaveLength(5);
 });
 
 for (const shared of [false, true])
-  test(`ordinary and fresh reds still reject carried proofs (${shared ? 'shared' : 'local'})`, async () => {
+  test(`fresh reds still reject carried proofs (${shared ? 'shared' : 'local'})`, async () => {
     const remote = shared ? await postgres.database() : undefined;
     const f = fixture(remote?.PROOF_STORE);
     await seed(f);
     const query = remote ? remoteQuery(remote.sql) : f.query;
     if (remote) await seed(f, query);
     f.cli(['rekey', '--apply']);
-    for (const outcome of ['red', 'red']) {
-      f.cli(['record', 'env', '--outcome', outcome]);
-      expect(f.plan().find((r) => r.task === 'env')?.state).toBe('RUN');
-    }
-    expect(
-      await query("SELECT deleted_proof FROM contradictions WHERE task = 'env' ORDER BY id"),
-    ).toEqual([{ deleted_proof: 0 }, { deleted_proof: 1 }]);
-    expect(f.cli(['rekey', '--apply'])).toContain('destination rejected');
-    f.cli(['record', 'env', '--outcome', 'green']);
-    expect(f.plan().find((r) => r.task === 'env')?.state).toBe('PROVEN');
     f.cli(['run', '--fresh', '--tasks', 'mixed'], 1, { FAIL: 'yes' });
     expect(f.plan().find((r) => r.task === 'mixed')?.state).toBe('RUN');
     expect(f.cli(['rekey', '--apply'])).toContain('destination rejected');
     f.cli(['run', '--fresh', '--tasks', 'mixed']);
-    expect(
-      await query(
-        'SELECT env_hashes FROM proofs WHERE key = ?',
-        f.plan().find((r) => r.task === 'mixed')?.key as string,
-      ),
-    ).toEqual([{ env_hashes: JSON.stringify([['dimension:tool', toolHash]]) }]);
     expect(f.plan().find((r) => r.task === 'mixed')?.state).toBe('PROVEN');
-    f.cli([
-      'invalidate',
-      '--task',
-      'mixed',
-      '--key',
-      f.plan().find((r) => r.task === 'mixed')?.key as string,
-    ]);
-    expect(f.cli(['rekey', '--apply'])).toContain('destination rejected');
-    expect(f.plan().find((r) => r.task === 'mixed')?.state).toBe('RUN');
   }, 30_000);

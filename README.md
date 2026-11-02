@@ -349,9 +349,13 @@ these help forms.
 `plan`, `run`, `why`, `status`, `record`, `invalidate`, `flakes`, `stats`, `check`, `lint`,
 `doctor`, `rekey` and `help`. Every flag, output line and exit code is in [docs/commands.md](docs/commands.md).
 
-`proof rekey [--apply]` is a temporary migration command, removed in the following release.
-On a clean HEAD it carries valid older proofs to dimension-only keys without running tasks.
-Run `proof rekey` to preview counts, then `proof rekey --apply` to write them. See
+`proof rekey [--apply]` carries valid older proofs to today's keys without running tasks.
+The env-move route works for every task. Add `carry: true` to a task to also carry across
+input declaration changes when today's inputs already existed unchanged at the green commit.
+Opt in only when files absent from the old sandbox could not change what ran (for example,
+a test runner discovering tests by glob). `carry` accepts only booleans and does not enter keys.
+On a clean HEAD, run `proof rekey` to preview each task, source commit and added input file,
+then `proof rekey --apply` to publish ordinary proofs. See
 [rekey details](docs/commands.md#rekey) for refusals and backend behavior.
 
 ## Sharing proofs across machines
