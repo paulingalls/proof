@@ -62,6 +62,7 @@ const declared = {
     'dimensions',
     'keyed',
     'carry',
+    'timeout',
   ],
   'Provider fields': ['start', 'stop', 'lane'],
 };

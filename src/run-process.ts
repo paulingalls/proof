@@ -49,11 +49,14 @@ export class RunProcesses {
     env = process.env,
     stopping = false,
     identity?: LogIdentity,
+    timeout?: number,
   ) {
     if (this.cancelled && !stopping) return { code: 1, signal: 'SIGKILL' as const };
     const capture = identity ? new Capture(identity) : undefined;
     let child: ReturnType<typeof Bun.spawn> | undefined;
     let completed = false;
+    let budgetKilled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       child = Bun.spawn(['sh', '-c', command], {
         detached: true,
@@ -62,13 +65,22 @@ export class RunProcesses {
         stdout: capture?.fd ?? 'inherit',
         stderr: capture?.fd ?? 'inherit',
       });
+      const pid = child.pid;
+      if (timeout !== undefined)
+        timer = setTimeout(() => {
+          if (this.cancelled) return;
+          budgetKilled = true;
+          signalGroup(pid, 'SIGKILL');
+        }, timeout * 1000);
       this.active.set(child, stopping);
       const code = await child.exited;
       // A shell may exit before its foreground child has finished handling the signal.
-      if (this.cancelled && !stopping) while (signalGroup(child.pid, 0)) await Bun.sleep(10);
+      if (budgetKilled || (this.cancelled && !stopping))
+        while (signalGroup(child.pid, 0)) await Bun.sleep(10);
       completed = true;
-      return { code, signal: child.signalCode, capture };
+      return { code, signal: child.signalCode, capture, budgetKilled };
     } finally {
+      clearTimeout(timer);
       if (child) this.active.delete(child);
       capture?.display();
       if (!completed) capture?.finish(child ? 'incomplete' : 'green');

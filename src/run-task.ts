@@ -191,22 +191,40 @@ export async function runTask(
         Object.assign(env, providers.environment(task.needs ?? [], slot));
         if (slot !== undefined) env.PROOF_LANE_SLOT = String(slot);
         const started = performance.now();
-        const result = await processes.execute(task.run, sandbox.path, env, false, {
-          project,
-          kind: 'tasks',
-          task: id,
-          key: current.key,
-          live,
-        });
-        outcome =
-          processes.cancelled || result.signal ? 'incomplete' : result.code === 0 ? 'green' : 'red';
+        const result = await processes.execute(
+          task.run,
+          sandbox.path,
+          env,
+          false,
+          {
+            project,
+            kind: 'tasks',
+            task: id,
+            key: current.key,
+            live,
+          },
+          task.timeout,
+        );
+        outcome = processes.cancelled
+          ? 'incomplete'
+          : result.budgetKilled
+            ? 'red'
+            : result.signal
+              ? 'incomplete'
+              : result.code === 0
+                ? 'green'
+                : 'red';
         seconds = (performance.now() - started) / 1000;
         const retained = result.capture?.finish(outcome) ?? {};
         if (retained.error) logFailed();
         log =
+          (result.budgetKilled && !processes.cancelled
+            ? `; killed at budget after ${task.timeout} seconds`
+            : '') +
           (outcome === 'red' && retained.path
             ? notDelivered(retained.path, sandbox.root, tree, selected)
-            : '') + logSuffix(retained);
+            : '') +
+          logSuffix(retained);
       }
       if (outcome !== 'green') fail();
       const after = refresh();

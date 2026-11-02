@@ -25,7 +25,8 @@ async function finish(running: ReturnType<typeof spawn>, code = 0) {
   expect(await running.child.exited, out + err).toBe(code);
   return out + err;
 }
-const mark = (id: string) => `echo "$PROOF_LANE_SLOT" > scratch/${id}`;
+const mark = (id: string) =>
+  `echo "$PROOF_LANE_SLOT" > scratch/${id}.tmp && mv scratch/${id}.tmp scratch/${id}`;
 
 test('RUN tasks allocate lowest free slots independently per lane', async () => {
   const f = setup(

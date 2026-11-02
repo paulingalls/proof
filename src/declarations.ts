@@ -26,6 +26,7 @@ export type Task = {
   sets?: string[];
   lane?: string;
   carry?: boolean;
+  timeout?: number;
 };
 
 export function mapping(value: unknown, context: string): Record<string, unknown> {
@@ -175,9 +176,28 @@ export function declarations(tree: RefTree, working = false) {
       const task = mapping(value, label);
       fields(
         task,
-        ['run', 'inputs', 'env', 'links', 'needs', 'sets', 'lane', 'dimensions', 'keyed', 'carry'],
+        [
+          'run',
+          'inputs',
+          'env',
+          'links',
+          'needs',
+          'sets',
+          'lane',
+          'dimensions',
+          'keyed',
+          'carry',
+          'timeout',
+        ],
         label,
       );
+      if (
+        'timeout' in task &&
+        (!Number.isInteger(task.timeout) ||
+          (task.timeout as number) < 1 ||
+          (task.timeout as number) > 2147483)
+      )
+        throw new Error(`${label}: timeout must be a whole number of seconds from 1 to 2147483`);
       if ('carry' in task && typeof task.carry !== 'boolean')
         throw new Error(`${label}: carry must be a boolean`);
       if ('dimensions' in task) {
@@ -210,6 +230,7 @@ export function declarations(tree: RefTree, working = false) {
       tasks.set(id, {
         run: text(task.run, `${label} run`),
         carry: task.carry as boolean | undefined,
+        timeout: task.timeout as number | undefined,
         inputs: patterns(task.inputs, label),
         env,
         keyed: 'keyed' in task ? filePatterns(task.keyed, `${label} keyed`) : undefined,
