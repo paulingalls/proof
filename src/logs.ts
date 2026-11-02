@@ -10,8 +10,9 @@ import {
   unlinkSync,
   writeSync,
 } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { statePath } from './config';
+import type { RefTree } from './git';
 
 export type LogIdentity = {
   project: string;
@@ -34,6 +35,30 @@ export function logSuffix(result: LogResult) {
     : result.path
       ? `; log: ${result.path}`
       : '';
+}
+
+export function notDelivered(path: string, root: string, tree: RefTree, selected: Set<string>) {
+  let content: string;
+  try {
+    content = readFileSync(path, 'utf8');
+  } catch {
+    // Retained logs are optional diagnostic evidence; capture errors are handled separately.
+    return '';
+  }
+  const omitted = new Set<string>();
+  for (const line of content.split('\n')) {
+    const missing = /no such file or directory|ENOENT/i.exec(line);
+    if (!missing) continue;
+    const field = line.slice(0, missing.index).split(': ').at(-2) ?? '';
+    const quoted = [...line.matchAll(/(?:^|[^\w])(['"])(.*?)\1/g)].map((match) => match[2] ?? '');
+    for (const candidate of [...quoted, field, field.split(/\s+/).at(-1) ?? '']) {
+      if (!candidate) continue;
+      const file = relative(root, resolve(root, candidate));
+      if (isAbsolute(file) || file === '..' || file.startsWith('../')) continue;
+      if (tree.files.has(file) && !selected.has(file)) omitted.add(file);
+    }
+  }
+  return omitted.size ? `; not delivered: ${[...omitted].join(', ')}` : '';
 }
 
 export function logTail(path: string) {
