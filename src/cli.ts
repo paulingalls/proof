@@ -118,6 +118,7 @@ if (command === '--version') {
     } else if (command === 'plan') {
       let set: string | undefined;
       let json = false;
+      let since: string | undefined;
       for (let i = 0; i < args.length; i++) {
         const arg = args[i];
         if (arg === '--json' && !json) json = true;
@@ -128,6 +129,13 @@ if (command === '--version') {
           !args[i + 1]?.startsWith('-')
         )
           set = args[++i];
+        else if (
+          arg === '--since' &&
+          since === undefined &&
+          args[i + 1] &&
+          !args[i + 1]?.startsWith('-')
+        )
+          since = args[++i];
         else throw new Error(planUsage);
       }
       const rows = await plan(set);

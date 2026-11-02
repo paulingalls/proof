@@ -110,13 +110,13 @@ test('selector usage errors run nothing', () => {
   ])
     rejected(
       `run ${args}`,
-      'usage: proof run [--fresh | --staged] [--jobs N] [--tasks <id> ... | --set <name>]',
+      'usage: proof run [--fresh | --staged | --since <ref>] [--jobs N] [--tasks <id> ... | --set <name>]',
     );
   for (const command of ['plan', 'status --ref HEAD']) {
     for (const args of ['--set', '--set push --set commit'])
       rejected(
         `${command} ${args}`,
-        `usage: proof ${command.replace('HEAD', '<ref>')} [--set <name>] [--json]`,
+        `usage: proof ${command.replace('HEAD', '<ref>')}${command === 'plan' ? ' [--since <ref>]' : ''} [--set <name>] [--json]`,
       );
   }
   expect(log()).toBe('');

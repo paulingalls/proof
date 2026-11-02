@@ -39,7 +39,7 @@ test('jobs requires one positive safe integer before the selector', () => {
     const result = f.run(...args);
     expect(result.code).toBe(2);
     expect(result.err).toContain(
-      'usage: proof run [--fresh | --staged] [--jobs N] [--tasks <id> ... | --set <name>]',
+      'usage: proof run [--fresh | --staged | --since <ref>] [--jobs N] [--tasks <id> ... | --set <name>]',
     );
   }
   expect(f.run('--jobs', '2').code).toBe(0);

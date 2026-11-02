@@ -8,12 +8,16 @@ import { runTask } from './run-task';
 import { Store } from './store';
 
 export const runUsage =
-  'usage: proof run [--fresh | --staged] [--jobs N] [--tasks <id> ... | --set <name>]';
+  'usage: proof run [--fresh | --staged | --since <ref>] [--jobs N] [--tasks <id> ... | --set <name>]';
 
 export async function run(args: string[]) {
   const fresh = args[0] === '--fresh';
   const staged = args[0] === '--staged';
   if (fresh || staged) args = args.slice(1);
+  if (args[0] === '--since') {
+    if (!args[1] || args[1].startsWith('-')) throw new Error(runUsage);
+    args = args.slice(2);
+  }
   let jobs = 1;
   if (args[0] === '--jobs') {
     const value = args[1] ?? '';
