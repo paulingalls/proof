@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test';
-import { cpSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Repo } from './support/repo';
@@ -107,4 +107,37 @@ test('a tracked dirty input under a declared link remains undecidable', () => {
     state: 'RUN',
     reason: "undecidable: dirty input 'vendor/t.txt'; trusted links: vendor",
   });
+});
+
+test('a node_modules shared with another checkout resolves workspaces to this tree', () => {
+  repo = new Repo();
+  repo.commit({
+    'package.json': JSON.stringify({ name: 'root', workspaces: ['packages/*'] }),
+    'packages/lib/package.json': JSON.stringify({ name: '@app/lib' }),
+    'packages/lib/value': 'main\n',
+    'proof.yaml': JSON.stringify({
+      version: 1,
+      project: 'shared-modules',
+      generate: {
+        run: `printf 'tasks: {%s: {run: "test $(cat node_modules/@app/lib/value) = worktree", inputs: ["**"], links: [node_modules]}}\\n' "$(cat node_modules/@app/lib/value)" > "$PROOF_DECLARATIONS/t.yaml"`,
+        inputs: ['**'],
+        links: ['node_modules'],
+      },
+    }),
+  });
+  mkdirSync(join(repo.path, 'node_modules/@app'), { recursive: true });
+  symlinkSync('../../packages/lib', join(repo.path, 'node_modules/@app/lib'));
+  const clone = new Repo(repo);
+  try {
+    clone.commit({ 'packages/lib/value': 'worktree\n' });
+    rmSync(join(clone.path, 'node_modules'), { recursive: true });
+    symlinkSync(join(repo.path, 'node_modules'), join(clone.path, 'node_modules'));
+    const env = { PROOF_STATE_DIR: directory() };
+    const plan = clone.cli(['plan', '--json'], env);
+    expect(plan.code, plan.err).toBe(0);
+    expect(JSON.parse(plan.out)).toMatchObject([{ task: 'worktree' }]);
+    expect(clone.cli(['run'], env).code).toBe(0);
+  } finally {
+    clone.close();
+  }
 });
