@@ -24,6 +24,7 @@ export type Task = {
   needs?: string[];
   sets?: string[];
   lane?: string;
+  carry?: boolean;
 };
 
 export function mapping(value: unknown, context: string): Record<string, unknown> {
@@ -169,9 +170,11 @@ export function declarations(tree: RefTree, working = false) {
       const task = mapping(value, label);
       fields(
         task,
-        ['run', 'inputs', 'env', 'links', 'needs', 'sets', 'lane', 'dimensions', 'keyed'],
+        ['run', 'inputs', 'env', 'links', 'needs', 'sets', 'lane', 'dimensions', 'keyed', 'carry'],
         label,
       );
+      if ('carry' in task && typeof task.carry !== 'boolean')
+        throw new Error(`${label}: carry must be a boolean`);
       if ('dimensions' in task) {
         if (!Array.isArray(task.dimensions)) throw new Error(`${label}: dimensions must be a list`);
         requested.set(
@@ -201,6 +204,7 @@ export function declarations(tree: RefTree, working = false) {
       const links = 'links' in task ? linkList(task.links, label) : undefined;
       tasks.set(id, {
         run: text(task.run, `${label} run`),
+        carry: task.carry as boolean | undefined,
         inputs: patterns(task.inputs, label),
         env,
         keyed: 'keyed' in task ? filePatterns(task.keyed, `${label} keyed`) : undefined,

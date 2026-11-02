@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.19.0
+
+- A task can declare `carry: true`. `proof rekey` then carries its green to a changed key when `run`,
+  `links` and dimensions match, every current input is byte-identical at the green's commit, no input
+  was deleted and nothing contests it. It prints each carry and every added file, and nothing changes
+  at plan time. `rekey` is now a permanent command.
+
 ## 0.18.0
 
 - A task's key is now its tree-derived inputs plus declared dimensions. `env` only passes values into

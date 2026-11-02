@@ -25,7 +25,7 @@ const commands: Record<string, [string, string]> = {
   record: [recordUsage, 'Record an externally obtained task result.'],
   rekey: [
     rekeyUsage,
-    'Temporarily carry unchanged HEAD proofs to dimension-only keys; dry run by default.',
+    'Carry env-move proofs or unchanged historical inputs with carry: true; dry run by default.',
   ],
   invalidate: [invalidateUsage, 'Delete proofs with a manual audit record.'],
   flakes: [flakesUsage, 'Report tasks ranked by contradictions.'],
@@ -66,6 +66,7 @@ proof.yaml root fields:
 Task fields:
   run: command (required); inputs: nonempty input list (required).
   env: pass-through allowlist of caller environment names; links: list of trusted checkout paths.
+  carry: boolean opt-in to rekey across input declaration changes; does not enter keys.
   needs: list of provider names; sets: list of task selection groups.
   lane: declared lane name, or reserved solo (no root declaration needed).
   dimensions: list of root dimension names; keyed: file patterns restoring key contribution.

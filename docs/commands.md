@@ -512,41 +512,67 @@ existing contest representation for the manual deletion. See [store operations](
 
 ## Rekey
 
-`proof rekey [--apply]` temporarily migrates scheme-4 proofs made before environment values
-stopped keying. It will be removed in the following release. It selects every declared task
-at committed HEAD and refuses any dirty checkout, including unrelated changes. It resolves
-current dimensions and uses the existing declaration reader (including generated declarations),
-but never runs tasks or starts providers.
+`proof rekey [--apply]` carries surviving green proofs to today's keys without running
+tasks or starting providers. It selects every declared task at committed HEAD and resolves
+this machine's dimensions. The checkout must be clean, including unrelated untracked files.
+A dirty checkout prints `dirty tree: 1` (one refused invocation), exits 2 with the clean-checkout
+error, and opens no store. Invalid HEAD declarations also exit 2.
 
 ```sh
 proof rekey
 proof rekey --apply
 ```
 
+The default previews changes; `--apply` publishes them. Each carried task prints its source
+commit C, followed by `added input <path>` for every added input file, sorted. Both routes
+publish an ordinary proof under today's key, referencing the original result at C. Thus `plan`
+and other clones use the same plain lookup; decision-time keys and behavior are unchanged.
+
+- **Env move, every task:** the candidate's key must recompute from HEAD's declaration and
+  selected inputs with its stored identities. Dimensions must match this machine. This retains
+  migration of scheme-4 proofs created before environment values stopped keying.
+- **Declaration changes, only `carry: true`:** when today's key has no proof, consider the newest
+  surviving green with this machine's dimension identities (finish time, then result id), per
+  backend. Never fall back to an older candidate if that one fails. C must be available, with
+  declarations read from C's tree, including its generator. Historical declarations are memoized
+  per C for this invocation; generators retain their existing persistent content cache.
+  The task's `run` and `links` must match. Every path selected today must exist at C with the
+  same mode and raw blob; projection-only paths compare mode and selected members instead,
+  permitting an unselected member to change. Every member counts, including unkeyed members.
+  Whole-file comparisons include unkeyed paths and package-version-only edits. No path selected
+  at C may be deleted from HEAD, including projection paths. Merely removing a path from today's
+  declaration is allowed if it still exists in HEAD's tree.
+
+`carry` is optional boolean metadata, excluded from keys like sets and lanes. Opt in only when
+adding a file absent from C's sandbox could not change what ran there: test discovery by glob,
+for example, can make that unsafe. Absent or false never uses the declaration-change route.
+
 Without `--apply`, no proof or result rows are written. Both modes open and initialize the
 normal stores, so opening an older schema still migrates it. With `--apply`, each backend
-inserts proofs in one transaction under the new keys, pointing to its own existing result ids.
-Old proof rows, results, timestamps and dimension values stay intact. Repeating apply writes
-nothing new. No remote results are copied into the local replica.
+inserts proofs in one transaction, pointing to its own existing result ids. Old proofs, results,
+timestamps and dimension values stay intact. Repeating apply writes nothing new. Remote
+results are not copied into the local replica. Apply prints only rows actually inserted.
 
 Each backend prints `local:` or `shared:`, a carried (or would-carry) proof count, skipped proof
-count, unchanged proof count, and undecidable task count. It also prints each skipped-proof
-reason with its count, including zero: `contested`, `destination rejected`, `null identities`,
-`dimensions differ`, `key differs`, `already present`. Undecidable counts are tasks; the other
-counts are proof rows. Already-current keys count as unchanged, including legacy NULL metadata.
+count, unchanged proof count and undecidable task count. It prints each skipped reason, even
+zero: `commit unavailable`, `declarations unavailable`, `declaration differs`, `input deleted`,
+`input changed`, `contested`, `destination rejected`, `null identities`, `dimensions differ`,
+`key differs`, `already present`. Counts are proof rows except undecidable tasks and dirty
+invocations. Each historical candidate counts once; its other rows retain their env-move
+classification. Already-current keys count as unchanged, including legacy NULL identities.
+NULL identities cannot be reconstructed. A historical declaration failure, missing task or
+undecidable historical selection counts as `declarations unavailable`, with a diagnostic and C
+on stderr once per C; the task stays RUN.
 
-A candidate must have stored identities matching this machine's dimension identities, and its
-old key must recompute exactly from HEAD's declaration, tree inputs and all stored identities.
-NULL identities cannot be reconstructed. Changed inputs or commands/links are not carried.
-Multiple valid env variants converging on one key choose the newest result (finish time, then
-result id); the remaining variants count as already present. A contested source in either
-backend vetoes that destination on both, including sibling variants. A contested destination,
-or any red or manual result there, also refuses a carry, preventing migration from undoing a
-fresh red or invalidation. Existing destination proofs are never overwritten.
+Eligible contested sources in either backend veto that destination on both, including env
+siblings. A contradiction naming a carry task's source result at any key also vetoes it, even
+if a carried proof was deleted. Local observed contests and unshared reds apply to remote-only
+candidates too. A red or manual result at the destination rejects the carry. Existing destination
+proofs, including contested proofs, are never overwritten.
 
 A configured unreachable store exits 2 in either mode before carrying any proofs; there is no
 local fallback. Both backends are read before writes. Transactions are per backend, not across
-backends: a later failure may leave valid earlier carries; rerun idempotently. Run this migration
+backends: a later failure may leave valid earlier carries; rerun idempotently. Run rekey
 in a quiet window; it does not coordinate with concurrent result writers. Ordinary and fresh
 red/contest rules continue under carried keys.
 
