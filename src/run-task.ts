@@ -155,7 +155,8 @@ export async function runTask(
     const current = declaration
       ? { reason: `dirty declaration '${declaration}'`, key: undefined }
       : key(id, task, tree);
-    const dirtyInputs = fresh && key(id, task, tree, dirty).key === undefined;
+    const input = key(id, task, tree, dirty);
+    const dirtyInputs = fresh && input.key === undefined;
     const sandbox = blocked ? undefined : new Sandbox();
     try {
       let seconds: number | null = null;
@@ -163,7 +164,9 @@ export async function runTask(
       let unbuilt: string | undefined;
       let log = '';
       try {
-        sandbox?.materialize(selection(task, tree, dirty), tree, dirty, staged);
+        // Dirt that reaches no input must not change what runs: the proof names the committed bytes.
+        const visible = input.key === undefined ? dirty : [];
+        sandbox?.materialize(selection(task, tree, visible), tree, visible, staged);
         sandbox?.link(task.links ?? [], inspection);
       } catch (error) {
         // Unattended, the backstop finishes every task it can; a person running `run` is told now.
@@ -195,14 +198,14 @@ export async function runTask(
       }
       if (outcome !== 'green') fail();
       const after = refresh();
-      let unpublished = baseline.dirty.length ? `dirty path '${baseline.dirty[0]}'` : undefined;
+      let unpublished = input.reason;
       if (!staged && !unpublished) {
         if (after.tree.commit !== baseline.tree.commit) unpublished = 'HEAD changed';
         else {
           const changed = sandbox?.changed();
-          const added = after.dirty.find((path) => !baseline.dirty.includes(path));
           if (changed) unpublished = `selected path changed '${changed}'`;
-          else if (added) unpublished = `new dirty path '${added}'`;
+          else if (after.declaration) unpublished = `dirty declaration '${after.declaration}'`;
+          else unpublished = key(id, task, after.tree, after.dirty).reason;
         }
       }
       // Providers run in the checkout, so one can serve bytes this snapshot doesn't hold.

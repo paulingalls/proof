@@ -283,7 +283,7 @@ for (const committed of [false, true]) {
           `RUN ${id}: ${committed ? 'no proof for key' : "undecidable: dirty input 'input'"}`,
         );
         expect(out).toContain(
-          `green ${id}; ${committed ? 'no proof published: HEAD changed' : "no proof published: new dirty path 'input'"}`,
+          `green ${id}; ${committed ? 'no proof published: HEAD changed' : "no proof published: dirty input 'input'"}`,
         );
       }
       expect(f.rows('proofs')).toEqual(proofs);
@@ -318,7 +318,7 @@ test('queued PROVEN task refreshes its decision before dispatch', async () => {
     expect(err).toBe('');
     expect(out).toContain('PROVEN c:');
     expect(out).toContain("RUN c: undecidable: dirty input 'later'");
-    expect(out).toContain("green c; no proof published: dirty path 'later'");
+    expect(out).toContain("green c; no proof published: dirty input 'later'");
   } finally {
     f.mark('release');
     f.mark('release-b');

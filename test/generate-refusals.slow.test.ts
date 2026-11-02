@@ -146,9 +146,9 @@ test('dirty generator output controls declarations and prevents publishing or co
   expect(readFileSync(marker, 'utf8').trim().split('\n')).toHaveLength(2);
   r.cli(['plan'], env);
   expect(readFileSync(marker, 'utf8').trim().split('\n')).toHaveLength(2);
-  expect(r.cli(['run', '--fresh'], env).out).toContain('no proof published');
+  expect(r.cli(['run', '--fresh'], env).out).toContain('green gate; proof published');
   expect(r.cli(['record', 'gate', '--outcome', 'green'], env).out).toContain(
-    'no proof published: dirty path',
+    'green gate; proof published',
   );
   r.write('data', output.replace('cat source', 'echo changed'));
   const changed = r.cli(['plan'], env);

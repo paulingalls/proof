@@ -69,8 +69,11 @@ for (const link of ['node_modules', 'apps/x/node_modules']) {
       reason: `undecidable: dirty input '${link}'`,
     });
     expect(plan.find((row) => row.task === 'plain')?.key).toBeUndefined();
-    expect(result.out).toContain(`green linked; no proof published: dirty path '${link}'`);
-    expect(rows().find((row) => row.task === 'linked')).toEqual(baseline);
+    expect(result.out).toContain('green linked; proof published');
+    expect(rows().find((row) => row.task === 'linked')).toMatchObject({
+      key: baseline?.key,
+      state: 'PROVEN',
+    });
     expect(baseline?.reason).toStartWith('no proof for key');
   });
 

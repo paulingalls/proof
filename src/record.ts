@@ -36,16 +36,10 @@ export async function record(args: string[]) {
   if (current.key === undefined) throw new Error(`undecidable: ${current.reason}`);
   const dirty = dirtyPaths();
   // A red about other bytes (a dirty input or declaration) says nothing about this key.
-  const generated = dirtyDeclaration(dirty, include)
-    ? undefined
-    : dirtyGenerated(tree, document, dirty);
-  const declaration = dirtyDeclaration(dirty, include) ?? generated;
-  const otherBytes =
-    outcome === 'red'
-      ? declaration
-        ? `dirty declaration '${declaration}'`
-        : key(id, task, tree, dirty).reason
-      : undefined;
+  const declaration = dirtyDeclaration(dirty, include) ?? dirtyGenerated(tree, document, dirty);
+  const otherBytes = declaration
+    ? `dirty declaration '${declaration}'`
+    : key(id, task, tree, dirty).reason;
   const store = await Store.open(project);
   try {
     const { sharing } = await store.record(
@@ -56,18 +50,17 @@ export async function record(args: string[]) {
       seconds,
       hostname(),
       tree.commit,
-      dirty.length > 0,
+      otherBytes !== undefined,
       otherBytes !== undefined,
       current.env,
       current.dimensionValues,
     );
     const suffix = sharing === 'local' ? '' : `; ${sharing}`;
-    if (otherBytes) return `recorded red ${id}; contests nothing: ${otherBytes}${suffix}`;
+    if (otherBytes && outcome === 'red')
+      return `recorded red ${id}; contests nothing: ${otherBytes}${suffix}`;
     if (outcome !== 'green') return `recorded ${outcome} ${id}${suffix}`;
-    if (generated)
-      return `recorded green ${id}; no proof published: dirty declaration '${generated}'${suffix}`;
-    return dirty.length
-      ? `recorded green ${id}; no proof published: dirty path '${dirty[0]}'${suffix}`
+    return otherBytes
+      ? `recorded green ${id}; no proof published: ${otherBytes}${suffix}`
       : `recorded green ${id}; proof published${suffix}`;
   } catch (error) {
     try {

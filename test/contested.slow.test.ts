@@ -174,7 +174,7 @@ test('dirty input reds store history only; unrelated dirtiness still contests an
     { green_result: 1, red_result: 5, kind: 'ordinary', deleted_proof: 1 },
   ]);
   expect(db.query('SELECT outcome, dirty FROM results WHERE id > 1').all()).toEqual(
-    Array.from({ length: 4 }, () => ({ outcome: 'red', dirty: 1 })),
+    [1, 1, 0, 0].map((dirty) => ({ outcome: 'red', dirty })),
   );
   plan('RUN lint: no proof for key');
 });
@@ -229,7 +229,7 @@ for (const flag of ['assume-unchanged', 'skip-worktree']) {
         path === 'src/a.ts' ? 'suppressed edit' : `${repo.git('show', `HEAD:${path}`)}\n`,
       );
       plan(`RUN lint: undecidable: ${reason}`);
-      expect(record('green').out).toContain('no proof published: dirty path');
+      expect(record('green').out).toContain(`no proof published: ${reason}`);
       expect(record('red').out).toContain(`contests nothing: ${reason}`);
       record('red');
       expect(proof()).toEqual([{ result_id: 2 }]);

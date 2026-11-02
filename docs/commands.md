@@ -244,15 +244,32 @@ If a declaration file is explicitly selected as a task input, its bytes still en
 A fresh red over unchanged selected inputs immediately deletes that key's stored green and
 records a `super` contradiction. The summary lists every red and each confirmed deletion as
 `deleted proof local <task> <key>` or `deleted proof shared <task> <key>`. Ordinary runs still
-contest a green on the first red and delete it on the second. A clean fresh green publishes
-proof, including for a contested key. Incomplete results and interrupts delete nothing. A task whose sandbox can't be built records
+contest a green on the first red and delete it on the second. A fresh green with clean selected
+inputs publishes proof, including for a contested key and with unrelated dirt present. Incomplete
+results and interrupts delete nothing. A task whose sandbox can't be built records
 `incomplete` and the rest still run, so a scheduled run finishes; the run exits 1 and names it.
 
 Ordinary globs consider tracked paths and untracked paths that Git does not ignore. An ignored literal
 input is missing: it stays outside the sandbox and prevents recording, with its path reported.
 Use `links` for ignored file access. Remove deprecated `{dotenv: path}` inputs; they are ignored.
 
-A dirty tree still executes (a dirty declaration runs without recording) and records results, but says `no proof published` with a reason.
+A dirty tree still executes and records results. Dirt blocks publication only for tasks selecting
+that path, including selected `unkeyed` files. A blocked task says
+`no proof published: dirty input '<path>'`; unrelated dirt permits publication and later PROVEN.
+`record <task> --outcome green` follows the same rule. A dirty declaration blocks every task:
+`run` prints `not recorded`, while `record` retains the result without publishing.
+HEAD movement and changed sandbox inputs also prevent publication.
+
+Before execution or provider startup, `run` prints one warning when initial dirt blocks requested
+tasks. For example, with `all` selecting `src/**` and `filtered` excluding `src/dirty`, running
+`proof run --jobs 2` after editing `src/dirty` prints:
+
+```text
+warning: 1 task cannot publish: dirty input 'src/dirty'
+```
+
+The `filtered` green publishes. `proof run --jobs 2 --tasks filtered` prints no warning.
+Dirt introduced during execution is reported on the affected task's result line.
 A red over dirty selected inputs cannot delete proof of the committed bytes; unrelated dirt
 does not prevent deletion. Offline deletions apply locally and say `not shared`; an attempted
 share whose commit is uncertain says `sharing uncertain` and claims no shared deletion.
@@ -661,9 +678,9 @@ All declaration readers use generation: `plan`, `run`, `why`, `lint`, `check`, `
 No ignored declaration output is read from the checkout.
 
 A dirty generator input is generated from working bytes and compared with committed output. Identical
-filenames and text preserve ordinary dirty-tree decisions. Differing output is a dirty declaration;
-`run` publishes no proof and `record red` contests nothing. Any dirty path still prevents publication,
-even when generated output is unchanged.
+filenames and text preserve ordinary dirty-input decisions for each task. Differing output is a
+dirty declaration; `run` publishes no proof and `record red` contests nothing. When generated
+output is unchanged, unrelated dirt permits publication.
 
 Output is cached under `PROOF_STATE_DIR/generated` (or the normal state directory), keyed by the
 expanded generator declaration and whole input identity. Unchanged inputs reuse it across refs;

@@ -416,7 +416,7 @@ test('selected committed symlinks preserve target identity and checkout isolatio
   );
   const result = run();
   expect(result.code).toBe(0);
-  expect(result.out).toContain("no proof published: new dirty path 'a/link'");
+  expect(result.out).toContain("no proof published: dirty input 'a/link'");
   expect(rows(env, 'proofs')).toHaveLength(2);
 });
 

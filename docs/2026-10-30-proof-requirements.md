@@ -185,8 +185,10 @@ The package has its own tests for its own behaviour, on synthetic repos it build
     Absent tasks or undecidable inputs/declarations at the ref run and say why; an unknown ref
     fails loudly. Unreached unproven tasks, including red-only keys, wait for the fresh super.
     `--since` bounds selection, not proof identity; it cannot combine with `--fresh` or `--staged`.
-  - Only clean trees publish proofs, except `run --staged`: Paul, 2026-10-30, an immutable index
-    snapshot may publish. Plain `plan` and `run` retain the clean-tree rule.
+  - Paul, 2026-11-02: selected paths only. Dirty selected inputs (including `unkeyed`) prevent
+    that task publishing; unrelated dirt does not. Dirty declarations and HEAD moving during a task
+    still prevent publication. `record` follows the same rule. The `run --staged` exception stands:
+    Paul, 2026-10-30, an immutable index snapshot may publish.
 - **R9. Red against a stored green: contested.**
   - When the newest result for a key is red, that key is never PROVEN.
   - A contested key runs once: green restores the proof, a second red deletes it.
@@ -196,7 +198,7 @@ The package has its own tests for its own behaviour, on synthetic repos it build
   - Logs stay on the machine: they may hold private data, so they never reach either store (R13).
 - **R10. The super test is the backstop.** It runs every task fresh, and records each task's result
   independently so one red doesn't hide others. A fresh red against a stored green for the same key deletes
-  that green everywhere and records a contradiction. Its greens publish proofs like any other clean run.
+  that green everywhere and records a contradiction. Its greens publish proofs under R8, like any other run.
 - **R11. Running-stack reuse is modelled.** A run brings the stack up once for all its stack tasks. A stack
   already running is reused only if its identity matches the current tree's.
   - Paul, 2026-11-01: a provider declaring `lane:` starts once per slot in use; a provider

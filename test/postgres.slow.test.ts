@@ -218,7 +218,7 @@ test('dirty green stores history only; dirty-input red cannot contest but unrela
   plan('contested:');
   expect(
     (await sql`SELECT dirty FROM results ORDER BY id`).map((r: { dirty: number }) => r.dirty),
-  ).toEqual([1, 0, 1, 1]);
+  ).toEqual([1, 0, 1, 0]);
 }, 30_000);
 
 test('run publishes remotely and a second clone skips without executing', async () => {

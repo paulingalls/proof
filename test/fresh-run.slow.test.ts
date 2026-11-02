@@ -137,13 +137,13 @@ for (const remote of [false, true]) {
     f.repo.write('unrelated', 'dirty');
     const green = f.cli('run', '--fresh');
     expect(green.code).toBe(0);
-    expect(green.out).toContain('green task; no proof published: dirty path');
-    expect(f.rows('proofs')).toEqual(proofs);
+    expect(green.out).toContain('green task; proof published');
+    expect(f.rows('proofs')).toHaveLength(1);
     writeFileSync(join(f.control, 'red'), 'red');
     const red = f.cli('run', '--fresh');
     expect(red.code).toBe(1);
     expect(red.out).toContain('deleted proof local task');
-    expect(f.rows('results').map((r) => r.dirty)).toEqual([0, 1, 1, 1]);
+    expect(f.rows('results').map((r) => r.dirty)).toEqual([0, 1, 0, 0]);
     expect(f.rows('proofs')).toEqual([]);
     expect(f.rows('contradictions')).toMatchObject([{ kind: 'super', deleted_proof: 1 }]);
     if (database) {
@@ -322,9 +322,9 @@ test('offline fresh red deletes locally and vetoes a still-green remote until cl
   f.repo.write('unrelated', 'dirty');
   const dirty = f.cli('run', '--fresh');
   expect(dirty.code).toBe(0);
-  expect(dirty.out).toContain('no proof published: dirty path');
-  expect(f.rows('proofs')).toEqual([]);
-  blocked();
+  expect(dirty.out).toContain('green task; proof published');
+  expect(f.rows('proofs')).toHaveLength(1);
+  expect(f.cli('plan').out).toContain('PROVEN task');
   rmSync(join(f.repo.path, 'unrelated'));
   expect(f.cli('run', '--fresh').code).toBe(0);
   expect(f.cli('plan').out).toContain('PROVEN task');
