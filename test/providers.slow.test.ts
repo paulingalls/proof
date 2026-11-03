@@ -178,7 +178,7 @@ test('one start and stop surround only RUN dependents, even after a red', () => 
     unrelated: f.task(f.mark('unrelated'), ['input'], []),
   });
   f.seed('proven');
-  const result = f.cli('run');
+  const result = f.cli('run', '--jobs', '1');
   expect(result.code).toBe(1);
   expect(f.log()).toEqual(['start', 'first', 'second', 'stop', 'unrelated']);
   expect(f.rows().map((r) => r.outcome)).toEqual(['green', 'green', 'red', 'green']);
@@ -242,11 +242,13 @@ test('failed start preserves dependent proofs while unrelated dirt permits indep
   expect(result.code).toBe(1);
   expect(result.out).toContain("provider 'stack' start failed");
   expect(result.out).toContain('incomplete noKey; not recorded:');
-  expect(f.log()).toEqual(['start', 'stop', 'independent']);
+  expect(f.log().filter((entry) => entry !== 'independent')).toEqual(['start', 'stop']);
+  expect(f.log().filter((entry) => entry === 'independent')).toHaveLength(1);
   expect(
     f
       .rows()
       .slice(3)
+      .sort((a, b) => a.task.localeCompare(b.task))
       .map((r) => [r.task, r.outcome, r.seconds, r.dirty]),
   ).toEqual([
     ['a', 'incomplete', null, 0],
@@ -309,7 +311,7 @@ for (const committed of [false, true]) {
     );
     f.seed('later');
     const proofs = f.rows('proofs');
-    const result = f.cli('run', ...(committed ? ['--tasks', 'a'] : []));
+    const result = f.cli('run', '--jobs', '1', ...(committed ? ['--tasks', 'a'] : []));
     expect(result.out).toContain('green a; no proof published:');
     expect(result.code).toBe(committed ? 0 : 1);
     expect(f.rows('proofs')).toEqual(proofs);
@@ -369,7 +371,7 @@ writeFileSync(process.env.CONTROL + '/ready', String(process.pid));`,
       f.seed('a', 'red');
       const proofs = f.rows('proofs');
       const contests = f.rows('contradictions');
-      const cli = f.repo.spawnCli(['run'], f.env);
+      const cli = f.repo.spawnCli(['run', '--jobs', '1'], f.env);
       const output = Promise.all([
         new Response(cli.stdout).text(),
         new Response(cli.stderr).text(),

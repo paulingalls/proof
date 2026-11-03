@@ -26,7 +26,7 @@ const commands: Record<string, [string, string]> = {
   doctor: [doctorUsage, 'Check store health and declared dimension values.'],
   run: [
     runUsage,
-    'Run selected tasks and record their results; --strict-inputs audits undeclared reads.',
+    'Run selected tasks with machine parallelism by default; --jobs 1 streams live. --strict-inputs audits undeclared reads.',
   ],
   record: [recordUsage, 'Record an externally obtained task result.'],
   rekey: [

@@ -74,7 +74,7 @@ for (const remote of [false, true]) {
       second: { run: 'test -f input && test ! -e .git && echo second', inputs: ['input'] },
     });
     expect(f.cli('run').code).toBe(0);
-    const before = f.rows('results');
+    const before = f.rows('results').sort((a, b) => a.task.localeCompare(b.task));
     writeFileSync(join(f.control, 'red'), 'red');
     const result = f.cli('run', '--fresh');
     expect(result.code).toBe(1);
@@ -83,18 +83,20 @@ for (const remote of [false, true]) {
     expect(result.out).toContain('red first');
     expect(result.out).toContain('green second; proof published');
     const after = f.rows('results');
-    expect(after.map((r) => r.outcome)).toEqual(['green', 'green', 'red', 'green']);
-    expect(after.slice(2).map((r) => r.key)).toEqual(before.map((r) => r.key));
+    expect(after.slice(0, 2).sort((a, b) => a.task.localeCompare(b.task))).toEqual(before);
+    const rerun = after.slice(2).sort((a, b) => a.task.localeCompare(b.task));
+    expect(rerun.map((r) => r.outcome)).toEqual(['red', 'green']);
+    expect(rerun.map((r) => r.key)).toEqual(before.map((r) => r.key));
     const check = (proofs: Row[], contradictions: Row[], results: Row[]) => {
       expect(proofs.map((r) => r.task)).toEqual(['second']);
-      expect(proofs[0]?.result_id).toBe(results[3]?.id);
+      expect(proofs[0]?.result_id).toBe(results.filter((r) => r.task === 'second').at(-1)?.id);
       expect([...contradictions]).toMatchObject([
         {
           task: 'first',
           kind: 'super',
           deleted_proof: 1,
-          green_result: results[0]?.id,
-          red_result: results[2]?.id,
+          green_result: results.find((r) => r.task === 'first' && r.outcome === 'green')?.id,
+          red_result: results.find((r) => r.task === 'first' && r.outcome === 'red')?.id,
         },
       ]);
     };

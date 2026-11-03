@@ -14,15 +14,11 @@ test('explicit jobs=1 preserves the serial transcript', () => {
     out: 'run: 2 tasks, jobs 1\nRUN a: no proof for key; trusted links: scratch\nRUN b: no proof for key; trusted links: scratch\na-out\na-err\nprogress: 1/2 done; green 0, red 1, incomplete 0, proven 0, unreached 0; task a\nb-out\nb-err\nprogress: 2/2 done; green 1, red 1, incomplete 0, proven 0, unreached 0; task b\nred a; log: <log>\ngreen b; proof published\nsummary: green 1, red 1, incomplete 0, proven 0, unreached 0\n',
     err: '',
   };
-  for (const args of [['--jobs', '1']]) {
-    const result = f.repo.cli(['run', ...args], { ...f.env, PROOF_STATE_DIR: f.directory() });
-    const path = result.out.match(/red a; log: (.*)\n/)?.[1];
-    expect(path).toMatch(
-      /\/logs\/jobs\/tasks\/a\/\d{8}T\d{9}Z-[a-f0-9-]{36}-[a-f0-9]{8}-red\.log$/,
-    );
-    expect(readFileSync(path as string, 'utf8')).toBe('a-out\na-err\n');
-    expect({ ...result, out: result.out.replace(path as string, '<log>') }).toEqual(expected);
-  }
+  const result = f.repo.cli(['run', '--jobs', '1'], { ...f.env, PROOF_STATE_DIR: f.directory() });
+  const path = result.out.match(/red a; log: (.*)\n/)?.[1];
+  expect(path).toMatch(/\/logs\/jobs\/tasks\/a\/\d{8}T\d{9}Z-[a-f0-9-]{36}-[a-f0-9]{8}-red\.log$/);
+  expect(readFileSync(path as string, 'utf8')).toBe('a-out\na-err\n');
+  expect({ ...result, out: result.out.replace(path as string, '<log>') }).toEqual(expected);
 });
 
 test('jobs requires one positive safe integer before the selector', () => {

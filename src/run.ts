@@ -1,3 +1,4 @@
+import { availableParallelism } from 'node:os';
 import { declarations, selectTasks } from './declarations';
 import { RefTree, resolveRef } from './git';
 import { key } from './key';
@@ -24,7 +25,7 @@ export async function run(args: string[]) {
     sinceRef = args[1];
     args = args.slice(2);
   }
-  let jobs = 1;
+  let jobs = availableParallelism();
   if (args[0] === '--jobs') {
     const value = args[1] ?? '';
     jobs = Number(value);
@@ -112,6 +113,7 @@ export async function run(args: string[]) {
   );
   const providerMismatches = new Map<string, string>();
   try {
+    console.log(`run: ${ids.length} tasks, jobs ${jobs}`);
     const preview = new Map<string, string>();
     const initial = selected;
     for (const id of ids) {

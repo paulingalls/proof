@@ -66,7 +66,9 @@ test('task sets bound what runs and proofs carry between them', () => {
     const result = cli(command);
     expect(result.out).toContain(message);
     if (command.includes('--fresh')) expect(result.out).toContain('proof published');
-    expect(log()).toBe(before + delta);
+    expect(log().slice(before.length).trim().split('\n').sort()).toEqual(
+      delta.trim().split('\n').sort(),
+    );
   }
   rows('plan', 'a:PROVEN b:PROVEN d:PROVEN c:PROVEN');
 });

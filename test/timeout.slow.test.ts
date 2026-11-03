@@ -58,7 +58,7 @@ test('interrupt lets a handler finish beyond its budget and records incomplete',
     },
     queued: task('touch scratch/queued'),
   });
-  const { child, output } = spawn(f);
+  const { child, output } = spawn(f, '--jobs', '1');
   try {
     await until(() => f.has('ready'));
     child.kill('SIGINT');

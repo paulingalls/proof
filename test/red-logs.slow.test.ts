@@ -32,7 +32,12 @@ test('red bytes survive sandbox and worktree removal; green leaves no file', () 
   expect(result.err).toBe('');
   const path = logPath(result.out, 'red');
   expect(path.startsWith(`${f.env.PROOF_STATE_DIR}/logs/jobs/tasks/red/`)).toBe(true);
-  expect(path).toContain(`-${f.rows()[0]?.key.slice(0, 8)}-red.log`);
+  expect(path).toContain(
+    `-${f
+      .rows()
+      .find((r) => r.task === 'red')
+      ?.key.slice(0, 8)}-red.log`,
+  );
   const bytes = readFileSync(path, 'utf8');
   const sandbox = bytes.split('\n')[2] as string;
   expect(bytes).toBe(`out\nerr\n${sandbox}\ntail`);
@@ -40,14 +45,22 @@ test('red bytes survive sandbox and worktree removal; green leaves no file', () 
   expect(existsSync(sandbox)).toBe(false);
   expect(existsSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/tasks/green'))).toBe(false);
   expect(readdirSync(join(f.env.PROOF_STATE_DIR, 'logs'))).toEqual(['jobs']);
-  expect(f.rows().map((r) => r.outcome)).toEqual(['red', 'green']);
+  expect(
+    f
+      .rows()
+      .map((r) => [r.task, r.outcome])
+      .sort(),
+  ).toEqual([
+    ['green', 'green'],
+    ['red', 'red'],
+  ]);
   f.repo.git('worktree', 'remove', '--force', worktree);
   expect(readFileSync(path, 'utf8')).toBe(bytes);
 });
 
 test('serial stdout and stderr arrive live exactly once', async () => {
   const f = fixture({ a: task(`echo live-out; echo live-err >&2; ${wait('release')}`) });
-  const child = f.repo.spawnCli(['run'], f.env);
+  const child = f.repo.spawnCli(['run', '--jobs', '1'], f.env);
   let out = '';
   const reading = (async () => {
     for await (const chunk of child.stdout) out += Buffer.from(chunk).toString();
@@ -73,7 +86,7 @@ test('SIGTERM reaches a task while the live tail is behind a slow stdout', async
       `trap 'touch scratch/stopped; exit 0' TERM; touch scratch/started; i=0; while [ $i -lt 500000 ]; do echo ${'x'.repeat(99)}; i=$((i+1)); done`,
     ),
   });
-  const child = f.repo.spawnCli(['run'], f.env);
+  const child = f.repo.spawnCli(['run', '--jobs', '1'], f.env);
   const reader = child.stdout.getReader();
   const reading = (async () => {
     while (!(await reader.read()).done) if (!f.has('stopped')) await Bun.sleep(200);
@@ -108,7 +121,7 @@ setInterval(() => {}, 100);`,
       omitted: 'yes',
     },
   );
-  const { child, output } = spawn(f);
+  const { child, output } = spawn(f, '--jobs', '1');
   try {
     await until(() => f.has('ready'));
     child.kill('SIGTERM');

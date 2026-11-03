@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.32.0
+
+- `run` defaults to machine parallelism; `--jobs N` still overrides it and `--jobs 1`
+  streams live. Resource lane limits continue to apply.
+- Runs print `run: <n> tasks, jobs <j>` before the plan and execution, counting every
+  selected task, including proven and unreached tasks.
+
 ## 0.31.0
 
 - Red summaries name omitted tracked files in Bun's `Module not found` messages and

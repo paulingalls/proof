@@ -36,12 +36,20 @@ Unknown-field errors retain their context and field name, then name the running 
 and suggest checking `proof --version` against the proof dependency pin in `package.json`
 and running `bun install` if they differ.
 
-`proof run --jobs 2` runs up to two tasks concurrently. `--jobs` accepts a positive safe
-integer and belongs after the run mode and optional `--strict-inputs`, before the selector.
-It defaults to 1, which streams each task's combined stdout and stderr live to proof's stdout in declared
-execution order. Task stdout and stderr see no TTY. Above 1, each task's stdout and stderr
-appear together on stdout when it finishes, under `--- <task>`; summaries stay in declared
+`proof run` defaults to `os.availableParallelism()` concurrent tasks on this machine.
+`proof run --jobs 2` overrides that limit to two; resource lane limits still apply within it.
+`--jobs` accepts a positive safe integer and belongs after the run mode and optional `--strict-inputs`, before the selector.
+`proof run --jobs 1` streams each task's combined stdout and stderr live to proof's stdout
+in declared execution order (also the default on a single-job machine). Task stdout and
+stderr see no TTY. Above 1, each task's stdout and stderr appear together on stdout when it finishes, under `--- <task>`; summaries stay in declared
 order. Both streams write to one capture file to preserve their write order.
+
+Before the decision preview and any provider or task starts, stdout prints
+`run: <n> tasks, jobs <j>`. The count includes every selected task, including PROVEN and
+UNREACHED tasks; jobs is the effective limit, even when larger than the selection.
+Empty selections print `run: 0 tasks, jobs <j>` before the all-zero summary. For example,
+a one-task selection on a 16-core machine starts with `run: 1 tasks, jobs 16`;
+`--jobs 1` and `--jobs 2` instead print jobs 1 and 2.
 
 After each task's final disposition, one stdout line reports cumulative progress in completion
 order, for one job as well as parallel jobs:
