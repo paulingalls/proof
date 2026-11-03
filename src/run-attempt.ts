@@ -1,7 +1,7 @@
 import type { Task } from './declarations';
 import type { RefTree } from './git';
 import { selection } from './key';
-import { logSuffix, notDelivered, omittedPaths } from './logs';
+import { logSuffix, notDelivered, redDiagnostics } from './logs';
 import { BASE_ENV, type Providers } from './providers';
 import type { RunProcesses } from './run-process';
 import type { inspectLinks, Sandbox } from './sandbox';
@@ -102,18 +102,17 @@ export async function runAttempt({
     seconds = (performance.now() - started) / 1000;
     const retained = result.capture?.finish(outcome) ?? {};
     if (retained.error) logFailed();
-    if (outcome === 'red' && retained.path)
-      omitted = omittedPaths(
-        retained.path,
-        sandbox.root,
-        tree,
-        new Set([...selected, ...delivery]),
-      );
+    const hints =
+      outcome === 'red' && retained.path
+        ? redDiagnostics(retained.path, sandbox.root, tree, new Set([...selected, ...delivery]))
+        : { omitted: [], git: false };
+    omitted = hints.omitted;
     log =
       (result.budgetKilled && !processes.cancelled
         ? `; killed at budget after ${task.timeout} seconds`
         : '') +
       notDelivered(omitted) +
+      (hints.git ? '; the sandbox is not a git checkout' : '') +
       logSuffix(retained);
   }
   return { outcome, seconds, unbuilt, log, omitted, delivered };

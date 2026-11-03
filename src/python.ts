@@ -86,7 +86,8 @@ function pythonScan(source: string) {
     if (call === 'importlib' && ts[n + 1]?.text === '.' && ts[n + 2]?.text === 'import_module') {
       call = 'importlib.import_module';
       open = n + 3;
-    } else if (!['import_module', '__import__'].includes(call ?? '') || ts[n - 1]?.text === '.')
+      n += 2;
+    } else if (call !== 'import_module' && (call !== '__import__' || ts[n - 1]?.text === '.'))
       continue;
     if (ts[open]?.text !== '(') continue;
     const arg = ts[open + 1];

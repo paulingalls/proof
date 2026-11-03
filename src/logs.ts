@@ -10,7 +10,7 @@ import {
   unlinkSync,
   writeSync,
 } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { statePath } from './config';
 import type { RefTree } from './git';
 import { source } from './imports';
@@ -43,16 +43,37 @@ export function logSuffix(result: LogResult) {
       : '';
 }
 
-export function omittedPaths(path: string, root: string, tree: RefTree, selected: Set<string>) {
+export function redDiagnostics(path: string, root: string, tree: RefTree, selected: Set<string>) {
   let content: string;
   try {
     content = readFileSync(path, 'utf8');
   } catch {
     // Retained logs are optional diagnostic evidence; capture errors are handled separately.
-    return [];
+    return { omitted: [], git: false };
   }
   const omitted = new Set<string>();
+  let git = false;
+  let unresolved: string | undefined;
   for (const line of content.split('\n')) {
+    if (line.includes('not a git repository')) git = true;
+    if (/^\s*error:/.test(line)) unresolved = undefined;
+    const spec = /Could not resolve: "([^"]+)"/.exec(line);
+    if (spec) unresolved = spec[1];
+    const at = /^\s+at (\/.*)/.exec(line);
+    if (at && unresolved) {
+      const importer = (at[1] as string).replace(/:\d+(?::\d+)?$/, '');
+      const local = relative(root, importer);
+      if (
+        local !== '..' &&
+        !local.startsWith('../') &&
+        !isAbsolute(local) &&
+        /^\.\.?\//.test(unresolved)
+      ) {
+        const file = relative(root, resolve(dirname(importer), unresolved));
+        if (tree.files.has(file) && !selected.has(file)) omitted.add(file);
+      }
+      unresolved = undefined;
+    }
     for (const match of line.matchAll(/Cannot find (?:module|package) (['"])(.*?)\1/g)) {
       const resolver = workspaces(source(tree));
       for (const kind of ['import', 'require'] as const) {
@@ -78,7 +99,7 @@ export function omittedPaths(path: string, root: string, tree: RefTree, selected
       if (tree.files.has(file) && !selected.has(file)) omitted.add(file);
     }
   }
-  return [...omitted];
+  return { omitted: [...omitted], git };
 }
 
 export function notDelivered(paths: string[]) {
