@@ -116,8 +116,9 @@ nothing create no artifact directory or extra text. `artifacts: []` means none.
 
 Patterns must be a list of nonempty strings, sandbox-relative, without leading `!`,
 absolute paths or `..` components. They are file globs, without named input-set expansion.
-Only regular files are copied, including hidden files; directories and symlinks match
-nothing. Use `dir/**` rather than `dir`. The field works in included and generated task
+Files are copied, including hidden files; a bare directory matches nothing, so use
+`dir/**` rather than `dir`. `**` does not descend into symlinks, but a pattern naming a
+symlink, or a path through a linked directory, copies the target's bytes. The field works in included and generated task
 declarations and never changes proof keys or input selection. Artifact paths and bytes
 stay local, outside both stores. When an old log is pruned, its artifact directory is
 removed too; a later green leaves the ten retained pairs alone.

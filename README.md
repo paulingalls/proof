@@ -366,8 +366,8 @@ exempt:
   relative paths beside the retained log. The result prints `; artifacts: <directory>`
   after its log path. Green runs and unmatched globs create no artifact directory or suffix.
   Patterns must be nonempty strings without negation, absolute paths or `..` components;
-  `[]` means none. Use `dir/**` for a directory's files: a bare directory name or a symlink
-  matches nothing. Hidden files are included. Artifacts stay on this machine, never enter
+  `[]` means none. Use `dir/**` for a directory's files: a bare directory name matches nothing.
+  `**` skips symlinks, but a pattern naming one (or a path through a link) copies its target. Hidden files are included. Artifacts stay on this machine, never enter
   either store, and do not affect keys. Each task keeps ten logs with their artifact
   directories; pruning removes each pair. See [retention and errors](docs/commands.md).
 - **Dimensions** declare machine values only for tasks that depend on them:
