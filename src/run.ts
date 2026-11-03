@@ -16,30 +16,39 @@ export async function run(args: string[]) {
   const strictInputs = args.includes('--strict-inputs');
   if (args.filter((arg) => arg === '--strict-inputs').length > 1) throw new Error(runUsage);
   args = args.filter((arg) => arg !== '--strict-inputs');
-  const fresh = args[0] === '--fresh';
-  const staged = args[0] === '--staged';
-  if (fresh || staged) args = args.slice(1);
+  let mode: string | undefined;
   let sinceRef: string | undefined;
-  if (!fresh && !staged && args[0] === '--since') {
-    if (!args[1] || args[1].startsWith('-')) throw new Error(runUsage);
-    sinceRef = args[1];
-    args = args.slice(2);
-  }
   let jobs = availableParallelism();
-  if (args[0] === '--jobs') {
-    const value = args[1] ?? '';
-    jobs = Number(value);
-    if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(jobs)) throw new Error(runUsage);
-    args = args.slice(2);
+  let set: string | undefined;
+  let requested: string[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i] as string;
+    if (seen.has(arg)) throw new Error(runUsage);
+    seen.add(arg);
+    if (arg === '--fresh' || arg === '--staged' || arg === '--since') {
+      if (mode !== undefined) throw new Error(runUsage);
+      mode = arg;
+      if (arg !== '--since') continue;
+    }
+    if (arg === '--since' || arg === '--jobs' || arg === '--set') {
+      const value = args[++i];
+      if (!value || value.startsWith('-')) throw new Error(runUsage);
+      if (arg === '--since') sinceRef = value;
+      else if (arg === '--set') set = value;
+      else {
+        jobs = Number(value);
+        if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(jobs)) throw new Error(runUsage);
+      }
+    } else if (arg === '--tasks' && set === undefined) {
+      requested = args.slice(i + 1);
+      if (!requested.length || requested.some((id) => id.startsWith('--')))
+        throw new Error(runUsage);
+      break;
+    } else throw new Error(runUsage);
   }
-  const set =
-    args[0] === '--set' && args.length === 2 && !args[1]?.startsWith('-') ? args[1] : undefined;
-  if (
-    args.length &&
-    set === undefined &&
-    (args[0] !== '--tasks' || args.length < 2 || args.slice(1).some((id) => id.startsWith('--')))
-  )
-    throw new Error(runUsage);
+  const fresh = mode === '--fresh';
+  const staged = mode === '--staged';
   const since = sinceRef === undefined ? undefined : new Since(sinceRef);
   const parent = staged ? resolveRef('HEAD') : undefined;
   const captured = staged ? RefTree.index() : undefined;
@@ -53,7 +62,6 @@ export async function run(args: string[]) {
   };
   const lanes = new Lanes(selected.lanes);
   const roster = selectTasks(selected.tasks, set);
-  const requested = set === undefined ? args.slice(1) : [];
   for (const id of requested) if (!roster.has(id)) throw new Error(`undeclared task '${id}'`);
   const ids = [...roster.keys()].filter((id) => !requested.length || requested.includes(id));
   const store = await Store.open(selected.project);

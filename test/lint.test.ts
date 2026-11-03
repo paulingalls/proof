@@ -177,16 +177,16 @@ test('lint preserves finding order, absent exemptions and sticky projections', (
       "coverage: unmatched pattern 'nothing/**'\n" +
       "unowned 'z/unowned.ts'\n" +
       "unowned 'src/unowned.ts'\n" +
-      "exempt 'src/owned.ts': selected by task 'first'\n" +
-      "exempt 'src/owned.ts': selected by task 'second'\n" +
+      "exempt 'src/owned.ts': selected by task 'first'; the task owns it, drop the exemption\n" +
+      "exempt 'src/owned.ts': selected by task 'second'; the task owns it, drop the exemption\n" +
       "exempt 'absent-glob/file': no tracked file\n" +
-      "exempt 'absent-glob/file': selected by task 'first'\n" +
+      "exempt 'absent-glob/file': selected by task 'first'; the task owns it, drop the exemption\n" +
       "exempt 'absent.json': no tracked file\n" +
-      "exempt 'absent.json': selected by task 'first'\n" +
+      "exempt 'absent.json': selected by task 'first'; the task owns it, drop the exemption\n" +
       "exempt 'missing.ts': no tracked file\n" +
-      "exempt 'missing.ts': selected by task 'first'\n" +
+      "exempt 'missing.ts': selected by task 'first'; the task owns it, drop the exemption\n" +
       "exempt 'missing.yaml': no tracked file\n" +
-      "exempt 'config.json': selected by task 'first'\n" +
+      "exempt 'config.json': selected by task 'first'; the task owns it, drop the exemption\n" +
       "exempt 'z/*.ts': no tracked file\n",
   });
 });

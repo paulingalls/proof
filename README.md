@@ -394,6 +394,8 @@ exempt:
   executes it: a file any task reads as an input is owned by that task, and exempting it too is a
   lint error. Included and generated declarations add exemptions to the root’s. A path
   exempted in two files fails naming both files, even when the reasons match.
+  If a task selects an exempt path, lint asks you to drop the redundant exemption;
+  the task already owns that path.
 
 ## Providers
 
@@ -500,6 +502,13 @@ for live combined stdout/stderr. Above one job, output appears in completed task
 resource lanes still cap admission within the job limit. Before the plan and execution,
 `run: <n> tasks, jobs <j>` prints the selected count (including PROVEN and UNREACHED)
 and effective limit, even for empty selections or limits above the task count.
+
+Run mode (`--fresh`, `--staged` or `--since <ref>`), `--strict-inputs`, `--jobs N`
+and `--set <name>` may appear in any order, for example
+`proof run --fresh --set commit --jobs 1` with a declared `commit` set.
+`--tasks <id> ...` consumes the remaining IDs and must come last, though `--strict-inputs`
+also works after it. Repeated or conflicting flags, missing values and unknown arguments
+exit 2 with usage.
 
 `proof rekey [--apply]` carries valid older proofs to today's keys without running tasks.
 The env-move route works for every task. Add `carry: true` to a task to also carry across

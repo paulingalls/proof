@@ -21,7 +21,7 @@ test('explicit jobs=1 preserves the serial transcript', () => {
   expect({ ...result, out: result.out.replace(path as string, '<log>') }).toEqual(expected);
 });
 
-test('jobs requires one positive safe integer before the selector', () => {
+test('jobs requires one positive safe integer', () => {
   const f = fixture({ a: task('true'), b: task('true') });
   for (const args of [
     ['--strict-inputs', '--strict-inputs'],

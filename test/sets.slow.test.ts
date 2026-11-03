@@ -79,6 +79,11 @@ test('historical views select from the requested ref', () => {
   rows('plan --json --set push', 'pending:RUN');
   rows('status --set push --ref HEAD', 'pending:RUN');
   cli('run --set commit');
+  const before = log();
+  const fresh = cli('run --fresh --set commit --jobs 1');
+  expect(fresh.out).toContain('run: 1 tasks, jobs 1');
+  expect(fresh.out).toContain('fresh execution requested');
+  expect(log().slice(before.length)).toBe('earned\n');
   const earned = log();
   declare({ pending: task('pending', ['commit']) }, { earned: task('earned', ['push']) });
   rows('plan --set push', 'earned:PROVEN');
@@ -109,6 +114,11 @@ test('selector usage errors run nothing', () => {
     '--tasks a --set commit',
     '--set',
     '--set commit --set push',
+    '--set commit --jobs 1 --set push',
+    '--fresh --jobs 1 --fresh',
+    '--jobs 1 --staged --fresh',
+    '--set --jobs 1',
+    '--jobs 1 bogus',
   ])
     rejected(
       `run ${args}`,

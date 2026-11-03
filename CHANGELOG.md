@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.33.0
+
+- `run` accepts mode, jobs, set and strict-inputs flags in any order; `--tasks` still
+  consumes the remaining IDs, with `--strict-inputs` accepted anywhere.
+- Lint explains that a task selecting an exempt path already owns it and asks to drop
+  the redundant exemption.
+
 ## 0.32.0
 
 - `run` defaults to machine parallelism; `--jobs N` still overrides it and `--jobs 1`
