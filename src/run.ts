@@ -9,9 +9,12 @@ import { runTask, type TaskResult } from './run-task';
 import { Store } from './store';
 
 export const runUsage =
-  'usage: proof run [--fresh | --staged | --since <ref>] [--jobs N] [--tasks <id> ... | --set <name>]';
+  'usage: proof run [--fresh | --staged | --since <ref>] [--strict-inputs] [--jobs N] [--tasks <id> ... | --set <name>]';
 
 export async function run(args: string[]) {
+  const strictInputs = args.includes('--strict-inputs');
+  if (args.filter((arg) => arg === '--strict-inputs').length > 1) throw new Error(runUsage);
+  args = args.filter((arg) => arg !== '--strict-inputs');
   const fresh = args[0] === '--fresh';
   const staged = args[0] === '--staged';
   if (fresh || staged) args = args.slice(1);
@@ -161,6 +164,7 @@ export async function run(args: string[]) {
           refresh,
           skipped: (id) => skipped.push(id),
           fresh,
+          strictInputs,
           since,
           live: jobs === 1,
           logFailed: () => {

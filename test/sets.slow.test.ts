@@ -110,7 +110,7 @@ test('selector usage errors run nothing', () => {
   ])
     rejected(
       `run ${args}`,
-      'usage: proof run [--fresh | --staged | --since <ref>] [--jobs N] [--tasks <id> ... | --set <name>]',
+      'usage: proof run [--fresh | --staged | --since <ref>] [--strict-inputs] [--jobs N] [--tasks <id> ... | --set <name>]',
     );
   for (const command of ['plan', 'status --ref HEAD']) {
     for (const args of ['--set', '--set push --set commit'])

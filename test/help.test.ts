@@ -25,7 +25,7 @@ const usages: Record<string, string> = {
   record: 'usage: proof record <task> --outcome green|red|incomplete [--seconds N]',
   rekey: 'usage: proof rekey [--apply]',
   lint: 'usage: proof lint',
-  run: 'usage: proof run [--fresh | --staged | --since <ref>] [--jobs N] [--tasks <id> ... | --set <name>]',
+  run: 'usage: proof run [--fresh | --staged | --since <ref>] [--strict-inputs] [--jobs N] [--tasks <id> ... | --set <name>]',
   doctor: 'usage: proof doctor',
   status: 'usage: proof status --ref <ref> [--set <name>] [--json]',
   why: 'usage: proof why <task>',

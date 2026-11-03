@@ -27,6 +27,7 @@ type Context = {
   view: () => ReturnType<typeof currentTree>;
   refresh: () => ReturnType<typeof currentTree>;
   fresh: boolean;
+  strictInputs: boolean;
   since?: Since;
   live: boolean;
   logFailed: () => void;
@@ -51,6 +52,7 @@ export async function runTask(
     view: currentView,
     refresh,
     fresh,
+    strictInputs,
     since,
     live,
     logFailed,
@@ -185,7 +187,13 @@ export async function runTask(
                   !links.some((link) => path === link || path.startsWith(`${link}/`)),
               ),
           );
-          sandbox.materialize(selected, tree, visible, staged, delivered);
+          sandbox.materialize(
+            selected,
+            tree,
+            visible,
+            staged,
+            strictInputs ? new Set() : delivered,
+          );
           sandbox.link(links, inspection);
         }
       } catch (error) {
