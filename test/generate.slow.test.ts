@@ -110,6 +110,32 @@ test('generated unkeyed and coverage declarations participate in lint and check'
   expect(missing.out + missing.err).toContain('source');
 });
 
+test('root, included and generated exemptions accumulate', () => {
+  const env = fixture();
+  r.commit({
+    'proof.yaml': `${root}coverage: [unowned/*]\nexempt: {unowned/root: intentional}\n`,
+    'committed/base.yaml': 'exempt: {unowned/included: intentional}\n',
+    declarations: 'exempt: {unowned/generated: intentional}\n',
+    'unowned/root': 'root',
+    'unowned/included': 'included',
+    'unowned/generated': 'generated',
+  });
+  const lint = r.cli(['lint'], env);
+  expect(lint.code, lint.out + lint.err).toBe(0);
+});
+
+test('duplicate exemptions name the included and generated declarations', () => {
+  const env = fixture();
+  r.commit({
+    'committed/base.yaml': 'exempt: {unowned/included: intentional}\n',
+    declarations: 'exempt: {unowned/included: intentional}\n',
+  });
+  const duplicate = r.cli(['lint'], env);
+  expect(duplicate.code).toBe(2);
+  for (const word of ['duplicate', 'unowned/included', 'committed/base.yaml', 'nested/tasks.yaml'])
+    expect(duplicate.err).toContain(word);
+});
+
 test('cache uses whole delivered bytes, modes and names, and bounds retained entries', () => {
   const env = fixture();
   const marker = join(r.path, '.git/invocations');

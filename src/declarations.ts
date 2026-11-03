@@ -142,6 +142,7 @@ export function declarations(tree: RefTree, working = false) {
   const unkeyed: unknown[] = [];
   const superOnly: unknown[] = [];
   const delivered: string[] = [];
+  const exemptions = new Map<string, { reason: string; context: string }>();
   function read(path: string, root: boolean) {
     const context = `ref '${tree.ref}' ${path}`;
     return load(working ? readFileSync(path, 'utf8') : tree.read(path), context, root);
@@ -174,9 +175,19 @@ export function declarations(tree: RefTree, working = false) {
             'super-only',
             'delivered',
           ]
-        : ['inputs', 'tasks', 'unkeyed', 'super-only', 'delivered'],
+        : ['inputs', 'tasks', 'unkeyed', 'super-only', 'delivered', 'exempt'],
       context,
     );
+    for (const [path, value] of Object.entries(
+      mapping('exempt' in doc ? doc.exempt : {}, `${context} exempt`),
+    )) {
+      text(path, `${context} exempt path`);
+      const reason = text(value, `${context} exempt '${path}' reason`);
+      const previous = exemptions.get(path);
+      if (previous)
+        throw new Error(`${context}: duplicate exempt '${path}' (also in ${previous.context})`);
+      exemptions.set(path, { reason, context });
+    }
     if ('delivered' in doc) delivered.push(...filePatterns(doc.delivered, `${context} delivered`));
     if ('super-only' in doc)
       superOnly.push(...filePatterns(doc['super-only'], `${context} super-only`));
@@ -370,14 +381,6 @@ export function declarations(tree: RefTree, working = false) {
         ...root.coverage.map((pattern) => text(pattern, `${context} coverage pattern`)),
       );
     }
-    const exempt = Object.fromEntries(
-      Object.entries(mapping('exempt' in root ? root.exempt : {}, `${context} exempt`)).map(
-        ([path, reason]) => [
-          text(path, `${context} exempt path`),
-          text(reason, `${context} exempt '${path}' reason`),
-        ],
-      ),
-    );
     return {
       project: text(root.project, 'proof.yaml project'),
       tasks,
@@ -387,7 +390,7 @@ export function declarations(tree: RefTree, working = false) {
       dimensions,
       lanes,
       coverage,
-      exempt,
+      exempt: Object.fromEntries([...exemptions].map(([path, { reason }]) => [path, reason])),
       include: 'include' in root ? text(root.include, 'proof.yaml include') : undefined,
     };
   } catch (error) {

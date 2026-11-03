@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.30.0
+
+- `check` counts tasks undecidable at either ref in the exact RUN set and prints their
+  reason, preferring the destination reason when both refs are undecidable.
+- Included and generated declarations accept `exempt` entries alongside the root’s.
+  Duplicate exempt paths fail naming both declarations, even when reasons match.
+
 ## 0.29.0
 
 - Every strict red with effective root delivery retries once before recording, even

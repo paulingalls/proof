@@ -62,7 +62,7 @@ ${Object.entries(commands)
 proof.yaml root fields:
   version: 1 (required); project: nonempty project name (required).
   inputs: map of named input lists; tasks: map of task declarations.
-  include: glob of declaration files (inputs, tasks, unkeyed, super-only, delivered only).
+  include: glob of declaration files (inputs, tasks, unkeyed, super-only, delivered, exempt only).
   generate: {run, inputs, links?}; runs repo code in a sandbox to produce declaration YAML.
   coverage: list of globs requiring ownership; exempt: map of exact paths to reasons.
   providers: map of provider declarations; lanes: map of names to positive limits.
