@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from 'bun:test';
+import { join } from 'node:path';
 import { Repo } from './support/repo';
 
 const repos: Repo[] = [];
@@ -188,4 +189,95 @@ test('lint preserves finding order, absent exemptions and sticky projections', (
       "exempt 'config.json': selected by task 'first'\n" +
       "exempt 'z/*.ts': no tracked file\n",
   });
+});
+
+test('lint names traced exclusions without changing selection or keys', () => {
+  const r = new Repo();
+  repos.push(r);
+  const leaf = 'packages/db/__tests__/fixture.ts';
+  const trace = { 'imports-of': 'entry.ts' };
+  const declare = (inputs: unknown[]) =>
+    JSON.stringify({
+      version: 1,
+      project: 'fixture',
+      tasks: { verify: { run: 'bun --no-install entry.ts', inputs } },
+    });
+  const a = r.commit({
+    'proof.yaml': declare([trace, '!packages/db/__tests__/**']),
+    'package.json': JSON.stringify({ name: 'fixture', workspaces: ['packages/*'] }),
+    'packages/db/package.json': JSON.stringify({
+      name: '@fixture/db',
+      exports: { './testing/fixture': './__tests__/fixture.ts' },
+    }),
+    [leaf]: 'export const value = 1;',
+    'entry.ts': "import { value } from '@fixture/db/testing/fixture'; console.log(value);",
+  });
+  const planned = r.cli(['plan', '--json'], { PROOF_STATE_DIR: join(r.path, '.git/state') });
+  expect(planned.code, planned.err).toBe(0);
+  expect(JSON.parse(planned.out)[0].key).toBe(
+    '6ab9faf618dbc52528bb2faa9ca3c3b3d473ad9e0be89bf1afa9fa14e7decc0b',
+  );
+  expect(r.cli(['lint'])).toEqual({
+    code: 1,
+    err: '',
+    out: `task 'verify': '!packages/db/__tests__/**' removes '${leaf}' traced by imports-of 'entry.ts'\n`,
+  });
+  const b = r.commit({ [leaf]: 'export const value = 2;' });
+  const c = r.commit({ 'entry.ts': "import '@fixture/db/testing/fixture';" });
+  expect(
+    r.check([
+      { name: 'excluded', from: a, to: b, expect: [] },
+      { name: 'entry', from: b, to: c, expect: ['verify'] },
+    ]).code,
+  ).toBe(0);
+  for (const inputs of [
+    [trace, '!**/__tests__/**', leaf],
+    [trace, '!**/__tests__/**', trace],
+    ['!**/__tests__/**', trace],
+    ['entry.ts', leaf, '!**/__tests__/**'],
+  ]) {
+    r.commit({ 'proof.yaml': declare(inputs) });
+    expect(r.cli(['lint'])).toEqual({ code: 0, out: '', err: '' });
+  }
+  r.commit({ 'proof.yaml': declare([trace, '!**/__tests__/**', leaf, `!${leaf}`]) });
+  expect(r.cli(['lint']).out).toBe(
+    `task 'verify': '!${leaf}' removes '${leaf}' traced by imports-of 'entry.ts'\n`,
+  );
+});
+
+test('lint names Maestro origins and accepts restored projections', () => {
+  const r = new Repo();
+  repos.push(r);
+  const declare = (inputs: unknown[]) =>
+    JSON.stringify({
+      version: 1,
+      project: 'fixture',
+      tasks: { verify: { run: 'true', inputs } },
+    });
+  const trace = { maestro: 'flows/main.yaml' };
+  r.commit({
+    'proof.yaml': declare([trace, '!leaf.js']),
+    'flows/main.yaml': 'appId: fixture\n---\n- runFlow: nested.yaml\n',
+    'flows/nested.yaml': 'appId: fixture\n---\n- runScript: ../leaf.js\n',
+    'leaf.js': 'console.log(1);',
+    'entry.ts': "import './config.json';",
+    'config.json': '{"name":"fixture"}',
+  });
+  expect(r.cli(['lint'])).toEqual({
+    code: 1,
+    err: '',
+    out: "task 'verify': '!leaf.js' removes 'leaf.js' traced by maestro 'flows/main.yaml'\n",
+  });
+  for (const restore of ['leaf.js', trace]) {
+    r.commit({ 'proof.yaml': declare([trace, '!leaf.js', restore]) });
+    expect(r.cli(['lint']).code).toBe(0);
+  }
+  r.commit({
+    'proof.yaml': declare([
+      { 'imports-of': 'entry.ts' },
+      '!config.json',
+      { path: 'config.json', json: ['name'] },
+    ]),
+  });
+  expect(r.cli(['lint'])).toEqual({ code: 0, out: '', err: '' });
 });

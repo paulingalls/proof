@@ -87,8 +87,14 @@ retained log bytes stay unchanged.
 A red task's summary can append `; not delivered: omitted` before its log path when
 an explicit missing-file diagnostic names a tracked path outside that task's selection.
 For example, `cat omitted` with tracked `omitted` absent from the task's inputs prints
-that hint. At most three distinct paths appear in diagnostic order, followed by
-`(+N more)` for the remainder. The retained log stays complete.
+that hint. Quoted `Cannot find module` and `Cannot find package` errors also resolve
+workspace exports (including subpaths) and root tsconfig aliases against the run's tree.
+For example, `Cannot find module '@fixture/db/testing/fixture'` can append
+`; not delivered: packages/db/__tests__/fixture.ts`.
+Import and require export targets are both checked; only tracked, unselected targets
+are named. Unresolvable and third-party specifiers get no hint. At most three distinct
+paths appear in diagnostic order, followed by `(+N more)` for the remainder.
+The retained log stays complete.
 
 Matching uses sandbox-root-relative paths or absolute paths under the sandbox's real
 root. Untracked paths, delivered paths (including projections and key exclusions),
@@ -96,6 +102,19 @@ directories, outside paths and indirect symptoms such as `Script not found` get 
 Relative paths after a task changes directory may remain unrecognized. Green and incomplete
 tasks get no hint. If the retained log cannot be read, the red reports as usual.
 Hints change no outcome, key or proof.
+
+`proof lint` also exits 1 when a negation removes a path added by an `imports-of`
+or `maestro` trace and the final selection omits it. For example:
+
+```text
+task 'verify': '!packages/db/__tests__/**' removes 'packages/db/__tests__/fixture.ts' traced by imports-of 'entry.ts'
+```
+
+The finding names the first trace entry that reached the path and the last negation
+that removed it. Restore the path with a later positive glob, trace or JSON projection
+to clear the finding. Negations before a trace and exclusions of glob-only paths
+produce no such finding. Negating traced paths remains supported by `run`; selection
+and keys are unchanged.
 
 Providers without `lane` start once; laned providers start once per used slot. Dependents
 await their instance’s readiness, and teardown waits for all running and pending users. Starts use the same capture and display rules, with `--- provider-<name>`
