@@ -74,6 +74,17 @@ export function pythonClosure(entry: string, view: Source, roots = [posix.dirnam
       reason ??= `${path}: missing entry`;
       return;
     }
+    let dir = posix.dirname(path);
+    while (
+      [...roots, posix.dirname(entry)].some(
+        (root) => root === '.' || dir === root || dir.startsWith(`${root}/`),
+      )
+    ) {
+      const initializer = posix.join(dir, '__init__.py');
+      if (tracked.has(initializer)) visit(initializer);
+      if (dir === '.') break;
+      dir = posix.dirname(dir);
+    }
     const scanned = pythonScan(text);
     if (scanned.reason) reason ??= `${path}: ${scanned.reason}`;
     for (const edge of scanned.imports) {
