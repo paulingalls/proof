@@ -74,6 +74,7 @@ test('delivery uses committed bytes without blocking publication; selection keep
   const gap = raw(['run', '--tasks', 'gap']).out;
   expect(gap).toContain('red gap;');
   expect(gap).not.toContain('not delivered');
+  expect(gap).not.toContain('declaration gap');
   r.write('source', 'dirty source');
   cli(['run', '--fresh', '--tasks', 'read']);
   expect(readFileSync(marker, 'utf8')).toBe('ab');

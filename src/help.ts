@@ -24,7 +24,10 @@ const commands: Record<string, [string, string]> = {
   status: [statusUsage, 'Show proof state at a committed ref.'],
   lint: [lintUsage, 'Check declarations and coverage against the staged tree.'],
   doctor: [doctorUsage, 'Check store health and declared dimension values.'],
-  run: [runUsage, 'Run selected tasks and record their results.'],
+  run: [
+    runUsage,
+    'Run selected tasks and record their results; --strict-inputs audits undeclared reads.',
+  ],
   record: [recordUsage, 'Record an externally obtained task result.'],
   rekey: [
     rekeyUsage,

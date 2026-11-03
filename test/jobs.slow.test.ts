@@ -27,6 +27,7 @@ test('default and explicit jobs=1 preserve the serial transcript', () => {
 test('jobs requires one positive safe integer before the selector', () => {
   const f = fixture({ a: task('true') });
   for (const args of [
+    ['--strict-inputs', '--strict-inputs'],
     ['--jobs', '0'],
     ['--jobs', 'x'],
     ['--jobs'],
@@ -39,7 +40,7 @@ test('jobs requires one positive safe integer before the selector', () => {
     const result = f.run(...args);
     expect(result.code).toBe(2);
     expect(result.err).toContain(
-      'usage: proof run [--fresh | --staged | --since <ref>] [--jobs N] [--tasks <id> ... | --set <name>]',
+      'usage: proof run [--fresh | --staged | --since <ref>] [--strict-inputs] [--jobs N] [--tasks <id> ... | --set <name>]',
     );
   }
   expect(f.run('--jobs', '2').code).toBe(0);

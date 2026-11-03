@@ -1,7 +1,6 @@
 import { hostname } from 'node:os';
-import { key, selection } from './key';
+import { key } from './key';
 import type { Lanes } from './lanes';
-import { logSuffix, notDelivered } from './logs';
 import {
   type currentTree,
   decide,
@@ -11,7 +10,8 @@ import {
   STAGED_SUFFIX,
 } from './plan';
 import { providerMismatch } from './provider-inputs';
-import { BASE_ENV, type Providers } from './providers';
+import type { Providers } from './providers';
+import { runAttempt } from './run-attempt';
 import type { RunProcesses } from './run-process';
 import { Sandbox } from './sandbox';
 import type { Store } from './store';
@@ -19,6 +19,7 @@ import type { Store } from './store';
 export type TaskResult = {
   outcome: 'green' | 'red' | 'incomplete' | 'proven' | 'unreached';
   notRecorded: boolean;
+  gaps?: string[];
 };
 
 type Context = {
@@ -27,6 +28,7 @@ type Context = {
   view: () => ReturnType<typeof currentTree>;
   refresh: () => ReturnType<typeof currentTree>;
   fresh: boolean;
+  strictInputs: boolean;
   since?: Since;
   live: boolean;
   logFailed: () => void;
@@ -51,6 +53,7 @@ export async function runTask(
     view: currentView,
     refresh,
     fresh,
+    strictInputs,
     since,
     live,
     logFailed,
@@ -163,86 +166,48 @@ export async function runTask(
     const input = key(id, task, tree, dirty);
     const dirtyInputs = fresh && input.key === undefined;
     const sandbox = blocked ? undefined : new Sandbox();
+    const sandboxes = sandbox ? [sandbox] : [];
     try {
-      let seconds: number | null = null;
-      let outcome: 'incomplete' | 'green' | 'red' = 'incomplete';
-      let unbuilt: string | undefined;
-      let log = '';
-      let selected = new Set<string>();
-      let delivered = new Set<string>();
-      try {
-        if (sandbox) {
-          // Dirt that reaches no input must not change what runs: the proof names the committed bytes.
-          const visible = input.key === undefined ? dirty : [];
-          selected = selection(task, tree, visible);
-          const links = task.links ?? [];
-          delivered = new Set(
-            [...(task.delivered?.values() ?? [])]
-              .flat()
-              .filter(
-                (path) =>
-                  !selected.has(path) &&
-                  !links.some((link) => path === link || path.startsWith(`${link}/`)),
-              ),
-          );
-          sandbox.materialize(selected, tree, visible, staged, delivered);
-          sandbox.link(links, inspection);
-        }
-      } catch (error) {
-        // Unattended, the backstop finishes every task it can; a person running `run` is told now.
-        if (!fresh) throw error;
-        unbuilt = error instanceof Error ? error.message : String(error);
+      // Dirt that reaches no input must not change what runs: the proof names the committed bytes.
+      const visible = input.key === undefined ? dirty : [];
+      const attemptTask = task;
+      const attempt = (sandbox: Sandbox | undefined, strict: boolean) =>
+        runAttempt({
+          id,
+          task: attemptTask,
+          tree,
+          visible,
+          strict,
+          sandbox,
+          inspection,
+          fresh,
+          staged,
+          providers,
+          slot,
+          processes,
+          project,
+          key: current.key,
+          live,
+          logFailed,
+        });
+      let result = await attempt(sandbox, strictInputs);
+      const gaps =
+        strictInputs && result.outcome === 'red'
+          ? result.omitted.filter((path) => result.delivered.has(path))
+          : [];
+      if (gaps.length && !processes.cancelled) {
+        const retry = new Sandbox();
+        sandboxes.push(retry);
+        result = await attempt(retry, false);
       }
-      if (sandbox && !unbuilt) {
-        const env: Record<string, string> = Object.create(null);
-        for (const name of [...BASE_ENV, ...(task.env ?? [])]) {
-          const value = process.env[name];
-          if (value !== undefined) env[name] = value;
-        }
-        Object.assign(env, providers.environment(task.needs ?? [], slot));
-        if (slot !== undefined) env.PROOF_LANE_SLOT = String(slot);
-        const started = performance.now();
-        const result = await processes.execute(
-          task.run,
-          sandbox.path,
-          env,
-          false,
-          {
-            project,
-            kind: 'tasks',
-            task: id,
-            key: current.key,
-            live,
-          },
-          task.timeout,
-        );
-        outcome = processes.cancelled
-          ? 'incomplete'
-          : result.budgetKilled
-            ? 'red'
-            : result.signal
-              ? 'incomplete'
-              : result.code === 0
-                ? 'green'
-                : 'red';
-        seconds = (performance.now() - started) / 1000;
-        const retained = result.capture?.finish(outcome) ?? {};
-        if (retained.error) logFailed();
-        log =
-          (result.budgetKilled && !processes.cancelled
-            ? `; killed at budget after ${task.timeout} seconds`
-            : '') +
-          (outcome === 'red' && retained.path
-            ? notDelivered(retained.path, sandbox.root, tree, new Set([...selected, ...delivered]))
-            : '') +
-          logSuffix(retained);
-      }
+      const { outcome, seconds, unbuilt, log } = result;
       if (outcome !== 'green') fail();
       const after = refresh();
       let unpublished = input.reason;
       if (!staged && !unpublished) {
         if (after.tree.commit !== baseline.tree.commit) unpublished = 'HEAD changed';
         else {
+          // The first sandbox's baseline already spans both attempts' net checkout changes.
           const changed = sandbox?.changed();
           if (changed) unpublished = `selected path changed '${changed}'`;
           else if (after.declaration) unpublished = `dirty declaration '${after.declaration}'`;
@@ -290,14 +255,16 @@ export async function runTask(
         summary.push(
           `${outcome} ${id}; not recorded: ${current.reason}${exhausted ? `; ${exhausted}` : ''}${providerReason}${escapes.length ? `; ${escapes.join('; ')}` : ''}${log}`,
         );
-      return { outcome, notRecorded: current.key === undefined };
+      return { outcome, notRecorded: current.key === undefined, gaps };
     } finally {
-      try {
-        sandbox?.close();
-      } catch (error) {
-        summary.push(
-          `warning: sandbox cleanup failed for ${id}; left behind: ${sandbox?.path}; ${error}`,
-        );
+      for (const sandbox of sandboxes) {
+        try {
+          sandbox.close();
+        } catch (error) {
+          summary.push(
+            `warning: sandbox cleanup failed for ${id}; left behind: ${sandbox.path}; ${error}`,
+          );
+        }
       }
     }
   } finally {

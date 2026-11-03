@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.27.0
+
+- `run --strict-inputs` audits selection-only task sandboxes. A red naming an omitted
+  delivered path retries once with normal delivery; only the final outcome is recorded
+  and counted. Declaration gaps print after the summary without changing the exit code.
+  Use `--fresh --strict-inputs` to audit already proven tasks.
+
 ## 0.26.0
 
 - Root `delivered: [globs]` adds tracked snapshot files to every task sandbox beyond
