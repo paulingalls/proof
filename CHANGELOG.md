@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.34.0
+
+- Tasks accept `artifacts: [globs]` to retain post-exit diagnostics beside red and
+  incomplete logs. Results name the directory; the existing ten-log policy prunes
+  each pair. Green and unmatched runs retain no artifacts. Files stay local and
+  declarations do not change keys; copy errors report through log retention.
+
 ## 0.33.2
 
 - Unchanged PROVEN tasks print only their plan line during `run`; they still count in

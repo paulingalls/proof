@@ -100,7 +100,8 @@ export async function runAttempt({
             ? 'green'
             : 'red';
     seconds = (performance.now() - started) / 1000;
-    const retained = result.capture?.finish(outcome) ?? {};
+    const retained =
+      result.capture?.finish(outcome, { root: sandbox.root, patterns: task.artifacts ?? [] }) ?? {};
     if (retained.error) logFailed();
     const hints =
       outcome === 'red' && retained.path

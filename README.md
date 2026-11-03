@@ -358,6 +358,18 @@ exempt:
   To read and key a tracked file's bytes, list its ordinary path as an input. Links cannot
   reach tracked files. Nonignored untracked files prevent publication only for tasks selecting them.
   An untracked dirty path at or below a task's declared link is not an input of that task.
+- **Keep failure diagnostics.** Add `artifacts` to a task:
+  ```yaml
+  artifacts: [test-results/**, debug/**]
+  ```
+  Red and incomplete runs copy matching regular files after the process exits, preserving
+  relative paths beside the retained log. The result prints `; artifacts: <directory>`
+  after its log path. Green runs and unmatched globs create no artifact directory or suffix.
+  Patterns must be nonempty strings without negation, absolute paths or `..` components;
+  `[]` means none. Use `dir/**` for a directory's files: a bare directory name or a symlink
+  matches nothing. Hidden files are included. Artifacts stay on this machine, never enter
+  either store, and do not affect keys. Each task keeps ten logs with their artifact
+  directories; pruning removes each pair. See [retention and errors](docs/commands.md).
 - **Dimensions** declare machine values only for tasks that depend on them:
   ```yaml
   dimensions: {tool: 'printf demo'}

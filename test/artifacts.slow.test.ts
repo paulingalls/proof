@@ -44,7 +44,17 @@ for (const [value, message] of [
   [['debug/../trace.zip'], 'sandbox-relative'],
 ] as [unknown, string][]) {
   test(`artifacts rejects ${JSON.stringify(value)}`, () => {
-    const f = fixture({ a: { ...task('false'), ...{ artifacts: value } } });
+    const f = fixture(
+      {},
+      {},
+      {
+        'proof.yaml': JSON.stringify({
+          version: 1,
+          project: 'jobs',
+          tasks: { a: { ...task('false'), artifacts: value } },
+        }),
+      },
+    );
     const result = f.repo.cli(['plan'], f.env);
     expect(result.code).toBe(2);
     for (const word of ["task 'a'", 'artifacts', message]) expect(result.err).toContain(word);

@@ -29,6 +29,7 @@ export type Task = {
   lane?: string;
   carry?: boolean;
   timeout?: number;
+  artifacts?: string[];
 };
 
 export function mapping(value: unknown, context: string): Record<string, unknown> {
@@ -225,6 +226,7 @@ export function declarations(tree: RefTree, working = false) {
           'keyed',
           'carry',
           'timeout',
+          'artifacts',
         ],
         label,
       );
@@ -263,6 +265,14 @@ export function declarations(tree: RefTree, working = false) {
         throw new Error(`${label}: env name must not contain ':'`);
       for (const name of ['PROOF_LANE_SLOT', 'PROOF_RUN_PID'])
         if (env?.includes(name)) throw new Error(`${label}: ${name} is reserved`);
+      const artifacts =
+        'artifacts' in task ? filePatterns(task.artifacts, `${label} artifacts`) : undefined;
+      for (const pattern of artifacts ?? []) {
+        if (isAbsolute(pattern) || pattern.split('/').includes('..'))
+          throw new Error(
+            `${label} artifacts: expected sandbox-relative glob without '..': '${pattern}'`,
+          );
+      }
       const links = 'links' in task ? linkList(task.links, label) : undefined;
       tasks.set(id, {
         run: text(task.run, `${label} run`),
@@ -270,6 +280,7 @@ export function declarations(tree: RefTree, working = false) {
         timeout: task.timeout as number | undefined,
         inputs: patterns(task.inputs, label),
         env,
+        artifacts,
         keyed: 'keyed' in task ? filePatterns(task.keyed, `${label} keyed`) : undefined,
         links,
         needs,
