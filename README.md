@@ -91,6 +91,9 @@ at push or in CI.
 - **Don't link a Python venv.** `uv run` syncs the venv it finds, so a linked `.venv` is
   rewritten by concurrent tasks. Run `uv run --frozen --directory <project> pytest ...` and let
   uv build a sandbox venv from its cache under `HOME`.
+- **Key what a shared stack serves.** Providers and `needs` never enter keys, so declare the
+  migrations, seeds and provider scripts on every dependent task (a named `$stack` set), or an
+  edit to them leaves those tasks PROVEN.
 - **Keep paid and live tests out of ordinary runs.** Put the other tasks in sets (`sets: [commit]`)
   and have hooks run `proof run --set commit`; paid tasks stay out of every set, so only plain
   `run` and the fresh super execute them. Their keys reach the command only through `env:`.
