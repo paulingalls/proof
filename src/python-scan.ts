@@ -1,6 +1,36 @@
 type Token = { text: string; literal?: string };
 export type PythonImport = { name: string; members?: string[] };
 
+function literal(value: string, prefix: string): string | undefined {
+  if (/[fb]/i.test(prefix) || /\\N\{/.test(value)) return undefined;
+  if (/r/i.test(prefix)) return value;
+  return value.replace(
+    /\\(?:\r?\n|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|[0-7]{1,3}|[^\n])/g,
+    (sequence) => {
+      const code = sequence.slice(1);
+      if (code === '\n' || code === '\r\n') return '';
+      if (/^[xuU]/.test(code)) {
+        const point = Number.parseInt(code.slice(1), 16);
+        return point <= 0x10ffff ? String.fromCodePoint(point) : sequence;
+      }
+      if (/^[0-7]/.test(code)) return String.fromCodePoint(Number.parseInt(code, 8));
+      const simple: Record<string, string> = {
+        n: '\n',
+        r: '\r',
+        t: '\t',
+        b: '\b',
+        f: '\f',
+        v: '\v',
+        a: '\x07',
+        "'": "'",
+        '"': '"',
+        '\\': '\\',
+      };
+      return simple[code] ?? sequence;
+    },
+  );
+}
+
 function tokens(source: string): Token[] {
   const result: Token[] = [];
   let i = 0;
@@ -25,7 +55,7 @@ function tokens(source: string): Token[] {
       i += quote.length;
       result.push({
         text: '<string>',
-        literal: /[fb]/i.test(quoted[0].slice(0, -quote.length)) ? undefined : value,
+        literal: literal(value, quoted[0].slice(0, -quote.length)),
       });
       continue;
     }
