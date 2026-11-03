@@ -58,6 +58,7 @@ export async function run(args: string[]) {
   const store = await Store.open(selected.project);
   const summary: string[] = [];
   const skipped: string[] = [];
+  const gaps = new Map<string, string[]>();
   const counts: Record<TaskResult['outcome'], number> = {
     green: 0,
     red: 0,
@@ -189,6 +190,7 @@ export async function run(args: string[]) {
           },
         });
         if (result) {
+          if (result.gaps?.length) gaps.set(id, result.gaps);
           counts[result.outcome]++;
           if (result.outcome !== 'incomplete') done++;
           if (result.notRecorded) notRecorded++;
@@ -244,7 +246,16 @@ export async function run(args: string[]) {
     await providers.stopExcept(new Set());
     const failures = providers.failures();
     if (failures.length) failed = true;
-    console.log([...summary, ...failures, `summary: ${tally()}`].join('\n'));
+    console.log(
+      [
+        ...summary,
+        ...failures,
+        `summary: ${tally()}`,
+        ...ids
+          .filter((id) => gaps.has(id))
+          .map((id) => `declaration gap ${id}: ${gaps.get(id)?.join(', ')}`),
+      ].join('\n'),
+    );
     return processes.interrupted
       ? processes.interrupted === 'SIGINT'
         ? 130

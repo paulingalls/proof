@@ -19,6 +19,7 @@ import type { Store } from './store';
 export type TaskResult = {
   outcome: 'green' | 'red' | 'incomplete' | 'proven' | 'unreached';
   notRecorded: boolean;
+  gaps?: string[];
 };
 
 type Context = {
@@ -269,7 +270,7 @@ export async function runTask(
         summary.push(
           `${outcome} ${id}; not recorded: ${current.reason}${exhausted ? `; ${exhausted}` : ''}${providerReason}${escapes.length ? `; ${escapes.join('; ')}` : ''}${log}`,
         );
-      return { outcome, notRecorded: current.key === undefined };
+      return { outcome, notRecorded: current.key === undefined, gaps };
     } finally {
       for (const sandbox of sandboxes) {
         try {
