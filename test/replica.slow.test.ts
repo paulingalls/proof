@@ -299,7 +299,7 @@ test('losing Postgres after planning retains results and makes only the attempte
       },
     }),
   });
-  const child = repo.spawnCli(['run'], a);
+  const child = repo.spawnCli(['run', '--jobs', '1'], a);
   const done = output(child);
   const deadline = setTimeout(() => child.kill('SIGKILL'), 20_000);
   let stopped = false;
