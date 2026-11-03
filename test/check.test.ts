@@ -325,15 +325,25 @@ test('a duplicate key in the cases file fails loudly', () => {
   }
 });
 
-test('an undecidable task at a case baseline fails the case instead of matching by accident', () => {
+test('undecidable tasks at either ref count in the exact RUN set', () => {
   const r = repo();
   const a = r.commit({
-    'proof.yaml': `version: 1\nproject: fixture\ntasks:\n  t:\n    run: exit 99\n    inputs: [{imports-of: main.ts}]\n`,
+    'proof.yaml': `version: 1\nproject: fixture\ntasks:\n  t:\n    run: exit 99\n    inputs: [{imports-of: main.ts}]\n  u:\n    run: exit 99\n    inputs: [other.ts]\n`,
     'main.ts': "const name = './x'; await import(name);",
+    'other.ts': 'export {};',
   });
   const b = r.commit({ 'main.ts': "import './x';", 'x.ts': 'export {};' });
-  const result = r.check([item('edit', a, b, ['t'])]);
+  const result = r.check([
+    item('from only', a, b, ['t']),
+    item('both refs', a, a, ['t']),
+    item('omitted', a, b),
+  ]);
   expect(result.code).toBe(1);
-  expect(result.out).toContain('FAIL edit');
-  expect(result.out).toContain(`from ${a}: t undecidable`);
+  const diagnostic = '  RUN t: main.ts: computed import name\n';
+  expect(result.out).toContain(
+    `PASS from only\n${diagnostic}PASS both refs\n${diagnostic}FAIL omitted`,
+  );
+  expect(result.out).toContain('extra: t');
+  expect(result.out.match(/ {2}RUN t: /g)).toHaveLength(3);
+  expect(result.out).not.toContain('RUN u:');
 });

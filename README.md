@@ -189,7 +189,7 @@ exempt:
   committed version bump; the super run that executes every task fresh catches it.
 - **Generated declarations stay out of git.** Root `generate: {run, inputs, links?}` runs a
   generator in a sandbox containing its selected inputs from the judged tree. It writes included
-  declarations (`inputs`, `tasks`, `unkeyed`, `super-only`, `delivered`) to the empty `$PROOF_DECLARATIONS`
+  declarations (`inputs`, `tasks`, `unkeyed`, `super-only`, `delivered`, `exempt`) to the empty `$PROOF_DECLARATIONS`
   directory. Committed `include` files can coexist; duplicate tasks and input sets fail. `plan` and other declaration
   readers therefore execute repository code on a cache miss. For example, commit `source.txt`,
   this root declaration, and `scripts/generate-proof.sh`:
@@ -390,7 +390,8 @@ exempt:
   `PATH`, `HOME`, `TMPDIR` and the declared `env`. A missing input fails the task instead of
   passing by luck.
 - **`coverage` and `exempt`**: `proof lint` reports every covered file that no task selects and
-  no exemption names.
+  no exemption names. Included and generated declarations add exemptions to the root’s. A path
+  exempted in two files fails naming both files, even when the reasons match.
 
 ## Providers
 
