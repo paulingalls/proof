@@ -186,6 +186,12 @@ exempt:
   Editing and committing an asset keeps the key and PROVEN decision unchanged;
   `bunx proof run --fresh --tasks read` executes the new bytes. An undeclared read can
   retain a green until the fresh super; delivery trades that detection for fewer false reds.
+  To audit already proven tasks, run `bunx proof run --fresh --strict-inputs`.
+  Each task first receives selection only (plus declared links). A red whose recognized
+  missing-file diagnostics name an omitted delivered path retries once in a fresh sandbox
+  with normal delivery. Only the retry outcome is recorded and counted. After the summary,
+  `declaration gap read: assets/a, assets/b` lists the detected paths separately; gaps do
+  not change the exit code. This finds recognized red-log evidence, not every undeclared read.
   Dirty or checkout-deleted delivered-only paths still supply snapshot bytes; untracked
   matches are absent and unrelated dirt does not block publication. Under `--staged`,
   delivery uses the captured index. A file also selected follows selection's bytes,

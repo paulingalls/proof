@@ -19,7 +19,7 @@ proof help [<command>]       general help or one command's usage
 proof plan [--since <ref>] [--set <name>] [--json]  what must run, and why
 proof why <task>            current key parts and changes since the newest proof
 proof status --ref <ref> [--set <name>] [--json]  proof state at a committed ref
-proof run [--fresh | --staged | --since <ref>] [--jobs N] [--tasks <id> ... | --set <name>]  run tasks and record each result
+proof run [--fresh | --staged | --since <ref>] [--strict-inputs] [--jobs N] [--tasks <id> ... | --set <name>]  run tasks and record each result
 proof record <task> --outcome green|red|incomplete [--seconds N]
 proof invalidate --task <t> [--key k | --all]  delete proofs with a manual audit
 proof flakes [--since Nd]    tasks ranked by ordinary contradictions
@@ -37,8 +37,8 @@ and suggest checking `proof --version` against the proof dependency pin in `pack
 and running `bun install` if they differ.
 
 `proof run --jobs 2` runs up to two tasks concurrently. `--jobs` accepts a positive safe
-integer and belongs after `--fresh` or `--staged`, before the selector. It defaults to 1,
-which streams each task's combined stdout and stderr live to proof's stdout in declared
+integer and belongs after the run mode and optional `--strict-inputs`, before the selector.
+It defaults to 1, which streams each task's combined stdout and stderr live to proof's stdout in declared
 execution order. Task stdout and stderr see no TTY. Above 1, each task's stdout and stderr
 appear together on stdout when it finishes, under `--- <task>`; summaries stay in declared
 order. Both streams write to one capture file to preserve their write order.
@@ -57,7 +57,7 @@ count as `incomplete`, without increasing done. Unstarted tasks get no progress 
 count, so interruption or incomplete work leaves done below total. Counts use final decisions,
 which may differ from the initial preview.
 
-The final summary keeps task lines in declaration order and ends with a tally:
+The summary keeps task lines in declaration order, followed by a tally (and any declaration gaps):
 
 ```text
 summary: green 2, red 0, incomplete 0, proven 0, unreached 0
@@ -101,7 +101,35 @@ root. Untracked paths, delivered paths (including projections and key exclusions
 directories, outside paths and indirect symptoms such as `Script not found` get no hint.
 Relative paths after a task changes directory may remain unrecognized. Green and incomplete
 tasks get no hint. If the retained log cannot be read, the red reports as usual.
-Hints change no outcome, key or proof.
+Without `--strict-inputs`, hints change no outcome, key or proof.
+
+`proof run --strict-inputs` audits executing tasks with selection only on the first
+attempt; declared links still install. It preserves PROVEN and UNREACHED skips. To audit
+already proven tasks, use:
+
+```sh
+proof run --fresh --strict-inputs
+```
+
+When that first attempt is red and its recognized missing-file diagnostics name tracked
+root-delivered paths outside selection and task links, the task retries once in a fresh
+sandbox with normal delivery. The retry determines the recorded outcome, stored seconds,
+progress, tally and exit status. The first attempt records nothing and cannot contest or
+delete a proof; its diagnostic log may remain locally. Providers and lane slots remain
+held across both attempts, each with its own timeout. Cancellation prevents a retry.
+Publication still checks checkout changes across both attempts.
+
+After the tally, stdout lists each affected task once in declaration order, with all
+eligible detected paths deduplicated in diagnostic order, without the hint's three-path limit:
+
+```text
+declaration gap read: assets/a, assets/b
+```
+
+Gaps add no store state and do not change the exit code. A strict red without an eligible
+path, including a repo without root `delivered`, records normally without a retry.
+The same diagnostic limitations as the hint apply: this detects recognized red-log evidence,
+not all undeclared reads. Without the flag, delivery and outcome reporting stay unchanged.
 
 `proof lint` also exits 1 when a negation removes a path added by an `imports-of`
 or `maestro` trace and the final selection omits it. For example:

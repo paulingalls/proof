@@ -27,6 +27,7 @@ test('default and explicit jobs=1 preserve the serial transcript', () => {
 test('jobs requires one positive safe integer before the selector', () => {
   const f = fixture({ a: task('true') });
   for (const args of [
+    ['--strict-inputs', '--strict-inputs'],
     ['--jobs', '0'],
     ['--jobs', 'x'],
     ['--jobs'],
