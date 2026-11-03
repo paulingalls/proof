@@ -195,10 +195,16 @@ export async function runTask(
         strictInputs && result.outcome === 'red'
           ? result.omitted.filter((path) => result.delivered.has(path))
           : [];
-      if (gaps.length && !processes.cancelled) {
-        const retry = new Sandbox();
-        sandboxes.push(retry);
-        result = await attempt(retry, false);
+      if (strictInputs && result.outcome === 'red' && result.delivered.size > 0) {
+        if (processes.cancelled) {
+          result.outcome = 'incomplete';
+          result.seconds = null;
+        } else {
+          const retry = new Sandbox();
+          sandboxes.push(retry);
+          result = await attempt(retry, false);
+          if (result.outcome === 'green' && !gaps.length) gaps.push('unidentified');
+        }
       }
       const { outcome, seconds, unbuilt, log } = result;
       if (outcome !== 'green') fail();

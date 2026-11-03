@@ -91,6 +91,15 @@ that hint. Quoted `Cannot find module` and `Cannot find package` errors also res
 workspace exports (including subpaths) and root tsconfig aliases against the run's tree.
 For example, `Cannot find module '@fixture/db/testing/fixture'` can append
 `; not delivered: packages/db/__tests__/fixture.ts`.
+Bun's `Could not resolve: "./client.ts"` blocks also name tracked, omitted targets when
+a following `at <absolute importer>` line locates the importer inside the sandbox.
+Relative specifiers resolve from that file's directory with the import scanner's
+extension and index rules (`./client` finds `client.ts`), including importers with
+line/column suffixes. For example, an importer at `web/index.html` names `web/client.ts`,
+not a root-level `client.ts`. Blocks without an inside importer get no hint.
+A red log containing `not a git repository` adds
+`; the sandbox is not a git checkout`; tasks needing git metadata must account for that
+sandbox boundary.
 Import and require export targets are both checked; only tracked, unselected targets
 are named. Unresolvable and third-party specifiers get no hint. At most three distinct
 paths appear in diagnostic order, followed by `(+N more)` for the remainder.
@@ -111,12 +120,13 @@ already proven tasks, use:
 proof run --fresh --strict-inputs
 ```
 
-When that first attempt is red and its recognized missing-file diagnostics name tracked
-root-delivered paths outside selection and task links, the task retries once in a fresh
-sandbox with normal delivery. The retry determines the recorded outcome, stored seconds,
+When that first attempt is red and root delivery supplies tracked paths outside selection
+and task links, the task retries once in a fresh sandbox with normal delivery, even when
+the log identifies no missing path. The retry determines the recorded outcome, stored seconds,
 progress, tally and exit status. The first attempt records nothing and cannot contest or
 delete a proof; its diagnostic log may remain locally. Providers and lane slots remain
-held across both attempts, each with its own timeout. Cancellation prevents a retry.
+held across both attempts, each with its own timeout. Cancellation prevents a retry and
+records/counts incomplete with no stored seconds, so the strict red contests nothing.
 Publication still checks checkout changes across both attempts.
 
 After the tally, stdout lists each affected task once in declaration order, with all
@@ -126,10 +136,13 @@ eligible detected paths deduplicated in diagnostic order, without the hint's thr
 declaration gap read: assets/a, assets/b
 ```
 
-Gaps add no store state and do not change the exit code. A strict red without an eligible
-path, including a repo without root `delivered`, records normally without a retry.
-The same diagnostic limitations as the hint apply: this detects recognized red-log evidence,
-not all undeclared reads. Without the flag, delivery and outcome reporting stay unchanged.
+A green retry with no eligible named path prints `declaration gap read: unidentified`.
+A red or incomplete retry adds no unidentified gap; detected named gaps still print.
+Gaps add no store state and do not change the exit code. When root `delivered` is absent
+or every matched path is already selected or under task links, a strict red records
+normally without a retry. The same diagnostic limitations as the hint apply to named gaps;
+this does not detect every undeclared read. Without the flag, delivery and outcome
+reporting stay unchanged.
 
 `proof lint` also exits 1 when a negation removes a path added by an `imports-of`
 or `maestro` trace and the final selection omits it. For example:
@@ -918,8 +931,11 @@ roots. An unresolved relative import is undecidable. Such tasks run with the rea
 and cannot publish proof.
 
 Literal absolute `importlib.import_module('m')`, `import_module('m')` and `__import__('m')`
-calls follow the same resolution. Computed arguments and relative calls requiring
-package context are undecidable. Call aliases are not inferred. Imports inside functions,
+calls follow the same resolution. Any `<expr>.import_module(...)` receiver is treated
+the same way, including `loader.import_module('m')`, `obj.loader.import_module('m')`,
+`factory().import_module('m')` and `loaders[0].import_module('m')`.
+Computed arguments and relative calls requiring package context are undecidable.
+Call aliases are not inferred. Imports inside functions,
 conditionals, parenthesized lists and backslash continuations are followed. Import-looking
 text in strings, comments and docstrings is ignored.
 

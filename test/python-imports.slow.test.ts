@@ -156,8 +156,17 @@ test('unresolved local and relative imports name the missing edge; external impo
   changes(r, { 'local.py': ['a'], 'other.py': [] });
 });
 
-test('literal dynamic calls follow modules and computed calls are undecidable', () => {
-  const calls = ['importlib.import_module', 'import_module', '__import__'];
+const calls = [
+  'importlib.import_module',
+  'import_module',
+  '__import__',
+  'loader.import_module',
+  'obj.loader.import_module',
+  'factory().import_module',
+  'loaders[0].import_module',
+];
+
+test('literal dynamic calls follow modules', () => {
   const files: Record<string, string> = { 'm.py': '' };
   const tasks: Record<string, unknown> = {};
   for (const [i, call] of calls.entries()) {
@@ -166,14 +175,20 @@ test('literal dynamic calls follow modules and computed calls are undecidable', 
   }
   const r = fixture(tasks, files);
   for (const row of plan(r)) expect(row.key, row.reason).toBeDefined();
-  changes(r, { 'm.py': ['a0', 'a1', 'a2'] });
+  changes(r, { 'm.py': calls.map((_, i) => `a${i}`) });
+});
+
+test('computed dynamic calls are undecidable', () => {
+  const r = fixture({ a0: task('t0.py') }, { 't0.py': '', 'm.py': '' });
   for (const call of calls) {
-    for (const arg of ['name', "'m' + suffix", "f'{name}'", "'.m'"]) {
+    for (const arg of calls.indexOf(call) < 3
+      ? ['name', "'m' + suffix", "f'{name}'", "'.m'"]
+      : ['name']) {
       r.commit({ 't0.py': `${call}(${arg})` });
       const row = plan(r).find((row) => row.task === 'a0');
       expect(row?.key, `${call}(${arg})`).toBeUndefined();
       expect(row?.reason).toContain('t0.py');
-      expect(row?.reason).toContain(call);
+      expect(row?.reason).toContain(call === '__import__' ? call : 'import_module');
     }
   }
 });
@@ -185,12 +200,13 @@ test('lexical boundaries preserve real imports and suppress import-looking prose
       't.py': String.raw`
 """import decoy
 import_module(name)
+obj.loader.import_module(name)
 """
-single = 'import decoy'
+single = 'loader.import_module("decoy")'
 double = "__import__('decoy')"
 escaped = 'it\'s import decoy'
 raw = r'''from decoy import x'''
-# import decoy; import_module(name)
+# import decoy; factory().import_module(name); loaders[0].import_module(name)
 def test_it():
     import a as alias, b
     if True: from p import (

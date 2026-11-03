@@ -24,7 +24,7 @@ test('red summaries name omitted tracked paths, keeping delivery separate from k
   const f = fixture(
     {
       ...Object.fromEntries(Object.entries(forms).map(([id, run]) => [id, { run, inputs }])),
-      green: { run: diagnostic('omitted'), inputs },
+      green: { run: `${diagnostic('omitted')}; echo 'not a git repository'`, inputs },
     },
     {},
     {
@@ -55,9 +55,9 @@ test('red summaries name omitted tracked paths, keeping delivery separate from k
     expect(bytes).toMatch(/no such file or directory/i);
     expect(result.out).toContain(bytes.trim());
   }
-  expect(result.out.split('\n').find((line) => line.startsWith('green green;'))).not.toContain(
-    'not delivered',
-  );
+  const green = result.out.split('\n').find((line) => line.startsWith('green green;'));
+  expect(green).not.toContain('not delivered');
+  expect(green).not.toContain('sandbox is not a git checkout');
 });
 
 test('a pruned retained log leaves the red unchanged', () => {
@@ -144,4 +144,44 @@ test('workspace module errors name omitted export targets on the first red', () 
   for (const id of ['selected', 'unknown', 'missing', 'thirdparty']) {
     expect(summary(result.out, id)).not.toContain('not delivered');
   }
+});
+
+test('Bun resolver blocks use only their sandbox importer; git reds explain the checkout', () => {
+  const f = fixture(
+    {
+      build: {
+        run: `'${process.execPath}' build web/index.html --outdir out`,
+        inputs: ['web/index.html'],
+      },
+      blocks: {
+        run: `printf 'error: Could not resolve: "./client"\\n    at %s/web space/a.ts:1:8\\nerror: Could not resolve: "./outside.ts"\\n    at /outside/a.ts\\nerror: Could not resolve: "./orphan.ts"\\nerror: Could not resolve: "./later.ts"\\n    at /outside/b.ts\\n' "$(pwd -P)"; false`,
+        inputs: ['input'],
+      },
+      git: { run: 'git rev-parse --show-toplevel', inputs: ['input'] },
+    },
+    {},
+    {
+      'web/index.html': '<script type="module" src="./client.ts"></script>',
+      'web/client.ts': 'console.log(1);',
+      'client.ts': '',
+      'web space/a.ts': '',
+      'web space/client.ts': '',
+      'outside.ts': '',
+      'orphan.ts': '',
+      'later.ts': '',
+    },
+  );
+  const result = f.run();
+  expect(result.code, result.err + result.out).toBe(1);
+  expect(f.rows().map((row) => row.outcome)).toEqual(['red', 'red', 'red']);
+  const hint = (id: string) => summary(result.out, id).split('; log: ')[0];
+  const line = summary(result.out, 'git');
+  expect({ build: hint('build'), blocks: hint('blocks'), git: hint('git') }).toEqual({
+    build: 'red build; not delivered: web/client.ts',
+    blocks: 'red blocks; not delivered: web space/client.ts',
+    git: 'red git; the sandbox is not a git checkout',
+  });
+  expect(readFileSync(line.split('; log: ')[1] as string, 'utf8')).toContain(
+    'not a git repository',
+  );
 });

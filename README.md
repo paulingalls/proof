@@ -143,8 +143,9 @@ exempt:
   Unresolved absolute imports are treated as installed packages or stdlib, unless their
   top-level name exists elsewhere in the tracked tree; then the task is undecidable and
   names the tracked path so you can correct `python-path`. Unresolved relative imports and
-  computed `importlib.import_module`, `import_module` or `__import__` calls are undecidable;
-  literal absolute calls are followed. Strings, docstrings and comments add no imports.
+  computed `import_module`, `<expr>.import_module` or `__import__` calls are undecidable;
+  literal absolute calls are followed, including arbitrary attribute receivers such as
+  `factory().import_module('m')`. Strings, docstrings and comments add no imports.
   `python-path` is a nonempty list of repo-relative directories (`.` means repository root)
   and is valid only for `.py` entries. Declare fixtures, configuration, `conftest.py` and
   plugins separately when they are not imported:
@@ -235,11 +236,16 @@ exempt:
   `bunx proof run --fresh --tasks read` executes the new bytes. An undeclared read can
   retain a green until the fresh super; delivery trades that detection for fewer false reds.
   To audit already proven tasks, run `bunx proof run --fresh --strict-inputs`.
-  Each task first receives selection only (plus declared links). A red whose recognized
-  missing-file diagnostics name an omitted delivered path retries once in a fresh sandbox
-  with normal delivery. Only the retry outcome is recorded and counted. After the summary,
-  `declaration gap read: assets/a, assets/b` lists the detected paths separately; gaps do
-  not change the exit code. This finds recognized red-log evidence, not every undeclared read.
+  Each task first receives selection only (plus declared links). Every red retries once
+  in a fresh sandbox when root delivery supplies paths outside selection and links.
+  Only the retry outcome and time are recorded and counted; the strict attempt cannot
+  contest a green. After the summary, `declaration gap read: assets/a, assets/b` lists
+  detected paths, or `declaration gap read: unidentified` reports a green retry without
+  a named path. Named gaps also print after a red retry; gaps do not change the exit code.
+  With no effective delivery, a strict red records normally. Cancellation prevents retry
+  and records incomplete. Red summaries also explain missing git checkout metadata and
+  recognize Bun's importer-relative `Could not resolve` blocks; see [commands](docs/commands.md).
+  This does not detect every undeclared read.
   Dirty or checkout-deleted delivered-only paths still supply snapshot bytes; untracked
   matches are absent and unrelated dirt does not block publication. Under `--staged`,
   delivery uses the captured index. A file also selected follows selection's bytes,
