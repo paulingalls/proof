@@ -295,7 +295,9 @@ exempt:
   `keyed` does not add inputs. Included tasks can be representatives, and an included file can
   carry `unkeyed`, which adds to the root list, so a generated list can live in `proof.d`.
 
-  This applies to direct inputs, JSON and dotenv-name projections, resolver manifest members,
+  This applies to direct inputs, including every file a glob input matches (a glob a generator
+  writes to stand in for a dynamic import is stripped too: list the files that must key in that
+  task's `keyed`), JSON and dotenv-name projections, resolver manifest members,
   and files reached through `imports-of` or `maestro`. Traversal continues through an unkeyed
   file, so its imports still key. Sandboxes keep exact bytes, and dirty inputs still RUN.
   Environment values and deprecated `{dotenv: path}` inputs do not enter keys. The commit first adopting `unkeyed` moves affected keys once;
