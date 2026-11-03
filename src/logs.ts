@@ -54,7 +54,31 @@ export function redDiagnostics(path: string, root: string, tree: RefTree, select
   const omitted = new Set<string>();
   let git = false;
   let unresolved: string | undefined;
+  let filterCwd: string | undefined;
+  const addPath = (candidate: string, cwd: string) => {
+    const file = relative(root, resolve(cwd, candidate));
+    if (tree.files.has(file) && !selected.has(file)) omitted.add(file);
+  };
   for (const line of content.split('\n')) {
+    if (filterCwd && /^\s+\S/.test(line)) {
+      for (const filter of line.trim().split(/\s+/)) addPath(filter, filterCwd);
+    }
+    filterCwd = undefined;
+    const module = /Module not found "([^"]+)"/.exec(line);
+    if (module) addPath(module[1] as string, root);
+    const singleFilter = /^Test filter "([^"]+)" had no matches in --cwd="([^"]+)"$/.exec(line);
+    const filters = /^The following filters did not match any test files in --cwd="([^"]+)":$/.exec(
+      line,
+    );
+    const cwd = singleFilter?.[2] ?? filters?.[1];
+    if (cwd) {
+      const directory = resolve(root, cwd);
+      const local = relative(root, directory);
+      if (local !== '..' && !local.startsWith('../') && !isAbsolute(local)) {
+        if (singleFilter) addPath(singleFilter[1] as string, directory);
+        else filterCwd = directory;
+      }
+    }
     if (line.includes('not a git repository')) git = true;
     if (/^\s*error:/.test(line)) unresolved = undefined;
     const spec = /Could not resolve: "([^"]+)"/.exec(line);

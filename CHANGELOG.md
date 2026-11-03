@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.31.0
+
+- Red summaries name omitted tracked files in Bun's `Module not found` messages and
+  unmatched test filters with an explicit sandbox cwd, including strict declaration gaps.
+
 ## 0.30.0
 
 - `check` counts tasks undecidable at either ref in the exact RUN set and prints their

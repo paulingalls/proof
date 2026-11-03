@@ -97,6 +97,13 @@ Relative specifiers resolve from that file's directory with the import scanner's
 extension and index rules (`./client` finds `client.ts`), including importers with
 line/column suffixes. For example, an importer at `web/index.html` names `web/client.ts`,
 not a root-level `client.ts`. Blocks without an inside importer get no hint.
+Bun's `Module not found "a/script.ts"` names that exact tracked, omitted file resolved
+from the sandbox root. `Test filter "./missing.test.ts" had no matches in --cwd="<dir>"`
+resolves the filter from `<dir>` when that directory is inside the sandbox. The
+`The following filters did not match any test files in --cwd="<dir>":` form uses
+the next indented line, split on whitespace. These filter hints require Bun's explicit
+`--cwd="…"`, printed when `CLAUDECODE` is set; filters without cwd or containing spaces
+in the multi-filter form remain unnamed. Filters use exact tracked paths, without expansion.
 A red log containing `not a git repository` adds
 `; the sandbox is not a git checkout`; tasks needing git metadata must account for that
 sandbox boundary.
