@@ -43,13 +43,13 @@ export function logSuffix(result: LogResult) {
       : '';
 }
 
-export function notDelivered(path: string, root: string, tree: RefTree, selected: Set<string>) {
+export function omittedPaths(path: string, root: string, tree: RefTree, selected: Set<string>) {
   let content: string;
   try {
     content = readFileSync(path, 'utf8');
   } catch {
     // Retained logs are optional diagnostic evidence; capture errors are handled separately.
-    return '';
+    return [];
   }
   const omitted = new Set<string>();
   for (const line of content.split('\n')) {
@@ -78,7 +78,10 @@ export function notDelivered(path: string, root: string, tree: RefTree, selected
       if (tree.files.has(file) && !selected.has(file)) omitted.add(file);
     }
   }
-  const paths = [...omitted];
+  return [...omitted];
+}
+
+export function notDelivered(paths: string[]) {
   return paths.length
     ? `; not delivered: ${paths.slice(0, 3).join(', ')}${paths.length > 3 ? ` (+${paths.length - 3} more)` : ''}`
     : '';
