@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.26.0
+
+- Root `delivered: [globs]` adds tracked snapshot files to every task sandbox beyond
+  input negations, without changing keys. Includes and generators can add patterns.
+  Delivered-only working dirt does not block publication; selected files retain their
+  byte and key rules, and task links take precedence. `why` summarizes pattern counts.
+
 ## 0.25.0
 
 - `lint` now exits 1 when a negation leaves a traced input out, naming the task, path,

@@ -25,8 +25,9 @@ The super uses `--fresh` and never `--since`. See [command details](docs/command
   task, key, outcome, host, timings, dimension hashes, declared dimension values and
   contradictions, never logs. Each machine
   keeps a local SQLite copy of its own results.
-- **Declarations are enforced, not trusted.** Tasks run in a sandbox holding only
-  their inputs, so a missing input fails loudly. An undecidable task always runs.
+- **Declarations are enforced, not trusted.** Tasks run in a sandbox holding
+  their selected inputs and root `delivered` files. Missing selected inputs fail loudly.
+  An undecidable task always runs.
 - **Flakes are contested, not hidden.** A red against a stored green contests the
   proof; a second red deletes it, and the task runs until it is green again.
 
@@ -136,7 +137,7 @@ exempt:
   committed version bump; the super run that executes every task fresh catches it.
 - **Generated declarations stay out of git.** Root `generate: {run, inputs, links?}` runs a
   generator in a sandbox containing its selected inputs from the judged tree. It writes included
-  declarations (`inputs`, `tasks`, `unkeyed`, `super-only`) to the empty `$PROOF_DECLARATIONS`
+  declarations (`inputs`, `tasks`, `unkeyed`, `super-only`, `delivered`) to the empty `$PROOF_DECLARATIONS`
   directory. Committed `include` files can coexist; duplicate tasks and input sets fail. `plan` and other declaration
   readers therefore execute repository code on a cache miss. For example, commit `source.txt`,
   this root declaration, and `scripts/generate-proof.sh`:
@@ -167,6 +168,39 @@ exempt:
   generator changes: proof cannot detect a generator bug that omits an input. Shell and Dockerfile
   tracing remain the generator's responsibility.
 
+- **Files every task needs.** Root `delivered` supplies matching tracked snapshot files to
+  every task sandbox, independently of inputs and their negations:
+
+  ```yaml
+  version: 1
+  project: delivery-example
+  delivered: [assets/**]
+  tasks:
+    read:
+      run: cat assets/a assets/b
+      inputs: [source]
+  ```
+
+  With committed `source`, `assets/a` containing `a`, and `assets/b` containing `b`,
+  `bunx proof run --tasks read` reads `ab` and reports `green read; proof published`.
+  Editing and committing an asset keeps the key and PROVEN decision unchanged;
+  `bunx proof run --fresh --tasks read` executes the new bytes. An undeclared read can
+  retain a green until the fresh super; delivery trades that detection for fewer false reds.
+  Dirty or checkout-deleted delivered-only paths still supply snapshot bytes; untracked
+  matches are absent and unrelated dirt does not block publication. Under `--staged`,
+  delivery uses the captured index. A file also selected follows selection's bytes,
+  dirty checks and key policy, including explicit `unkeyed`/`super-only` exclusions.
+  Paths equal to or below a task link are skipped; link trust rules stay in force.
+  Included and generated declarations add patterns to the root list. Each pattern must
+  match tracked files in the judged tree; negations and malformed lists fail every reader
+  before task filtering. `why` prints one `delivered pattern assets/**: 2 files` line per
+  distinct pattern, counting all tracked matches before selection and link exclusions.
+  Generators receive only their selected inputs; provider mismatch checks still compare
+  selection only, and providers run in the checkout. Delivery does not establish coverage
+  ownership: `lint` still reports covered files with no selecting task. Gitlinks and directory
+  symlinks retain the sandbox's existing refusals. Repos without `delivered` keep their
+  sandboxes and keys. Unlike `unkeyed` and `super-only`, delivery adds files without
+  changing any key contribution.
 - **Shared files and representatives.** Root `unkeyed` removes matching files from every
   task's key; task `keyed` opts representatives back in. For example, create `shared.txt`
   containing `ready`, then use:

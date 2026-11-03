@@ -336,6 +336,15 @@ An ordinary selected run skips PROVEN tasks. An unknown set exits 2 and names th
 Membership itself does not enter proof identity: moving a task between sets preserves its proof.
 If a declaration file is explicitly selected as a task input, its bytes still enter that task's key.
 
+Root `delivered: [globs]` supplies tracked snapshot files to every executing task, ignoring
+input negations. Delivery alone never changes keys or PROVEN decisions; `--fresh` runs
+new committed bytes. Ordinary runs ignore delivered-only working dirt, missing checkout
+files and untracked matches. `--staged` delivers index snapshot bytes. Selected paths retain
+selection's byte, key and publication rules. Delivery skips paths at or under task links.
+Provider input mismatch checks remain selection-only; providers run in the checkout.
+Included/generated lists accumulate, and every reader rejects negations and patterns with
+no tracked match in its judged tree.
+
 A fresh red over unchanged selected inputs immediately deletes that key's stored green and
 records a `super` contradiction. The summary lists every red and each confirmed deletion as
 `deleted proof local <task> <key>` or `deleted proof shared <task> <key>`. Ordinary runs still
@@ -464,6 +473,11 @@ Plan's dirty-input eligibility stays the same. Resolver-only manifests print
 `delivered keyed member package.json <member> <mode> <hash>` lines instead of a `delivered keyed file package.json` line.
 A version-only edit reports `no inputs changed` in the comparison even when the dirty rule
 requires RUN; a resolution-member edit reports, for example, `changed member package.json name`.
+
+Root delivery prints one summary per distinct pattern, such as
+`delivered pattern assets/**: 2 files`, counting every tracked match before task selection
+and link exclusions. Delivered-only paths are not enumerated or included in input comparisons,
+including when no previous proof exists.
 
 For the README's shared-file example, `proof why reader` includes these lines after a
 committed edit to `shared.txt`:
@@ -807,11 +821,13 @@ red/contest rules continue under carried keys.
 
 ## Generated declarations
 
-Root `generate: {run, inputs, links?}` runs `run` through `sh -c` in the same input sandbox as a
-task. `$PROOF_DECLARATIONS` names a new empty directory outside that sandbox. All nested `*.yaml`
+Root `generate: {run, inputs, links?}` runs `run` through `sh -c` in a selection-only sandbox.
+Root `delivered` files are not added to generator inputs or sandboxes.
+`$PROOF_DECLARATIONS` names a new empty directory outside that sandbox. All nested `*.yaml`
 files are read in sorted relative-path order as included declarations
-(`inputs`, `tasks`, `unkeyed`, `super-only`). Other regular files are ignored; output symlinks and zero YAML files fail. An intentionally empty
-output writes one YAML file containing `tasks: {}`. Generated and committed includes combine, with
+(`inputs`, `tasks`, `unkeyed`, `super-only`, `delivered`). Other regular files are ignored;
+output symlinks and zero YAML files fail. An intentionally empty output writes one YAML file
+containing `tasks: {}`. Generated and committed includes combine, with
 ordinary duplicate, exclusion and representative checks. Generated text has the same task-key meaning as
 committed text; adding `generate` alone does not change task keys.
 

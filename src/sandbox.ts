@@ -236,14 +236,21 @@ export class Sandbox {
   readonly root = realpathSync(this.path);
   private readonly files = new Map<string, File | undefined>();
 
-  materialize(paths: Set<string>, tree: RefTree, dirty: string[], snapshotOnly = false) {
+  materialize(
+    selected: Set<string>,
+    tree: RefTree,
+    dirty: string[],
+    snapshotOnly = false,
+    delivered = new Set<string>(),
+  ) {
+    const paths = new Set([...selected, ...delivered]);
     const ids = new Set<string>();
     for (const path of paths) {
       const { mode, blob } = tree.entry(path);
       if (
         blob &&
         (mode === '100644' || mode === '100755' || mode === '120000') &&
-        (snapshotOnly || !dirty.includes(path))
+        (snapshotOnly || !selected.has(path) || !dirty.includes(path))
       )
         ids.add(blob);
     }
@@ -253,19 +260,20 @@ export class Sandbox {
       if (relative(this.path, target).startsWith('..') || path.split('/').includes('.git'))
         throw new Error(`unsafe selected path '${path}'`);
       const mode = tree.modes.get(path);
-      const file = snapshotOnly
-        ? mode === undefined
-          ? undefined
-          : this.committedFile(path, mode, blobs.get(tree.files.get(path) ?? ''), paths)
-        : dirty.includes(path) || mode === undefined
-          ? workingFile(path)
-          : this.committedFile(path, mode, blobs.get(tree.files.get(path) ?? ''), paths);
+      const file =
+        snapshotOnly || !selected.has(path)
+          ? mode === undefined
+            ? undefined
+            : this.committedFile(path, mode, blobs.get(tree.files.get(path) ?? ''), paths)
+          : dirty.includes(path) || mode === undefined
+            ? workingFile(path)
+            : this.committedFile(path, mode, blobs.get(tree.files.get(path) ?? ''), paths);
       if (file && 'link' in file) {
         mkdirSync(dirname(target), { recursive: true });
         symlinkSync(file.link, target);
         continue;
       }
-      this.files.set(path, file);
+      if (selected.has(path)) this.files.set(path, file);
       if (!file) continue;
       mkdirSync(dirname(target), { recursive: true });
       writeFileSync(target, file.bytes);

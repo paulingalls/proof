@@ -174,8 +174,8 @@ The package has its own tests for its own behaviour, on synthetic repos it build
 
 ### Enforcement and correctness
 - **R7. Enforce declarations, never trust them.**
-  - **Host, static and private-container tasks** run from a sandbox containing only their derived and declared
-    inputs.
+  - **Host, static and private-container tasks** run from a sandbox containing their derived and declared
+    inputs plus root-delivered snapshot files.
   - **Workspace packages must be sound:** a workspace dependency's source enters the closure and the sandbox. It
     is never reached through a `node_modules` symlink back into the real tree. The design's own `bun:db` example
     misses `packages/shared`, which 485 files import.
@@ -192,6 +192,18 @@ The package has its own tests for its own behaviour, on synthetic repos it build
     Every declaration reader validates the current or target ref before selecting tasks;
     an undecidable historical since baseline runs, and unavailable historical rekey
     declarations refuse carry.
+  - Paul, 2026-11-02: root `delivered: [globs]` supplies matching tracked snapshot files to
+    every task sandbox independently of selection, beyond input negations, without adding
+    key inputs. Delivered-only files ignore working dirt and untracked matches; staged runs
+    use the captured index. Also-selected paths retain selection's bytes and key policy,
+    including unkeyed/super-only exclusions. Delivery skips paths at or under task links;
+    existing link trust and sandbox refusals stand. Included/generated files add to the root
+    list. Every declaration reader rejects negations and unmatched patterns against its own
+    tree before selecting tasks. Generators receive selection only; provider mismatch checks
+    compare selection only, while providers run in the checkout. `why` counts tracked matches
+    once per distinct pattern before selection/link exclusions. Delivery alone confers no
+    lint ownership. Paul accepts that an undeclared read can retain a green until the fresh
+    super, to stop false reds from undelivered files. Missing selected inputs still fail.
 - **R8. Fail safe, never silent.**
   - An undecidable task runs: a glob that matches nothing, an unknown adapter, a dirty tracked input. `plan`
     prints why for every task. With `--since <ref>`, only an otherwise `no proof for key`

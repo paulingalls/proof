@@ -17,7 +17,11 @@ copy: delete it.
    belong to each repo's `proof.yaml`.
 4. **Fail loud; never skip silently.** Raise instead of returning null or empty. An
    undecidable task runs and says why. A missing input fails. No fallback that
-   masks a defect; the store fallback (R14) announces itself.
+   masks a defect; the store fallback (R14) announces itself. Paul, 2026-11-02:
+   root `delivered` supplies tracked snapshot files beyond input negations without
+   keying them. Delivered-only dirt is ignored; selection takes precedence and links
+   exclude delivery. An undeclared read may retain green until the fresh super;
+   missing selected inputs and invalid declarations still fail.
 5. **Test behavior at the outermost boundary that reaches it, once.** Drive the
    CLI against synthetic repos built in temp directories. When an integration or
    acceptance test covers a behavior, delete the unit tests that duplicate it.

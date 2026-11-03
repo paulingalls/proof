@@ -3,7 +3,7 @@ import { isAbsolute } from 'node:path';
 import pkg from '../package.json';
 import { type Generator, generate } from './generate';
 import { dirtyPaths, type RefTree } from './git';
-import { filePatterns, resolveUnkeyed } from './unkeyed';
+import { filePatterns, resolveDelivered, resolveUnkeyed } from './unkeyed';
 import { refuseDuplicateKeys } from './yaml-keys';
 
 export type Input =
@@ -21,6 +21,7 @@ export type Task = {
   keyed?: string[];
   unkeyed?: Set<string>;
   superOnly?: Set<string>;
+  delivered?: Map<string, string[]>;
   dimensions?: [string, string][];
   links?: string[];
   needs?: string[];
@@ -122,6 +123,7 @@ export function declarations(tree: RefTree, working = false) {
   const requested = new Map<string, string[]>();
   const unkeyed: unknown[] = [];
   const superOnly: unknown[] = [];
+  const delivered: string[] = [];
   function read(path: string, root: boolean) {
     const context = `ref '${tree.ref}' ${path}`;
     return load(working ? readFileSync(path, 'utf8') : tree.read(path), context, root);
@@ -152,10 +154,12 @@ export function declarations(tree: RefTree, working = false) {
             'dimensions',
             'unkeyed',
             'super-only',
+            'delivered',
           ]
-        : ['inputs', 'tasks', 'unkeyed', 'super-only'],
+        : ['inputs', 'tasks', 'unkeyed', 'super-only', 'delivered'],
       context,
     );
+    if ('delivered' in doc) delivered.push(...filePatterns(doc.delivered, `${context} delivered`));
     if ('super-only' in doc)
       superOnly.push(...filePatterns(doc['super-only'], `${context} super-only`));
     if ('unkeyed' in doc) unkeyed.push(...filePatterns(doc.unkeyed, `${context} unkeyed`));
@@ -337,6 +341,8 @@ export function declarations(tree: RefTree, working = false) {
           throw new Error(`task '${id}': provider '${name}' requires lane '${provider.lane}'`);
       }
     }
+    const delivery = resolveDelivered(delivered, tree);
+    for (const task of tasks.values()) task.delivered = delivery;
     resolveUnkeyed(unkeyed, superOnly, tasks, tree, working);
     const context = `ref '${tree.ref}' proof.yaml`;
     const coverage: string[] = [];

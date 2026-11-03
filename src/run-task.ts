@@ -169,13 +169,24 @@ export async function runTask(
       let unbuilt: string | undefined;
       let log = '';
       let selected = new Set<string>();
+      let delivered = new Set<string>();
       try {
         if (sandbox) {
           // Dirt that reaches no input must not change what runs: the proof names the committed bytes.
           const visible = input.key === undefined ? dirty : [];
           selected = selection(task, tree, visible);
-          sandbox.materialize(selected, tree, visible, staged);
-          sandbox.link(task.links ?? [], inspection);
+          const links = task.links ?? [];
+          delivered = new Set(
+            [...(task.delivered?.values() ?? [])]
+              .flat()
+              .filter(
+                (path) =>
+                  !selected.has(path) &&
+                  !links.some((link) => path === link || path.startsWith(`${link}/`)),
+              ),
+          );
+          sandbox.materialize(selected, tree, visible, staged, delivered);
+          sandbox.link(links, inspection);
         }
       } catch (error) {
         // Unattended, the backstop finishes every task it can; a person running `run` is told now.
@@ -222,7 +233,7 @@ export async function runTask(
             ? `; killed at budget after ${task.timeout} seconds`
             : '') +
           (outcome === 'red' && retained.path
-            ? notDelivered(retained.path, sandbox.root, tree, selected)
+            ? notDelivered(retained.path, sandbox.root, tree, new Set([...selected, ...delivered]))
             : '') +
           logSuffix(retained);
       }
