@@ -24,7 +24,9 @@ export function storeConfig(project: string): { url?: string; excluded?: string 
     if (!['postgres:', 'postgresql:'].includes(url.protocol) || !url.hostname)
       throw new Error('invalid URL');
     if (projects.length && !projects.includes(project))
-      return { excluded: `store not used: project '${project}' is not listed in ${source}` };
+      return {
+        excluded: `store not used: project '${project}' is not listed in ${source}; using this machine's proofs only`,
+      };
     return { url: url.href };
   } catch {
     throw new Error(`invalid store configuration from ${source}: expected a Postgres URL`);

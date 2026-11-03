@@ -166,7 +166,8 @@ test('plans exactly RUN providers without starting them, before any run commands
   expect(result.out.indexOf('RUN b:')).toBeGreaterThanOrEqual(0);
   expect(result.out.indexOf('RUN b:')).toBeLessThan(result.out.indexOf('START-MARK'));
   expect(result.out.indexOf('START-MARK')).toBeLessThan(result.out.indexOf('TASK-MARK'));
-  expect(f.log()).toEqual(['start', 'second']);
+  // Parallel by default, so independent providers start in either order.
+  expect(f.log().sort()).toEqual(['second', 'start']);
 });
 
 test('one start and stop surround only RUN dependents, even after a red', () => {

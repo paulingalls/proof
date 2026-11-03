@@ -286,7 +286,7 @@ to every project as before. With at least one name, an unlisted project uses onl
 SQLite and opens no remote connection. Each command prints one line to stderr:
 
 ```text
-store not used: project '<name>' is not listed in <file>
+store not used: project '<name>' is not listed in <file>; using this machine's proofs only
 ```
 
 `doctor` instead prints that diagnostic on its `Store:` line, with empty stderr,
