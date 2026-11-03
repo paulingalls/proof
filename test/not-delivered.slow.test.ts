@@ -7,6 +7,39 @@ const summary = (out: string, id: string) =>
   out.split('\n').find((line) => line.startsWith(`red ${id};`)) ?? '';
 const diagnostic = (path: string) => `printf '%s\\n' 'cat: ${path}: No such file or directory'`;
 
+test('Bun missing scripts and unmatched filters name exact omitted paths', () => {
+  const single = (filter: string, cwd: string) =>
+    `printf 'Test filter "%s" had no matches in --cwd="%s"\\n' "${filter}" "${cwd}"`;
+  const forms = {
+    script: `'${process.execPath}' --no-env-file a/script.ts`,
+    single: `${single('./missing.test.ts', '$(pwd -P)/nested')}; false`,
+    multiple: `printf 'The following filters did not match any test files in --cwd="%s":\\n ./a.test.ts ./b.test.ts\\n\\n' "$(pwd -P)/nested"; printf '%s\\n' 'note: Tests need ".test", "_test_", ".spec" or "_spec_" in the filename (ex: "MyApp.test.ts")' 'note: To treat the "./a.test.ts" filter as a path, run "bun test ././a.test.ts"'; false`,
+    excluded: `${single('absent.test.ts', '$(pwd -P)')}; ${single('input', '$(pwd -P)')}; ${single('$(pwd -P)/missing.test.ts', '$(pwd -P)-x')}; false`,
+  };
+  const f = fixture(
+    Object.fromEntries(Object.entries(forms).map(([id, run]) => [id, { run, inputs: ['input'] }])),
+    {},
+    {
+      'a/script.ts': 'console.log(1);',
+      'nested/missing.test.ts': '',
+      'nested/a.test.ts': '',
+      'nested/b.test.ts': '',
+      'missing.test.ts': '',
+    },
+  );
+  const result = f.run();
+  expect(result.code, result.err).toBe(1);
+  expect(f.rows().map((row) => row.outcome)).toEqual(Object.keys(forms).map(() => 'red'));
+  for (const [id, paths] of Object.entries({
+    script: 'a/script.ts',
+    single: 'nested/missing.test.ts',
+    multiple: 'nested/a.test.ts, nested/b.test.ts',
+  })) {
+    expect(summary(result.out, id)).toContain(`; not delivered: ${paths}; log: `);
+  }
+  expect(summary(result.out, 'excluded')).not.toContain('not delivered');
+});
+
 test('red summaries name omitted tracked paths, keeping delivery separate from keys', () => {
   const forms = {
     many: `${['omitted', 'input', 'omitted', 'absent', 'with spaces', 'nested/collision', 'directory/file', 'extra'].map(diagnostic).join('; ')}; false`,
