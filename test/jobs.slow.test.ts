@@ -1,19 +1,20 @@
 import { expect, test } from 'bun:test';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { availableParallelism } from 'node:os';
 import { join } from 'node:path';
 import { fixture, spawn, stop, task, until, wait } from './support/jobs';
 
-test('default and explicit jobs=1 preserve the serial transcript', () => {
+test('explicit jobs=1 preserves the serial transcript', () => {
   const f = fixture({
     a: task('echo a-out; echo a-err >&2; exit 1'),
     b: task('echo b-out; printf b-err >&2'),
   });
   const expected = {
     code: 1,
-    out: 'RUN a: no proof for key; trusted links: scratch\nRUN b: no proof for key; trusted links: scratch\na-out\na-err\nprogress: 1/2 done; green 0, red 1, incomplete 0, proven 0, unreached 0; task a\nb-out\nb-err\nprogress: 2/2 done; green 1, red 1, incomplete 0, proven 0, unreached 0; task b\nred a; log: <log>\ngreen b; proof published\nsummary: green 1, red 1, incomplete 0, proven 0, unreached 0\n',
+    out: 'run: 2 tasks, jobs 1\nRUN a: no proof for key; trusted links: scratch\nRUN b: no proof for key; trusted links: scratch\na-out\na-err\nprogress: 1/2 done; green 0, red 1, incomplete 0, proven 0, unreached 0; task a\nb-out\nb-err\nprogress: 2/2 done; green 1, red 1, incomplete 0, proven 0, unreached 0; task b\nred a; log: <log>\ngreen b; proof published\nsummary: green 1, red 1, incomplete 0, proven 0, unreached 0\n',
     err: '',
   };
-  for (const args of [[], ['--jobs', '1']]) {
+  for (const args of [['--jobs', '1']]) {
     const result = f.repo.cli(['run', ...args], { ...f.env, PROOF_STATE_DIR: f.directory() });
     const path = result.out.match(/red a; log: (.*)\n/)?.[1];
     expect(path).toMatch(
@@ -25,7 +26,7 @@ test('default and explicit jobs=1 preserve the serial transcript', () => {
 });
 
 test('jobs requires one positive safe integer before the selector', () => {
-  const f = fixture({ a: task('true') });
+  const f = fixture({ a: task('true'), b: task('true') });
   for (const args of [
     ['--strict-inputs', '--strict-inputs'],
     ['--jobs', '0'],
@@ -43,14 +44,21 @@ test('jobs requires one positive safe integer before the selector', () => {
       'usage: proof run [--fresh | --staged | --since <ref>] [--strict-inputs] [--jobs N] [--tasks <id> ... | --set <name>]',
     );
   }
-  expect(f.run('--jobs', '2').code).toBe(0);
+  for (let invocation = 0; invocation < 2; invocation++) {
+    const selected = f.run('--jobs', '2', '--tasks', 'a');
+    expect(selected.code).toBe(0);
+    expect(selected.out).toStartWith('run: 1 tasks, jobs 2\n');
+    if (invocation) expect(selected.out).toContain('PROVEN a:');
+  }
   const empty = fixture({}).run();
   expect(empty.code).toBe(0);
-  expect(empty.out).toBe('summary: green 0, red 0, incomplete 0, proven 0, unreached 0\n');
+  expect(empty.out).toBe(
+    `run: 0 tasks, jobs ${availableParallelism()}\nsummary: green 0, red 0, incomplete 0, proven 0, unreached 0\n`,
+  );
 });
 
 test('two mutual-marker tasks need two jobs, without timing assertions', () => {
-  for (const jobs of ['1', '2']) {
+  for (const jobs of [undefined, '1', '2']) {
     const f = fixture(
       Object.fromEntries(
         ['a', 'b'].map((id) => [
@@ -74,11 +82,18 @@ while (!existsSync('scratch/' + (id === 'a' ? 'b' : 'a'))) {
 process.exit(existsSync('scratch/failed') ? 1 : 0);`,
       },
     );
-    const result = f.run('--jobs', jobs);
-    expect(result.code, result.err + result.out).toBe(jobs === '2' ? 0 : 1);
+    const result = jobs === undefined ? f.run() : f.run('--jobs', jobs);
+    const effective = jobs === undefined ? availableParallelism() : Number(jobs);
+    expect(result.code, result.err + result.out).toBe(effective > 1 ? 0 : 1);
     expect(f.rows().map((row) => row.outcome)).toEqual(
-      jobs === '2' ? ['green', 'green'] : ['red', 'red'],
+      effective > 1 ? ['green', 'green'] : ['red', 'red'],
     );
+    expect(result.out.match(/^run: /gm)).toHaveLength(1);
+    expect(result.out).toStartWith(`run: 2 tasks, jobs ${effective}\n`);
+    if (effective > 1) {
+      expect(result.out).toContain('--- a\n');
+      expect(result.out).toContain('--- b\n');
+    }
   }
 });
 
