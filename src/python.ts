@@ -58,8 +58,27 @@ export function pythonClosure(entry: string, view: Source, roots = [posix.dirnam
       return;
     }
     for (const edge of pythonScan(text).imports) {
-      const module = resolve(edge.name, roots);
+      let module: Module | undefined;
+      if (edge.name.startsWith('.')) {
+        const dots = /^\.+/.exec(edge.name)?.[0].length ?? 0;
+        let dir = posix.dirname(path);
+        for (let n = 1; n < dots; n++) dir = posix.join(dir, '..');
+        if (dir === '..' || dir.startsWith('../')) continue;
+        const base = edge.name.slice(dots);
+        module = base
+          ? resolve(base, [dir])
+          : {
+              files: tracked.has(posix.join(dir, '__init__.py'))
+                ? [posix.join(dir, '__init__.py')]
+                : [],
+              dirs: [dir],
+            };
+      } else module = resolve(edge.name, roots);
       for (const dep of module?.files ?? []) visit(dep);
+      for (const member of edge.members ?? []) {
+        const child = module && resolve(member, module.dirs);
+        for (const dep of child?.files ?? []) visit(dep);
+      }
     }
   }
   visit(entry);

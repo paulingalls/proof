@@ -43,19 +43,42 @@ function tokens(source: string): Token[] {
 export function pythonScan(source: string) {
   const ts = tokens(source);
   const imports: PythonImport[] = [];
-  for (let i = 0; i < ts.length; i++) {
-    if (ts[i]?.text !== 'import') continue;
-    i++;
-    while (i < ts.length) {
-      let name = ts[i++]?.text ?? '';
-      while (ts[i]?.text === '.' && ts[i + 1]) {
-        name += `.${ts[i + 1]?.text}`;
+  let i = 0;
+  function name() {
+    let result = '';
+    while (ts[i]?.text === '.') result += ts[i++]?.text;
+    if (ts[i]?.text !== 'import' && /^[\p{L}_][\p{L}\p{N}_]*$/u.test(ts[i]?.text ?? '')) {
+      result += ts[i++]?.text;
+      while (ts[i]?.text === '.' && /^[\p{L}_]/u.test(ts[i + 1]?.text ?? '')) {
+        result += `.${ts[i + 1]?.text}`;
         i += 2;
       }
-      if (name) imports.push({ name });
+    }
+    return result;
+  }
+  function names() {
+    const result: string[] = [];
+    if (ts[i]?.text === '(') i++;
+    while (i < ts.length) {
+      const value = name();
+      if (!value) break;
+      result.push(value);
       if (ts[i]?.text === 'as') i += 2;
       if (ts[i]?.text !== ',') break;
       i++;
+    }
+    return result;
+  }
+  while (i < ts.length) {
+    const token = ts[i++]?.text;
+    if (token === 'from') {
+      const base = name();
+      if (ts[i]?.text === 'import') {
+        i++;
+        imports.push({ name: base, members: names() });
+      }
+    } else if (token === 'import') {
+      for (const value of names()) imports.push({ name: value });
     }
   }
   return { imports };
