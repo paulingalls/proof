@@ -64,7 +64,7 @@ test('runs sequentially, streams without storing output, records captured keys a
     after: task('pwd; test -f src/a.ts'),
   });
   const commit = repo.git('rev-parse', 'HEAD');
-  const result = run();
+  const result = run('--jobs', '1');
   expect(result.code).toBe(1);
   expect(result.out).toContain('green ok');
   expect(result.out).toContain('red bad');
@@ -115,7 +115,7 @@ test('endpoint guard rejects HEAD moves and selected edits but allows unrelated 
     }),
   });
   const before = repo.git('rev-parse', 'HEAD');
-  const result = run();
+  const result = run('--jobs', '1');
   expect(result.code).toBe(0);
   expect(result.out).toContain('no proof published: HEAD changed');
   expect(result.out).toContain("no proof published: selected path changed 'src/a.ts'");
@@ -160,7 +160,11 @@ test('dirty inputs use working bytes, executable mode, deleted absence and full 
   expect(result.out).toContain('green dirty');
   expect(result.out).toContain('undecidable: dirty input');
   expect(result.out).toContain('no proof published: dirty input');
-  expect(rows(env, 'results').map((r) => [r.task, r.outcome, r.dirty])).toEqual([
+  expect(
+    rows(env, 'results')
+      .sort((a, b) => b.task.localeCompare(a.task))
+      .map((r) => [r.task, r.outcome, r.dirty]),
+  ).toEqual([
     ['dirty', 'green', 1],
     ['clean', 'green', 0],
   ]);
@@ -188,7 +192,7 @@ test('re-decides a previously proven later task after an earlier checkout edit',
     clean: 'clean',
   });
   expect(repo.cli(['record', 'later', '--outcome', 'green'], env).code).toBe(0);
-  const result = run();
+  const result = run('--jobs', '1');
   expect(result.code).toBe(0);
   expect(result.out).toContain('PROVEN later');
   expect(result.out.indexOf('PROVEN later')).toBeLessThan(result.out.indexOf('RUN later'));
@@ -223,7 +227,7 @@ test('refreshes a dirty closure when its entry changes without changing dirty pa
   });
   repo.write('entry.ts', "import './old';");
   const dirty = repo.git('status', '--porcelain');
-  const result = run();
+  const result = run('--jobs', '1');
   expect(result.code).toBe(0);
   expect(result.out).toContain("RUN later: undecidable: dirty input 'entry.ts'");
   expect(result.out).toContain('green later; no proof published');
@@ -292,7 +296,7 @@ test('no-key tasks still materialize all available inputs and report unrecorded 
       `${id === 'redless' ? 'red' : 'green'} ${id}; not recorded: ${reason}`,
     );
   const counts = 'green 3, red 1, incomplete 0, proven 0, unreached 0, not recorded 4';
-  expect(result.out).toContain(`progress: 4/4 done; ${counts}; task redless\n`);
+  expect(result.out).toMatch(new RegExp(`progress: 4/4 done; ${counts}; task [a-z]+\n`));
   expect(result.out).toEndWith(`summary: ${counts}\n`);
   expect(result.out.match(/^(green|red) /gm)).toHaveLength(4);
   expect(rows(env, 'results')).toEqual([]);

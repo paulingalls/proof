@@ -420,7 +420,7 @@ With a committed `input` file, `proof plan` prints
 ADDRESS=http://127.0.0.1:5432 proof run
 ```
 
-This prints the complete selected plan,
+This prints the selected task count and effective job limit, then the complete selected plan,
 then `stack-ready`, the input contents, and `stack-stopped`. A second run reuses the proof and
 starts nothing. `proof run --tasks gate` considers only that task and its providers.
 
@@ -491,6 +491,13 @@ these help forms.
 
 `plan`, `run`, `why`, `status`, `record`, `invalidate`, `flakes`, `stats`, `check`, `lint`,
 `doctor`, `rekey` and `help`. Every flag, output line and exit code is in [docs/commands.md](docs/commands.md).
+
+`proof run` defaults to the machine’s `os.availableParallelism()` concurrent tasks.
+Use `proof run --jobs 2` to set a positive safe integer limit, or `proof run --jobs 1`
+for live combined stdout/stderr. Above one job, output appears in completed task blocks;
+resource lanes still cap admission within the job limit. Before the plan and execution,
+`run: <n> tasks, jobs <j>` prints the selected count (including PROVEN and UNREACHED)
+and effective limit, even for empty selections or limits above the task count.
 
 `proof rekey [--apply]` carries valid older proofs to today's keys without running tasks.
 The env-move route works for every task. Add `carry: true` to a task to also carry across
@@ -584,11 +591,11 @@ bun --no-env-file src/cli.ts run --jobs N --set push
 | Cold push | 77.19 | 54.16 | 68.55 / 22.04 | lint, typecheck, test-fast, test-slow |
 | Push after staged commit proofs | 47.45 | 55.37 | 123.25 / 22.83 | test-slow |
 
-All six runs exited green with the listed result rows. Commit keeps the default one job
-because two did not improve its measurement. Push uses two based on the cold-push reduction.
-After staged proofs, only one RUN task remains and the two-job measurement was slower.
-Feedback from these runs guides the hook choice; the changing shared-host load prevents a
-controlled speedup claim. These observations are not timing guarantees.
+All six historical runs exited green with the listed result rows. Commit now uses machine
+parallelism by default; its hook command is unchanged. Push retains its explicit two jobs.
+After staged proofs, only one RUN task remained and the two-job measurement was slower.
+The changing shared-host load prevents a controlled speedup claim. These observations are
+not timing guarantees.
 
 ## Status
 

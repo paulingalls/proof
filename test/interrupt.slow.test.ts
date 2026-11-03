@@ -138,7 +138,7 @@ renameSync(control + '/pending', control + '/ready');`,
       const proofs = rows('proofs');
       const contests = rows('contradictions');
       const before = rows('results') as { key: string }[];
-      cli = repo.spawnCli(['run', ...(fresh ? ['--fresh'] : [])], env);
+      cli = repo.spawnCli(['run', ...(fresh ? ['--fresh'] : []), '--jobs', '1'], env);
       output = Promise.all([new Response(cli.stdout).text(), new Response(cli.stderr).text()]);
       await until(() => existsSync(ready));
       const running: { pid: number; cwd: string } = JSON.parse(readFileSync(ready, 'utf8'));
