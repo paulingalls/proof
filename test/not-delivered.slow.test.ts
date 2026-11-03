@@ -9,12 +9,12 @@ const diagnostic = (path: string) => `printf '%s\\n' 'cat: ${path}: No such file
 
 test('Bun missing scripts and unmatched filters name exact omitted paths', () => {
   const single = (filter: string, cwd: string) =>
-    `printf 'Test filter "${filter}" had no matches in --cwd="%s"\\n' "${cwd}"`;
+    `printf 'Test filter "%s" had no matches in --cwd="%s"\\n' "${filter}" "${cwd}"`;
   const forms = {
     script: `'${process.execPath}' --no-env-file a/script.ts`,
     single: `${single('./missing.test.ts', '$(pwd -P)/nested')}; false`,
     multiple: `printf 'The following filters did not match any test files in --cwd="%s":\\n ./a.test.ts ./b.test.ts\\n\\n' "$(pwd -P)/nested"; printf '%s\\n' 'note: Tests need ".test", "_test_", ".spec" or "_spec_" in the filename (ex: "MyApp.test.ts")' 'note: To treat the "./a.test.ts" filter as a path, run "bun test ././a.test.ts"'; false`,
-    excluded: `${single('absent.test.ts', '$(pwd -P)')}; ${single('input', '$(pwd -P)')}; ${single('missing.test.ts', '$(pwd -P)-x')}; false`,
+    excluded: `${single('absent.test.ts', '$(pwd -P)')}; ${single('input', '$(pwd -P)')}; ${single('$(pwd -P)/missing.test.ts', '$(pwd -P)-x')}; false`,
   };
   const f = fixture(
     Object.fromEntries(Object.entries(forms).map(([id, run]) => [id, { run, inputs: ['input'] }])),
