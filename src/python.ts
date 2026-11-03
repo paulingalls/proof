@@ -2,6 +2,23 @@ import { posix } from 'node:path';
 import type { Source } from './imports';
 import { pythonScan } from './python-scan';
 
+const indexes = new WeakMap<Source, Map<string, string>>();
+function localNames(view: Source) {
+  const prior = indexes.get(view);
+  if (prior) return prior;
+  const names = new Map<string, string>();
+  for (const path of view.paths) {
+    if (!path.endsWith('.py')) continue;
+    names.set(posix.basename(path, '.py'), path);
+    let dir = posix.dirname(path);
+    while (dir !== '.') {
+      names.set(posix.basename(dir), dir);
+      dir = posix.dirname(dir);
+    }
+  }
+  indexes.set(view, names);
+  return names;
+}
 type Module = { files: string[]; dirs: string[] };
 export function pythonClosure(entry: string, view: Source, roots = [posix.dirname(entry)]) {
   const tracked = new Set(view.paths);
@@ -63,7 +80,10 @@ export function pythonClosure(entry: string, view: Source, roots = [posix.dirnam
         const dots = /^\.+/.exec(edge.name)?.[0].length ?? 0;
         let dir = posix.dirname(path);
         for (let n = 1; n < dots; n++) dir = posix.join(dir, '..');
-        if (dir === '..' || dir.startsWith('../')) continue;
+        if (dir === '..' || dir.startsWith('../')) {
+          reason ??= `${path}: import '${edge.name}': unresolved relative import`;
+          continue;
+        }
         const base = edge.name.slice(dots);
         module = base
           ? resolve(base, [dir])
@@ -75,9 +95,19 @@ export function pythonClosure(entry: string, view: Source, roots = [posix.dirnam
             };
       } else module = resolve(edge.name, roots);
       for (const dep of module?.files ?? []) visit(dep);
+      let childFound = false;
       for (const member of edge.members ?? []) {
         const child = module && resolve(member, module.dirs);
+        childFound ||= !!child;
         for (const dep of child?.files ?? []) visit(dep);
+      }
+      if (edge.name.startsWith('.')) {
+        if (!module || (!edge.name.replaceAll('.', '') && !module.files.length && !childFound))
+          reason ??= `${path}: import '${edge.name}': unresolved relative import`;
+      } else if (!module) {
+        const local = localNames(view).get(edge.name.split('.')[0] as string);
+        if (local)
+          reason ??= `${path}: import '${edge.name}': unresolved; tracked ${local} (check python-path)`;
       }
     }
   }
