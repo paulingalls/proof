@@ -37,7 +37,7 @@ function config(home = false) {
   return { file, env: home ? { HOME: base } : { XDG_CONFIG_HOME: base } };
 }
 const excluded = (file: string, project: string) =>
-  `store not used: project '${project}' is not listed in ${file}`;
+  `store not used: project '${project}' is not listed in ${file}; using this machine's proofs only`;
 
 test('unlisted commands and doctor use SQLite without contacting the file endpoint', async () => {
   let connections = 0;

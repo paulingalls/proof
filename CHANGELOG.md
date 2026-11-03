@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.33.1
+
+- An unlisted project's store notice ends `; using this machine's proofs only`, so it no longer reads as no store at all.
+
 ## 0.33.0
 
 - `run` accepts mode, jobs, set and strict-inputs flags in any order; `--tasks` still
