@@ -68,13 +68,15 @@ for (const fresh of [false, true]) {
     expect(result.out.match(/^(green|red) read;/gm)).toEqual(['green read;']);
     expect(result.out.match(/^progress:/gm)).toHaveLength(1);
     expect(result.out).toContain('summary: green 1, red 0');
+    expect(result.out.trim().split('\n').at(-1)).toBe('declaration gap read: assets/a');
     expect(JSON.parse(f.cli('plan', '--json').out)[0].state).toBe('PROVEN');
   });
 }
 
 test('strict retry records one final red and one fresh contradiction', () => {
   const f = fixture(
-    (marker) => `echo attempt >> '${marker}'; cat assets/a; test ! -e '${marker}.fail'`,
+    (marker) =>
+      `echo attempt >> '${marker}'; cat assets/a; echo "ENOENT: no such file or directory, open 'assets/a'"; test ! -e '${marker}.fail'`,
   );
   expect(f.cli('run').code).toBe(0);
   f.repo.write('.git/attempts.fail', 'fail');
@@ -87,4 +89,33 @@ test('strict retry records one final red and one fresh contradiction', () => {
   expect(result.out.match(/^red read;/gm)).toHaveLength(1);
   expect(result.out.match(/^progress:/gm)).toHaveLength(1);
   expect(result.out).toContain('summary: green 0, red 1');
+  expect(result.out.trim().split('\n').at(-1)).toBe('declaration gap read: assets/a');
+});
+
+test('parallel gaps follow the tally in declaration order without hint truncation', () => {
+  const diagnostics = `for path in outside assets/a assets/b assets/c assets/d assets/a source untracked; do echo "ENOENT: no such file or directory, open '$path'"; done; exit 1`;
+  const command = (code: number) => `if test -f assets/a; then exit ${code}; fi; ${diagnostics}`;
+  const f = fixture(() => command(0));
+  Object.assign(f.doc.tasks, { second: { run: command(1), inputs: ['source'] } });
+  f.repo.commit({
+    'proof.yaml': JSON.stringify(f.doc),
+    'assets/b': 'b',
+    'assets/c': 'c',
+    'assets/d': 'd',
+  });
+  f.repo.write('untracked', 'untracked');
+  const result = f.cli('run', '--strict-inputs', '--jobs', '2');
+  expect(result.code, result.err + result.out).toBe(1);
+  expect(result.out.trim().split('\n').slice(-3)).toEqual([
+    'summary: green 1, red 1, incomplete 0, proven 0, unreached 0',
+    'declaration gap read: assets/a, assets/b, assets/c, assets/d',
+    'declaration gap second: assets/a, assets/b, assets/c, assets/d',
+  ]);
+  expect(result.out.match(/^declaration gap /gm)).toHaveLength(2);
+  expect(
+    f
+      .rows()
+      .map((row) => row.outcome)
+      .sort(),
+  ).toEqual(['green', 'red']);
 });
