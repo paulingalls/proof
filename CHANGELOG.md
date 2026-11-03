@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.33.0
 
 - `run` accepts mode, jobs, set and strict-inputs flags in any order; `--tasks` still
   consumes the remaining IDs, with `--strict-inputs` accepted anywhere.
