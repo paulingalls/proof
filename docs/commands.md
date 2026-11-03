@@ -892,3 +892,51 @@ need no execution log. Logs never reach the stores.
 See the [runnable README example](../README.md). Run `proof check` whenever the generator changes.
 proof cannot detect a generator bug that omits an input; shell and Dockerfile tracing stay in the
 repository's generator.
+
+
+## Python import inputs
+
+`{imports-of: entry.py, python-path: [src, tests]}` selects the entry and its transitive
+tracked Python import closure, including parent package `__init__.py` files within
+search roots and the entry directory. Omit `python-path` to search the entry directory.
+The ordered, nonempty roots must be repo-relative directories; `.` means repository root.
+Absolute paths, empty components, `..` and `.git` are refused. Other entry types reject
+`python-path`. Input sets accept the same declaration.
+
+Resolution searches each root in order for a regular package (`m/__init__.py`) before a
+module (`m.py`). Namespace portions without an initializer keep searching later roots;
+if no regular match exists, submodules can come from any namespace portion. Submodules
+of a regular package stay within the winning package. `from p import n` also follows
+`p.n` when it resolves; an ordinary attribute need not resolve as a module. Relative
+imports start at the importing file's directory, with each additional leading dot
+ascending one directory. Ascending above the repository is undecidable.
+
+Unresolved absolute imports are ignored as external packages, unless their top-level
+name matches a tracked Python module or package directory elsewhere. That case is
+undecidable and reports the import, importing file and tracked path; correct the search
+roots. An unresolved relative import is undecidable. Such tasks run with the reason
+and cannot publish proof.
+
+Literal absolute `importlib.import_module('m')`, `import_module('m')` and `__import__('m')`
+calls follow the same resolution. Computed arguments and relative calls requiring
+package context are undecidable. Call aliases are not inferred. Imports inside functions,
+conditionals, parenthesized lists and backslash continuations are followed. Import-looking
+text in strings, comments and docstrings is ignored.
+
+Imports do not discover test framework configuration or fixtures. For example:
+
+```yaml
+tasks:
+  test-widget:
+    run: uv run pytest tests/test_widget.py
+    inputs:
+      - {imports-of: tests/test_widget.py, python-path: [src, tests]}
+      - tests/conftest.py
+      - tests/fixtures/**
+      - pyproject.toml
+      - uv.lock
+```
+
+Changing a reached `src/widget.py` selects `test-widget`; changing an unrelated module
+preserves its key. Root spellings are not separately hashed: the resulting selected
+files determine the key. Non-Python closure keys are unchanged.

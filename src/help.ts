@@ -87,7 +87,12 @@ Provider fields:
 Input forms:
   Strings/globs, ordered quoted '!' negation, and $name references to named inputs.
   {path, json: [members]}, {path, dotenv-keys: true}, {dotenv, exclude?: [names]},
-  {imports-of: entry}, {maestro: flow}. {dotenv} is deprecated and ignored; use links.
+  {imports-of: entry}, {maestro: flow}.
+  Python also accepts {imports-of: entry.py, python-path: [directories]}.
+  python-path is only for .py entries; ordered roots default to the entry directory.
+  Python follows tracked modules and package initializers; unresolved local/relative
+  imports and computed dynamic imports are undecidable. External imports are ignored.
+  {dotenv} is deprecated and ignored; use links.
 
 Configuration environment:
   PROOF_STORE: Postgres URL; overrides the store configuration file.
