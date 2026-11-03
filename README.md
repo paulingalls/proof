@@ -87,6 +87,8 @@ at push or in CI.
   `node_modules` and ignored config a task reads. List the variable names a command needs in `env:`;
   the sandbox environment otherwise holds only `PATH`, `HOME` and `TMPDIR`. Bun loads `.env`
   from its working directory even without `--env-file`.
+- **The sandbox is not a git checkout.** It holds files, not a repository, so a test that runs
+  `git ls-files` or `git rev-parse` exits 128 there. Check file presence directly instead.
 - **Don't link a Python venv.** `uv run` syncs the venv it finds, so a linked `.venv` is
   rewritten by concurrent tasks. Run `uv run --frozen --directory <project> pytest ...` and let
   uv build a sandbox venv from its cache under `HOME`.
