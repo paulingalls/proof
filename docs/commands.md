@@ -88,8 +88,8 @@ An all-proven `proof run --jobs 2` prints only the header, plan lines and tally.
 
 ```text
 run: 2 tasks, jobs 2
-PROVEN a: proven at edaa6157ccf769331797be484381bbe692b436d9 on Pauls-M3-MacBook-Pro.local 2026-11-03T19:43:21.686Z
-PROVEN b: proven at edaa6157ccf769331797be484381bbe692b436d9 on Pauls-M3-MacBook-Pro.local 2026-11-03T19:43:21.834Z
+PROVEN a: proven at edaa6157ccf769331797be484381bbe692b436d9 on laptop.local 2026-11-03T19:43:21.686Z
+PROVEN b: proven at edaa6157ccf769331797be484381bbe692b436d9 on laptop.local 2026-11-03T19:43:21.834Z
 summary: green 0, red 0, incomplete 0, proven 2, unreached 0
 ```
 
