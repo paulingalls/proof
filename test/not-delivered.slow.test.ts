@@ -154,7 +154,7 @@ test('Bun resolver blocks use only their sandbox importer; git reds explain the 
         inputs: ['web/index.html'],
       },
       blocks: {
-        run: `printf 'error: Could not resolve: "./client.ts"\\n    at %s/web space/a.ts:1:8\\nerror: Could not resolve: "./outside.ts"\\n    at /outside/a.ts\\nerror: Could not resolve: "./orphan.ts"\\nerror: Could not resolve: "./later.ts"\\n    at /outside/b.ts\\n' "$(pwd -P)"; false`,
+        run: `printf 'error: Could not resolve: "./client"\\n    at %s/web space/a.ts:1:8\\nerror: Could not resolve: "./outside.ts"\\n    at /outside/a.ts\\nerror: Could not resolve: "./orphan.ts"\\nerror: Could not resolve: "./later.ts"\\n    at /outside/b.ts\\n' "$(pwd -P)"; false`,
         inputs: ['input'],
       },
       git: { run: 'git rev-parse --show-toplevel', inputs: ['input'] },

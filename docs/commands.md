@@ -93,7 +93,8 @@ For example, `Cannot find module '@fixture/db/testing/fixture'` can append
 `; not delivered: packages/db/__tests__/fixture.ts`.
 Bun's `Could not resolve: "./client.ts"` blocks also name tracked, omitted targets when
 a following `at <absolute importer>` line locates the importer inside the sandbox.
-Relative specifiers resolve from that file's directory, including importers with
+Relative specifiers resolve from that file's directory with the import scanner's
+extension and index rules (`./client` finds `client.ts`), including importers with
 line/column suffixes. For example, an importer at `web/index.html` names `web/client.ts`,
 not a root-level `client.ts`. Blocks without an inside importer get no hint.
 A red log containing `not a git repository` adds

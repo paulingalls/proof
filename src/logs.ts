@@ -69,8 +69,15 @@ export function redDiagnostics(path: string, root: string, tree: RefTree, select
         !isAbsolute(local) &&
         /^\.\.?\//.test(unresolved)
       ) {
-        const file = relative(root, resolve(dirname(importer), unresolved));
-        if (tree.files.has(file) && !selected.has(file)) omitted.add(file);
+        try {
+          const file = workspaces(source(tree)).resolve(
+            relative(root, resolve(dirname(importer), unresolved)),
+            new Set(),
+          );
+          if (file && tree.files.has(file) && !selected.has(file)) omitted.add(file);
+        } catch {
+          // Resolution is optional diagnostic evidence; the original red remains authoritative.
+        }
       }
       unresolved = undefined;
     }
