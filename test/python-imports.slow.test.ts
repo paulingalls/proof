@@ -247,3 +247,17 @@ test('an entry in a package includes parent initializers and namespace portions 
     'p/__init__.py': [],
   });
 });
+
+test('an entry follows its whole contiguous package chain, beyond its roots', () => {
+  const r = fixture(
+    { a: task('tests/unit/t.py', ['src']) },
+    {
+      'tests/unit/t.py': '',
+      'tests/unit/__init__.py': '',
+      'tests/__init__.py': 'from . import helper',
+      'tests/helper.py': '',
+      'src/x.py': '',
+    },
+  );
+  changes(r, { 'tests/__init__.py': ['a'], 'tests/helper.py': ['a'], 'src/x.py': [] });
+});

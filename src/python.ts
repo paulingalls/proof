@@ -212,14 +212,11 @@ export function pythonClosure(entry: string, view: Source, roots = [posix.dirnam
       reason ??= `${path}: missing entry`;
       return;
     }
+    // pytest imports a test by its whole package chain, up to the first directory
+    // without an __init__.py, whatever the search roots are.
     let dir = posix.dirname(path);
-    while (
-      [...roots, posix.dirname(entry)].some(
-        (root) => root === '.' || dir === root || dir.startsWith(`${root}/`),
-      )
-    ) {
-      const initializer = posix.join(dir, '__init__.py');
-      if (tracked.has(initializer)) visit(initializer);
+    while (tracked.has(posix.join(dir, '__init__.py'))) {
+      visit(posix.join(dir, '__init__.py'));
       if (dir === '.') break;
       dir = posix.dirname(dir);
     }
