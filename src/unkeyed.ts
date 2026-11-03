@@ -66,3 +66,17 @@ export function resolveUnkeyed(
     if (!covered.has(path))
       throw new Error(`${context} unkeyed: '${path}' has no keyed representative receiving it`);
 }
+
+export function resolveDelivered(patterns: string[], tree: RefTree) {
+  const delivered = new Map<string, string[]>();
+  for (const pattern of new Set(patterns)) {
+    const glob = new Bun.Glob(pattern);
+    const paths = tree.files.has(pattern)
+      ? [pattern]
+      : [...tree.files.keys()].filter((path) => glob.match(path));
+    if (!paths.length)
+      throw new Error(`ref '${tree.ref}' proof.yaml delivered: unmatched '${pattern}'`);
+    delivered.set(pattern, paths);
+  }
+  return delivered;
+}

@@ -174,7 +174,8 @@ export async function runTask(
           // Dirt that reaches no input must not change what runs: the proof names the committed bytes.
           const visible = input.key === undefined ? dirty : [];
           selected = selection(task, tree, visible);
-          sandbox.materialize(selected, tree, visible, staged);
+          const delivered = new Set([...(task.delivered?.values() ?? [])].flat());
+          sandbox.materialize(new Set([...selected, ...delivered]), tree, visible, staged);
           sandbox.link(task.links ?? [], inspection);
         }
       } catch (error) {
