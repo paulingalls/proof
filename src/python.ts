@@ -248,14 +248,14 @@ export function pythonClosure(entry: string, view: Source, roots = [posix.dirnam
             };
       } else module = resolve(edge.name, roots);
       for (const dep of module?.files ?? []) visit(dep);
-      let childFound = false;
+      let missingChild = !edge.members?.length;
       for (const member of edge.members ?? []) {
         const child = module && resolve(member, module.dirs);
-        childFound ||= !!child;
+        missingChild ||= !child;
         for (const dep of child?.files ?? []) visit(dep);
       }
       if (edge.name.startsWith('.')) {
-        if (!module || (!edge.name.replaceAll('.', '') && !module.files.length && !childFound))
+        if (!module || (!edge.name.replaceAll('.', '') && !module.files.length && missingChild))
           reason ??= `${path}: import '${specifier}': unresolved relative import`;
       } else if (!module) {
         const local = localNames(view).get(edge.name.split('.')[0] as string);
