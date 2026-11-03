@@ -61,7 +61,8 @@ a one-task selection on a 16-core machine starts with `run: 1 tasks, jobs 16`;
 `--jobs 1` and `--jobs 2` instead print jobs 1 and 2.
 
 After each task's final disposition, one stdout line reports cumulative progress in completion
-order, for one job as well as parallel jobs:
+order, except when its execution decision is PROVEN and exactly matches its initial plan line.
+This applies to one job as well as parallel jobs:
 
 ```text
 progress: 1/2 done; green 1, red 0, incomplete 0, proven 0, unreached 0; task a
@@ -72,12 +73,24 @@ The total is the selected task count, including PROVEN and UNREACHED tasks; both
 Green and red count as done too. Interrupted, killed, sandbox-failed and provider-blocked tasks
 count as `incomplete`, without increasing done. Unstarted tasks get no progress line or outcome
 count, so interruption or incomplete work leaves done below total. Counts use final decisions,
-which may differ from the initial preview.
+which may differ from the initial preview. Quiet PROVEN tasks still increment done and proven,
+so visible progress numerators can skip integers. Changed decisions and UNREACHED tasks
+retain their progress and final lines.
 
-The summary keeps task lines in declaration order, followed by a tally (and any declaration gaps):
+The final block keeps task lines in declaration order, omitting unchanged PROVEN decisions,
+followed by a tally (and any declaration gaps):
 
 ```text
 summary: green 2, red 0, incomplete 0, proven 0, unreached 0
+```
+
+An all-proven `proof run --jobs 2` prints only the header, plan lines and tally. For example:
+
+```text
+run: 2 tasks, jobs 2
+PROVEN a: proven at edaa6157ccf769331797be484381bbe692b436d9 on laptop.local 2026-11-03T19:43:21.686Z
+PROVEN b: proven at edaa6157ccf769331797be484381bbe692b436d9 on laptop.local 2026-11-03T19:43:21.834Z
+summary: green 0, red 0, incomplete 0, proven 2, unreached 0
 ```
 
 An empty selection prints an all-zero tally and no progress. Both progress and tally append

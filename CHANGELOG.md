@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.33.2
+
+- Unchanged PROVEN tasks print only their plan line during `run`; they still count in
+  progress and the summary tally. Changed decisions retain their progress and final lines.
+
 ## 0.33.1
 
 - An unlisted project's store notice ends `; using this machine's proofs only`, so it no longer reads as no store at all.
