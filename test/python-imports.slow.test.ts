@@ -139,10 +139,11 @@ test('unresolved local and relative imports name the missing edge; external impo
   }
   for (const code of [
     'from . import missing',
+    'from . import present, missing',
     'from .missing import value',
     'from ... import missing',
   ]) {
-    const r = fixture({ a: task('tests/t.py') }, { 'tests/t.py': code });
+    const r = fixture({ a: task('tests/t.py') }, { 'tests/t.py': code, 'tests/present.py': '' });
     expect(plan(r)[0]?.reason).toContain('tests/t.py: import');
     expect(plan(r)[0]?.reason).toContain('missing');
     expect(plan(r)[0]?.key).toBeUndefined();
