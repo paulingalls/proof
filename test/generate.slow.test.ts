@@ -13,7 +13,7 @@ import { Repo } from './support/repo';
 
 let r: Repo;
 afterEach(() => r?.close());
-const output = `inputs:\n  generated: [source]\ntasks:\n  generated:\n    run: cat source\n    inputs: [$generated]\n`;
+const output = `inputs:\n  generated: [source]\ntasks:\n  generated:\n    run: cat source\n    inputs: [$generated]\n    artifacts: [debug/**]\n`;
 const root = `version: 1\nproject: generated-tests\ninclude: committed/*.yaml\ngenerate:\n  run: sh generator.sh\n  inputs: [generator.sh, declarations]\n`;
 function fixture() {
   r = new Repo();
