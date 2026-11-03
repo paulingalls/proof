@@ -158,9 +158,18 @@ function localNames(view: Source) {
   return names;
 }
 type Module = { files: string[]; dirs: string[] };
-export function pythonClosure(entry: string, view: Source, roots = [posix.dirname(entry)]) {
+const trees = new WeakMap<
+  Source,
+  {
+    tracked: Set<string>;
+    directories: Set<string>;
+    scans: Map<string, ReturnType<typeof pythonScan>>;
+  }
+>();
+function tree(view: Source) {
+  const prior = trees.get(view);
+  if (prior) return prior;
   const tracked = new Set(view.paths);
-  const paths = new Set<string>();
   const directories = new Set<string>();
   for (const path of tracked) {
     if (!path.endsWith('.py')) continue;
@@ -171,6 +180,13 @@ export function pythonClosure(entry: string, view: Source, roots = [posix.dirnam
     }
     directories.add('.');
   }
+  const result = { tracked, directories, scans: new Map() };
+  trees.set(view, result);
+  return result;
+}
+export function pythonClosure(entry: string, view: Source, roots = [posix.dirname(entry)]) {
+  const { tracked, directories, scans } = tree(view);
+  const paths = new Set<string>();
   let reason: string | undefined;
   function resolve(name: string, search: string[]): Module | undefined {
     const files: string[] = [];
@@ -220,7 +236,11 @@ export function pythonClosure(entry: string, view: Source, roots = [posix.dirnam
       if (dir === '.') break;
       dir = posix.dirname(dir);
     }
-    const scanned = pythonScan(text);
+    let scanned = scans.get(path);
+    if (!scanned) {
+      scanned = pythonScan(text);
+      scans.set(path, scanned);
+    }
     if (scanned.reason) reason ??= `${path}: ${scanned.reason}`;
     for (const edge of scanned.imports) {
       const specifier =
@@ -257,7 +277,7 @@ export function pythonClosure(entry: string, view: Source, roots = [posix.dirnam
       } else if (!module) {
         const local = localNames(view).get(edge.name.split('.')[0] as string);
         if (local)
-          reason ??= `${path}: import '${edge.name}': unresolved; tracked ${local} (check python-path)`;
+          reason ??= `${path}: import '${edge.name}': unresolved; tracked ${local} (add its root to python-path, or rename the shadowing file)`;
       }
     }
   }
