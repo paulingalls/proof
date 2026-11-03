@@ -74,7 +74,9 @@ export function pythonClosure(entry: string, view: Source, roots = [posix.dirnam
       reason ??= `${path}: missing entry`;
       return;
     }
-    for (const edge of pythonScan(text).imports) {
+    const scanned = pythonScan(text);
+    if (scanned.reason) reason ??= `${path}: ${scanned.reason}`;
+    for (const edge of scanned.imports) {
       let module: Module | undefined;
       if (edge.name.startsWith('.')) {
         const dots = /^\.+/.exec(edge.name)?.[0].length ?? 0;

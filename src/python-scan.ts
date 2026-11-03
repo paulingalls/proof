@@ -23,7 +23,10 @@ function tokens(source: string): Token[] {
       }
       const value = source.slice(start, i);
       i += quote.length;
-      result.push({ text: '<string>', literal: value });
+      result.push({
+        text: '<string>',
+        literal: /[fb]/i.test(quoted[0].slice(0, -quote.length)) ? undefined : value,
+      });
       continue;
     }
     const word = /^[\p{L}_][\p{L}\p{N}_]*/u.exec(rest);
@@ -43,6 +46,26 @@ function tokens(source: string): Token[] {
 export function pythonScan(source: string) {
   const ts = tokens(source);
   const imports: PythonImport[] = [];
+  let reason: string | undefined;
+  for (let n = 0; n < ts.length; n++) {
+    let call = ts[n]?.text;
+    let open = n + 1;
+    if (call === 'importlib' && ts[n + 1]?.text === '.' && ts[n + 2]?.text === 'import_module') {
+      call = 'importlib.import_module';
+      open = n + 3;
+    } else if (!['import_module', '__import__'].includes(call ?? '') || ts[n - 1]?.text === '.')
+      continue;
+    if (ts[open]?.text !== '(') continue;
+    const arg = ts[open + 1];
+    const end = ts[open + 2]?.text;
+    if (
+      arg?.literal !== undefined &&
+      [')', ','].includes(end ?? '') &&
+      !arg.literal.startsWith('.')
+    ) {
+      imports.push({ name: arg.literal });
+    } else reason ??= `${call}(): non-literal module or unsupported relative context`;
+  }
   let i = 0;
   function name() {
     let result = '';
@@ -81,5 +104,5 @@ export function pythonScan(source: string) {
       for (const value of names()) imports.push({ name: value });
     }
   }
-  return { imports };
+  return { imports, reason };
 }
