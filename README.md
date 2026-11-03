@@ -390,7 +390,9 @@ exempt:
   `PATH`, `HOME`, `TMPDIR` and the declared `env`. A missing input fails the task instead of
   passing by luck.
 - **`coverage` and `exempt`**: `proof lint` reports every covered file that no task selects and
-  no exemption names. Included and generated declarations add exemptions to the root’s. A path
+  no exemption names. An exemption means no task selects the file, not just that no task
+  executes it: a file any task reads as an input is owned by that task, and exempting it too is a
+  lint error. Included and generated declarations add exemptions to the root’s. A path
   exempted in two files fails naming both files, even when the reasons match.
 
 ## Providers
