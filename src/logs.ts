@@ -1,5 +1,6 @@
 import {
   closeSync,
+  copyFileSync,
   fstatSync,
   mkdirSync,
   openSync,
@@ -7,6 +8,7 @@ import {
   readFileSync,
   readSync,
   renameSync,
+  rmSync,
   unlinkSync,
   writeSync,
 } from 'node:fs';
@@ -23,7 +25,7 @@ export type LogIdentity = {
   key?: string;
   live: boolean;
 };
-export type LogResult = { path?: string; error?: string };
+export type LogResult = { path?: string; artifacts?: string; error?: string };
 
 const CHUNK = 65536;
 
@@ -39,7 +41,7 @@ export function logSuffix(result: LogResult) {
   return result.error
     ? `; log failed: ${result.error}`
     : result.path
-      ? `; log: ${shellArgument(result.path)}`
+      ? `; log: ${shellArgument(result.path)}${result.artifacts ? `; artifacts: ${shellArgument(result.artifacts)}` : ''}`
       : '';
 }
 
@@ -218,8 +220,13 @@ export class Capture {
     }
   }
 
-  finish(outcome: 'green' | 'red' | 'incomplete'): LogResult {
+  finish(
+    outcome: 'green' | 'red' | 'incomplete',
+    sandbox?: { root: string; patterns: string[] },
+  ): LogResult {
     let path: string | undefined;
+    let artifacts: string | undefined;
+    let artifactDirectory: string | undefined;
     try {
       if (outcome === 'green') unlinkSync(this.path);
       else {
@@ -241,15 +248,30 @@ export class Capture {
           .sort();
         for (const name of logs.slice(0, -10)) {
           try {
+            rmSync(join(directory, name.slice(0, -4)), { recursive: true, force: true });
             unlinkSync(join(directory, name));
           } catch (error) {
             if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
           }
         }
+        if (sandbox?.patterns.length) {
+          artifactDirectory = path.slice(0, -4);
+          const files = new Set(
+            sandbox.patterns.flatMap((pattern) => [
+              ...new Bun.Glob(pattern).scanSync({ cwd: sandbox.root, dot: true }),
+            ]),
+          );
+          for (const file of files) {
+            const target = join(artifactDirectory, file);
+            mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
+            copyFileSync(join(sandbox.root, file), target);
+            artifacts = artifactDirectory;
+          }
+        }
       }
     } catch (error) {
-      this.error = String(error);
+      this.error = artifactDirectory ? `${artifactDirectory}: ${error}` : String(error);
     }
-    return this.error ? { error: this.error } : { path };
+    return this.error ? { error: this.error } : { path, artifacts };
   }
 }

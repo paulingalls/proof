@@ -108,7 +108,27 @@ one as the local replica, outside checkouts by default. A `PROOF_STATE_DIR` over
 a checkout also puts logs there, so removing that checkout removes those logs. Logs stay
 local and never enter either store: they may contain private data.
 
-Displayed task and provider log paths are shell arguments: safe paths print unchanged;
+A task can declare `artifacts: [test-results/**, debug/**]`. After a red or incomplete
+process exits (including its signal handler), matching sandbox files are copied with their
+relative paths into the retained log's path without `.log`. Its result appends
+`; log: <absolute log path>; artifacts: <absolute directory>`. Green runs and globs matching
+nothing create no artifact directory or extra text. `artifacts: []` means none.
+
+Patterns must be a list of nonempty strings, sandbox-relative, without leading `!`,
+absolute paths or `..` components. They are file globs, without named input-set expansion.
+Files are copied, including hidden files; a bare directory matches nothing, so use
+`dir/**` rather than `dir`. `**` does not descend into symlinks, but a pattern naming a
+symlink, or a path through a linked directory, copies the target's bytes. The field works in included and generated task
+declarations and never changes proof keys or input selection. Artifact paths and bytes
+stay local, outside both stores. When an old log is pruned, its artifact directory is
+removed too; a later green leaves the ten retained pairs alone.
+
+An artifact scan or copy failure uses the existing `; log failed: <error>` report,
+including the artifact directory and affected file when available. The task's actual
+outcome is still recorded; the command exits 2, with interruption exits 130/143 taking
+precedence. Any partial copy remains beside its log for normal pruning.
+
+Displayed task, artifact and provider log paths are shell arguments: safe paths print unchanged;
 paths with spaces, parentheses or other shell metacharacters print in single quotes, with
 embedded apostrophes escaped as `'"'"'`. Paste the argument after `cat` in sh or zsh.
 An unterminated task output gets a display newline so progress starts on its own line;

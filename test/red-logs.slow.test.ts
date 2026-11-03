@@ -10,7 +10,7 @@ function logPath(out: string, id: string, outcome = 'red') {
     .split('\n')
     .find((line) => line.startsWith(`${outcome} ${id};`) && line.includes('; log: '));
   expect(line, out).toBeDefined();
-  const path = line?.split('; log: ')[1];
+  const path = line?.split('; log: ')[1]?.split('; artifacts: ')[0];
   if (!path) throw new Error(`missing log path: ${out}`);
   expect(isAbsolute(path)).toBe(true);
   expect(path).toMatch(new RegExp(`-${outcome}\\.log$`));
@@ -106,13 +106,17 @@ test('SIGTERM reaches a task while the live tail is behind a slow stdout', async
 test('SIGTERM keeps incomplete bytes after the handler and skips unstarted tasks', async () => {
   const f = fixture(
     {
-      a: { ...task(`exec '${process.execPath}' signal.ts`), inputs: ['input', 'signal.ts'] },
+      a: {
+        ...task(`exec '${process.execPath}' signal.ts`),
+        ...{ artifacts: ['diagnostic'] },
+        inputs: ['input', 'signal.ts'],
+      },
       later: task('echo should-not-run'),
     },
     {},
     {
       'signal.ts': `import { writeFileSync } from 'node:fs';
-process.on('SIGTERM', () => { console.log('handled'); process.exit(0); });
+process.on('SIGTERM', () => { writeFileSync('diagnostic', 'handled'); console.log('handled'); process.exit(0); });
 console.log(process.cwd());
 console.log('cat: omitted: No such file or directory');
 console.log('ready');
@@ -128,7 +132,10 @@ setInterval(() => {}, 100);`,
     expect(await child.exited).toBe(143);
     const [out, err] = await output;
     expect(err).toBe('');
-    const bytes = readFileSync(logPath(out, 'a', 'incomplete'), 'utf8');
+    const path = logPath(out, 'a', 'incomplete');
+    expect(readFileSync(join(path.slice(0, -4), 'diagnostic'), 'utf8')).toBe('handled');
+    expect(out).toContain(`; log: ${path}; artifacts: ${path.slice(0, -4)}`);
+    const bytes = readFileSync(path, 'utf8');
     const sandbox = bytes.split('\n')[0] as string;
     expect(bytes).toBe(`${sandbox}\ncat: omitted: No such file or directory\nready\nhandled\n`);
     expect(existsSync(sandbox)).toBe(false);
@@ -312,8 +319,11 @@ test('unavailable provider tail preserves the final report and exit', () => {
 
 test('each task keeps its newest ten reds and a later green preserves them', () => {
   const f = fixture({
-    a: task('cat scratch/control; test -f scratch/succeed'),
-    other: task('echo other; false'),
+    a: {
+      ...task('cat scratch/control; cp scratch/control diagnostic; test -f scratch/succeed'),
+      ...{ artifacts: ['diagnostic'] },
+    },
+    other: { ...task('echo other > diagnostic; false'), ...{ artifacts: ['diagnostic'] } },
   });
   const other = logPath(f.run('--tasks', 'other').out, 'other');
   const paths: string[] = [];
@@ -325,10 +335,16 @@ test('each task keeps its newest ten reds and a later green preserves them', () 
   }
   expect(new Set(paths).size).toBe(11);
   expect(existsSync(paths[0] as string)).toBe(false);
-  for (let n = 1; n < paths.length; n++)
+  expect(existsSync((paths[0] as string).slice(0, -4))).toBe(false);
+  for (let n = 1; n < paths.length; n++) {
     expect(readFileSync(paths[n] as string, 'utf8')).toBe(`run-${n + 1}\n`);
-  expect(readdirSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/tasks/a'))).toHaveLength(10);
+    expect(readFileSync(join((paths[n] as string).slice(0, -4), 'diagnostic'), 'utf8')).toBe(
+      `run-${n + 1}\n`,
+    );
+  }
+  expect(readdirSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/tasks/a'))).toHaveLength(20);
   expect(existsSync(other)).toBe(true);
+  expect(readFileSync(join(other.slice(0, -4), 'diagnostic'), 'utf8')).toBe('other\n');
   expect(
     new Set(
       f
@@ -339,7 +355,7 @@ test('each task keeps its newest ten reds and a later green preserves them', () 
   ).toBe(1);
   f.mark('succeed');
   expect(f.run('--tasks', 'a').code).toBe(0);
-  expect(readdirSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/tasks/a'))).toHaveLength(10);
+  expect(readdirSync(join(f.env.PROOF_STATE_DIR, 'logs/jobs/tasks/a'))).toHaveLength(20);
 });
 
 test('provider retention cannot prune a task with the same printed label', () => {
