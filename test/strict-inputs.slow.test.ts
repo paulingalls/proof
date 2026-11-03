@@ -46,11 +46,16 @@ test('strict first attempt receives selection without root delivery', () => {
   expect(f.rows().map((row) => row.outcome)).toEqual(['green']);
 });
 
-for (const fresh of [false, true]) {
-  test(`strict retry records only its green outcome (${fresh ? 'fresh proven' : 'unproven'})`, () => {
+for (const [fresh, recognized] of [
+  [false, true],
+  [true, true],
+  [false, false],
+  [true, false],
+]) {
+  test(`strict retry records only its green outcome (${fresh ? 'fresh proven' : 'unproven'}, recognized ${recognized})`, () => {
     const f = fixture(
       (marker) =>
-        `echo attempt >> '${marker}'; test ! -e leftover || exit 9; touch leftover; cat assets/a`,
+        `echo attempt >> '${marker}'; test ! -e leftover || exit 9; touch leftover; ${recognized ? 'cat assets/a' : 'test -f assets/a'}`,
     );
     if (fresh) expect(f.cli('run').code).toBe(0);
     const before = fresh ? f.rows().length : 0;
@@ -68,29 +73,32 @@ for (const fresh of [false, true]) {
     expect(result.out.match(/^(green|red) read;/gm)).toEqual(['green read;']);
     expect(result.out.match(/^progress:/gm)).toHaveLength(1);
     expect(result.out).toContain('summary: green 1, red 0');
-    expect(result.out.trim().split('\n').at(-1)).toBe('declaration gap read: assets/a');
+    expect(result.out.trim().split('\n').at(-1)).toBe(
+      `declaration gap read: ${recognized ? 'assets/a' : 'unidentified'}`,
+    );
     expect(JSON.parse(f.cli('plan', '--json').out)[0].state).toBe('PROVEN');
   });
 }
 
-test('strict retry records one final red and one fresh contradiction', () => {
-  const f = fixture(
-    (marker) =>
-      `echo attempt >> '${marker}'; cat assets/a; echo "ENOENT: no such file or directory, open 'assets/a'"; test ! -e '${marker}.fail'`,
-  );
-  expect(f.cli('run').code).toBe(0);
-  f.repo.write('.git/attempts.fail', 'fail');
-  const result = f.cli('run', '--fresh', '--strict-inputs');
-  expect(result.code, result.err + result.out).toBe(1);
-  expect(readFileSync(f.marker, 'utf8').trim().split('\n')).toHaveLength(3);
-  expect(f.rows().map((row) => row.outcome)).toEqual(['green', 'red']);
-  expect(f.rows('contradictions')).toHaveLength(1);
-  expect(result.out.match(/^deleted proof local /gm)).toHaveLength(1);
-  expect(result.out.match(/^red read;/gm)).toHaveLength(1);
-  expect(result.out.match(/^progress:/gm)).toHaveLength(1);
-  expect(result.out).toContain('summary: green 0, red 1');
-  expect(result.out.trim().split('\n').at(-1)).toBe('declaration gap read: assets/a');
-});
+for (const recognized of [true, false])
+  test(`strict retry records one final red and one fresh contradiction (recognized ${recognized})`, () => {
+    const f = fixture(
+      (marker) =>
+        `echo attempt >> '${marker}'; ${recognized ? `cat assets/a; echo "ENOENT: no such file or directory, open 'assets/a'"` : 'test -f assets/a || exit 1'}; test ! -e '${marker}.fail'`,
+    );
+    expect(f.cli('run').code).toBe(0);
+    f.repo.write('.git/attempts.fail', 'fail');
+    const result = f.cli('run', '--fresh', '--strict-inputs');
+    expect(result.code, result.err + result.out).toBe(1);
+    expect(readFileSync(f.marker, 'utf8').trim().split('\n')).toHaveLength(3);
+    expect(f.rows().map((row) => row.outcome)).toEqual(['green', 'red']);
+    expect(f.rows('contradictions')).toHaveLength(1);
+    expect(result.out.match(/^deleted proof local /gm)).toHaveLength(1);
+    expect(result.out.match(/^red read;/gm)).toHaveLength(1);
+    expect(result.out.match(/^progress:/gm)).toHaveLength(1);
+    expect(result.out).toContain('summary: green 0, red 1');
+    expect(result.out.includes('declaration gap read: assets/a')).toBe(recognized);
+  });
 
 test('parallel gaps follow the tally in declaration order without hint truncation', () => {
   const diagnostics = `for path in outside assets/a assets/b assets/c assets/d assets/a source untracked; do echo "ENOENT: no such file or directory, open '$path'"; done; exit 1`;
@@ -120,16 +128,29 @@ test('parallel gaps follow the tally in declaration order without hint truncatio
   ).toEqual(['green', 'red']);
 });
 
-for (const delivered of [true, false]) {
-  test(`strict red outside delivery runs once (root delivery ${delivered})`, () => {
+for (const [strict, delivered] of [
+  [true, true],
+  [true, false],
+  [false, true],
+]) {
+  test(`red outside delivery (strict ${strict}, root delivery ${delivered})`, () => {
     const f = fixture((marker) => `echo attempt >> '${marker}'; cat outside`);
     if (!delivered)
       f.repo.commit({ 'proof.yaml': JSON.stringify({ ...f.doc, delivered: undefined }) });
-    const result = f.cli('run', '--strict-inputs');
+    const result = f.cli('run', ...(strict ? ['--strict-inputs'] : []));
     expect(result.code, result.err + result.out).toBe(1);
-    expect(readFileSync(f.marker, 'utf8')).toBe('attempt\n');
+    expect(readFileSync(f.marker, 'utf8')).toBe('attempt\n'.repeat(strict && delivered ? 2 : 1));
     expect(f.rows().map((row) => row.outcome)).toEqual(['red']);
     expect(result.out).toContain('not delivered: outside');
     expect(result.out).not.toContain('declaration gap');
   });
 }
+
+test('strict red with only selected delivery records without retry', () => {
+  const f = fixture((marker) => `echo attempt >> '${marker}'; false`, ['source']);
+  const result = f.cli('run', '--strict-inputs');
+  expect(result.code, result.err + result.out).toBe(1);
+  expect(readFileSync(f.marker, 'utf8')).toBe('attempt\n');
+  expect(f.rows().map((row) => row.outcome)).toEqual(['red']);
+  expect(result.out).not.toContain('declaration gap');
+});
