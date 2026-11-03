@@ -19,6 +19,7 @@ import type { Store } from './store';
 export type TaskResult = {
   outcome: 'green' | 'red' | 'incomplete' | 'proven' | 'unreached';
   notRecorded: boolean;
+  quiet?: boolean;
   gaps?: string[];
 };
 
@@ -71,6 +72,7 @@ export async function runTask(
     retain,
   }: Context,
 ): Promise<TaskResult | undefined> {
+  const initialPreview = preview.get(id);
   const baseline = currentView();
   let view = baseline;
   let task = view.tasks.get(id);
@@ -150,8 +152,9 @@ export async function runTask(
     }
     if (decision.state === 'PROVEN') {
       skipped(id);
-      summary.push(`PROVEN ${id}: ${decision.reason}`);
-      return { outcome: 'proven', notRecorded: false };
+      const quiet = renderDecision(decision) === initialPreview;
+      if (!quiet) summary.push(`PROVEN ${id}: ${decision.reason}`);
+      return { outcome: 'proven', notRecorded: false, quiet };
     }
     const blocked =
       processes.cancelled ||

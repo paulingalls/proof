@@ -204,7 +204,8 @@ export async function run(args: string[]) {
           counts[result.outcome]++;
           if (result.outcome !== 'incomplete') done++;
           if (result.notRecorded) notRecorded++;
-          console.log(`progress: ${done}/${ids.length} done; ${tally()}; task ${id}`);
+          if (!result.quiet)
+            console.log(`progress: ${done}/${ids.length} done; ${tally()}; task ${id}`);
         }
         unfinished.delete(id);
         runningNeeds.delete(id);
