@@ -153,3 +153,25 @@ test('unresolved local and relative imports name the missing edge; external impo
   expect(plan(r)[0]?.key).toBeDefined();
   changes(r, { 'local.py': ['a'], 'other.py': [] });
 });
+
+test('literal dynamic calls follow modules and computed calls are undecidable', () => {
+  const calls = ['importlib.import_module', 'import_module', '__import__'];
+  const files: Record<string, string> = { 'm.py': '' };
+  const tasks: Record<string, unknown> = {};
+  for (const [i, call] of calls.entries()) {
+    tasks[`a${i}`] = task(`t${i}.py`);
+    files[`t${i}.py`] = `${call}(\n "m"\n)`;
+  }
+  const r = fixture(tasks, files);
+  for (const row of plan(r)) expect(row.key, row.reason).toBeDefined();
+  changes(r, { 'm.py': ['a0', 'a1', 'a2'] });
+  for (const call of calls) {
+    for (const arg of ['name', "'m' + suffix", "f'{name}'", "'.m'"]) {
+      r.commit({ 't0.py': `${call}(${arg})` });
+      const row = plan(r).find((row) => row.task === 'a0');
+      expect(row?.key, `${call}(${arg})`).toBeUndefined();
+      expect(row?.reason).toContain('t0.py');
+      expect(row?.reason).toContain(call);
+    }
+  }
+});
