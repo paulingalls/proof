@@ -132,7 +132,7 @@ test('staged declarations, includes, providers and both selectors share the inde
   f.repo.write('proof.yaml', f.document({ wrong: { run: 'exit 1', inputs: ['input'] } }));
   f.repo.write('staged/tasks.yaml', JSON.stringify({ tasks: { wrongInclude: task } }));
   f.repo.write('staged/extra.yaml', JSON.stringify({ tasks: { untracked: task } }));
-  const run = f.cli('run', '--staged', '--set', 'commit');
+  const run = f.cli('run', '--set', 'commit', '--staged');
   expect(run.code, run.err).toBe(0);
   expect(run.out).toContain('green task; proof published');
   expect(run.out).toContain('green included; proof published');

@@ -38,7 +38,16 @@ and running `bun install` if they differ.
 
 `proof run` defaults to `os.availableParallelism()` concurrent tasks on this machine.
 `proof run --jobs 2` overrides that limit to two; resource lane limits still apply within it.
-`--jobs` accepts a positive safe integer and belongs after the run mode and optional `--strict-inputs`, before the selector.
+`--jobs` accepts a positive safe integer. The mode (`--fresh`, `--staged` or `--since <ref>`),
+`--strict-inputs`, `--jobs N` and `--set <name>` may appear in any order.
+`--tasks <id> ...` consumes the remaining task IDs and must come last; `--strict-inputs`
+is also accepted after it. Repeated flags, conflicting modes, both selectors, missing values
+and unknown arguments exit 2 with usage. For example, with a declared `commit` set:
+
+```sh
+proof run --fresh --set commit --jobs 1
+```
+
 `proof run --jobs 1` streams each task's combined stdout and stderr live to proof's stdout
 in declared execution order (also the default on a single-job machine). Task stdout and
 stderr see no TTY. Above 1, each task's stdout and stderr appear together on stdout when it finishes, under `--- <task>`; summaries stay in declared
@@ -158,6 +167,9 @@ or every matched path is already selected or under task links, a strict red reco
 normally without a retry. The same diagnostic limitations as the hint apply to named gaps;
 this does not detect every undeclared read. Without the flag, delivery and outcome
 reporting stay unchanged.
+
+When lint prints `exempt 'X': selected by task 'Y'; the task owns it, drop the exemption`,
+remove the redundant exemption: task `Y` already owns `X` through its inputs.
 
 `proof lint` also exits 1 when a negation removes a path added by an `imports-of`
 or `maestro` trace and the final selection omits it. For example:
@@ -453,8 +465,8 @@ values, and the comparison is the key alone. Changes to `run`, `links` or a dime
 alone with the same dimension command leaves work unreached: environment does not drive this
 selection. Unreached unproven work waits for the fresh super, which never uses `--since`.
 
-The flag composes with `--set` or `--tasks` and preserves `--jobs` scheduling. In `run`, put it
-first, before `--jobs` and the selector; `plan` accepts options in any order. Unknown refs fail
+The flag composes with `--set` or `--tasks` and preserves `--jobs` scheduling. Options may
+appear in any order, with `--tasks` last in `run`. Unknown refs fail
 with exit 2 even when every task is proven. Missing/repeated refs and combinations with
 `--fresh` or `--staged` are usage errors. Unreached tasks start no providers, execute nothing,
 record no result and count no savings in `stats`; an all-unreached run exits 0.
@@ -463,7 +475,7 @@ On a two-commit repository with `reached` changed and `unreached` unchanged:
 
 ```sh
 proof plan --since HEAD~1 --json
-proof run --since HEAD~1 --jobs 2 --set push
+proof run --jobs 2 --since HEAD~1 --set push
 proof run --since HEAD~1 --tasks reached unreached
 ```
 

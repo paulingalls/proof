@@ -49,7 +49,10 @@ export function lint() {
   for (const path of Object.keys(exempt)) {
     if (!tree.files.has(path)) findings.push(`exempt '${path}': no tracked file`);
     for (const [id, paths] of selections) {
-      if (paths.has(path)) findings.push(`exempt '${path}': selected by task '${id}'`);
+      if (paths.has(path))
+        findings.push(
+          `exempt '${path}': selected by task '${id}'; the task owns it, drop the exemption`,
+        );
     }
   }
   return findings;

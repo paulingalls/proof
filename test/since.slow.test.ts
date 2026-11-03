@@ -69,7 +69,7 @@ test('since narrows plan and run, selectors and jobs without recording unreached
     const plain = s.cli('plan', '--since', s.base);
     expect(plain.out).toContain(`UNREACHED unreached: unreached since ${s.base}`);
     expect(s.cli('plan').out).toContain('RUN unreached: no proof for key');
-    const result = s.cli('run', '--since', s.base, '--jobs', '2', ...selector);
+    const result = s.cli('run', '--jobs', '2', '--since', s.base, ...selector);
     expect(result.code).toBe(0);
     expect(result.out).toContain(`UNREACHED unreached: unreached since ${s.base}`);
     expect(existsSync(join(s.dir, 'reached'))).toBe(true);
