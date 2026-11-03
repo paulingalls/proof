@@ -14,8 +14,7 @@ The super uses `--fresh` and never `--since`. See [command details](docs/command
 ## How it works
 
 - **Declarations live in the repo.** `proof.yaml` (plus optional included or generated declarations)
-  says what each task depends on. TypeScript inputs come from the import closure
-  (a Python import graph is planned). You declare only what imports cannot see,
+  says what each task depends on. TypeScript and Python inputs come from their import closures. You declare only what imports cannot see,
   such as fixtures, SQL, spawned scripts and runtime files.
 - **A key is computed from the tree, never from a diff.** A task's key hashes its id,
   the meaning of its declaration, the content of its tree-derived inputs, and declared dimensions. The same tree and declared dimensions give the same answer on any clone or
@@ -134,6 +133,32 @@ exempt:
   Ordinary globs consider tracked paths and untracked paths that Git does not ignore. An ignored literal
   input is missing: it stays outside the sandbox and prevents recording, with its path reported.
   Use `links` for ignored file access. Remove deprecated `{dotenv: path}` inputs; they are ignored.
+- **Python closures** use `{imports-of: entry.py, python-path: [src, tests]}`.
+  Roots are searched in order; omitting `python-path` uses the entry's directory.
+  Only tracked `.py` modules and package initializers are followed. Regular packages
+  win over same-named modules and earlier namespace portions; namespace packages can
+  span roots. Relative imports resolve from the importing file's directory.
+  Unresolved absolute imports are treated as installed packages or stdlib, unless their
+  top-level name exists elsewhere in the tracked tree; then the task is undecidable and
+  names the tracked path so you can correct `python-path`. Unresolved relative imports and
+  computed `importlib.import_module`, `import_module` or `__import__` calls are undecidable;
+  literal absolute calls are followed. Strings, docstrings and comments add no imports.
+  `python-path` is a nonempty list of repo-relative directories (`.` means repository root)
+  and is valid only for `.py` entries. Declare fixtures, configuration, `conftest.py` and
+  plugins separately when they are not imported:
+
+  ```yaml
+  tasks:
+    test-widget:
+      run: uv run pytest tests/test_widget.py
+      inputs:
+        - {imports-of: tests/test_widget.py, python-path: [src, tests]}
+        - tests/conftest.py
+        - tests/fixtures/**
+        - pyproject.toml
+        - uv.lock
+  ```
+
 - **Closure manifests**: a `package.json` reached only as import resolver metadata keys
   `name`, `main`, `module`, `type`, `exports`, `imports`, `workspaces`, `extends` and
   `compilerOptions`. A committed `version` bump or changelog edit therefore preserves the closure

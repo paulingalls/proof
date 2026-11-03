@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.28.0
+
+- `imports-of` now follows Python imports, including package initializers, relative
+  imports, namespace packages and literal dynamic imports. Optional `python-path`
+  declares ordered search roots; the default is the entry directory. Missing local
+  roots, unresolved relative imports and computed dynamic calls make tasks undecidable.
+  Existing TypeScript keys are unchanged.
+
 ## 0.27.0
 
 - `run --strict-inputs` audits selection-only task sandboxes. A red naming an omitted
