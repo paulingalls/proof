@@ -219,3 +219,29 @@ def test_it():
     ),
   );
 });
+
+test('an entry in a package includes parent initializers and namespace portions span roots', () => {
+  const r = fixture(
+    { a: task('src/p/t.py', ['src', 'lib']) },
+    {
+      'src/p/t.py': 'from .sub import n\nfrom ns import one, two',
+      'src/p/__init__.py': 'import initdep',
+      'src/initdep.py': '',
+      'src/p/sub/__init__.py': '',
+      'src/p/sub/n.py': '',
+      'src/ns/one.py': '',
+      'lib/ns/two.py': '',
+      'p/__init__.py': '',
+    },
+  );
+  expect(plan(r)[0]?.key).toBeDefined();
+  changes(r, {
+    'src/p/__init__.py': ['a'],
+    'src/initdep.py': ['a'],
+    'src/p/sub/__init__.py': ['a'],
+    'src/p/sub/n.py': ['a'],
+    'src/ns/one.py': ['a'],
+    'lib/ns/two.py': ['a'],
+    'p/__init__.py': [],
+  });
+});
