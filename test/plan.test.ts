@@ -292,8 +292,21 @@ test('shared globs keep dirty selection and negation task-local in either order'
     });
     const env = state();
     for (const id of order) expect(r.cli(['record', id, '--outcome', 'green'], env).code).toBe(0);
-    const rows = () => JSON.parse(r.cli(['plan', '--json'], env).out);
+    const rows = () => {
+      const result = r.cli(['plan', '--json'], env);
+      expect(result.code).toBe(0);
+      return JSON.parse(result.out);
+    };
     const clean = rows();
+    r.write('src/gen/x.ts', 'dirty');
+    expect(rows()).toEqual(
+      clean.map((row: { task: string }) =>
+        row.task === 'all'
+          ? { task: 'all', state: 'RUN', reason: "undecidable: dirty input 'src/gen/x.ts'" }
+          : row,
+      ),
+    );
+    r.git('restore', 'src/gen/x.ts');
     r.write('src/gen/new.ts', 'untracked');
     expect(rows()).toEqual(
       clean.map((row: { task: string }) =>
@@ -314,6 +327,36 @@ test('shared globs keep dirty selection and negation task-local in either order'
     const result = r.check([{ name: 'task-local exclusion', from, to, expect: ['all'] }]);
     expect(result.code, result.err + result.out).toBe(0);
   }
+});
+
+test('negations exclude dirty import targets without changing proof or delivery', () => {
+  const r = fixture();
+  r.commit({
+    'proof.yaml': JSON.stringify({
+      version: 1,
+      project: 'imports',
+      tasks: { gate: { run: 'true', inputs: [{ 'imports-of': 'entry.ts' }, '!gen/**'] } },
+    }),
+    'entry.ts': "import './gen/x';",
+    'gen/x.js': 'export default 1;',
+  });
+  const env = state();
+  expect(r.cli(['record', 'gate', '--outcome', 'green'], env).code).toBe(0);
+  const rows = () => {
+    const result = r.cli(['plan', '--json'], env);
+    expect(result.code).toBe(0);
+    return JSON.parse(result.out);
+  };
+  const clean = rows();
+  expect(clean[0].state).toBe('PROVEN');
+  expect(clean[0].key).toMatch(/^[a-f0-9]{64}$/);
+  r.write('gen/x.ts', 'export default 2;');
+  expect(rows()).toEqual(clean);
+  const why = r.cli(['why', 'gate'], env);
+  expect(why.code).toBe(0);
+  expect(why.out).toContain('delivered keyed file entry.ts ');
+  expect(why.out).not.toContain('file gen/x.ts ');
+  expect(why.out).not.toContain('file gen/x.js ');
 });
 
 test('an ignored projection is missing and stays outside the sandbox', () => {
