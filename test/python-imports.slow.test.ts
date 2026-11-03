@@ -79,3 +79,51 @@ test('python-path rejects non-Python entries and malformed directory lists', () 
   const r = fixture({ a: task('t.ts', ['.']) }, { 't.ts': '' });
   expect(r.cli(['plan']).err).toContain('python-path needs a .py entry');
 });
+
+test('packages, relative members, cycles and Python package precedence', () => {
+  const r = fixture(
+    { a: task('tests/t.py', ['src', 'lib']) },
+    {
+      'tests/t.py': 'from p import n as alias\nimport m\nimport ns.x',
+      'src/p/__init__.py': 'from . import initdep',
+      'src/p/initdep.py': '',
+      'src/p/n.py': 'from .sub import n\nfrom . import sibling',
+      'src/p/sibling.py': '',
+      'src/p/sub/__init__.py': '',
+      'src/p/sub/n.py': 'from .. import sibling\nfrom p import n',
+      'src/m.py': '',
+      'src/m/__init__.py': 'import chosen',
+      'src/chosen.py': '',
+      'src/ns/x.py': '',
+      'lib/ns/__init__.py': '',
+      'lib/ns/x.py': '',
+      'lib/p/n.py': '',
+      'p/__init__.py': '',
+    },
+  );
+  for (const row of plan(r)) expect(row.key, row.reason).toBeDefined();
+  changes(
+    r,
+    Object.fromEntries(
+      [
+        'src/p/__init__.py',
+        'src/p/initdep.py',
+        'src/p/n.py',
+        'src/p/sibling.py',
+        'src/p/sub/__init__.py',
+        'src/p/sub/n.py',
+        'src/m/__init__.py',
+        'src/chosen.py',
+        'lib/ns/__init__.py',
+        'lib/ns/x.py',
+      ]
+        .map((path) => [path, ['a']])
+        .concat([
+          ['src/m.py', []],
+          ['src/ns/x.py', []],
+          ['lib/p/n.py', []],
+          ['p/__init__.py', []],
+        ]),
+    ),
+  );
+});

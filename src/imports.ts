@@ -1,5 +1,6 @@
 import { posix } from 'node:path';
 import { type RefTree, readBlobs, WorkingTree } from './git';
+import { pythonClosure } from './python';
 import { workingFile } from './sandbox';
 import { type Loader, scan } from './scan';
 import { workspaces } from './workspaces';
@@ -21,7 +22,7 @@ function committed(tree: RefTree, path: string) {
     for (const [path, id] of tree.files) {
       if (
         ['100644', '100755'].includes(tree.modes.get(path) ?? '') &&
-        (/\.(?:[cm]?[jt]s|[jt]sx|ya?ml)$/.test(path) ||
+        (/\.(?:[cm]?[jt]s|[jt]sx|py|ya?ml)$/.test(path) ||
           ['package.json', 'tsconfig.json', 'jsconfig.json'].includes(posix.basename(path))) &&
         !blobs.has(id)
       )
@@ -143,13 +144,14 @@ const closures = new WeakMap<
   Source,
   Map<string, { paths: Set<string>; manifests: Set<string>; whole: Set<string>; reason?: string }>
 >();
-export function closure(entry: string, view: Source) {
+export function closure(entry: string, view: Source, roots?: string[]) {
   let cached = closures.get(view);
   if (!cached) {
     cached = new Map();
     closures.set(view, cached);
   }
-  const prior = cached.get(entry);
+  const cacheKey = entry.endsWith('.py') ? JSON.stringify([entry, roots]) : entry;
+  const prior = cached.get(cacheKey);
   if (prior) return prior;
   const paths = new Set<string>();
   const manifests = new Set<string>();
@@ -176,8 +178,13 @@ export function closure(entry: string, view: Source) {
   }
   if (entry.startsWith('/') || entry.split('/').some((part) => ['..', '.git'].includes(part)))
     return { paths, manifests, whole, reason: `unsafe entry '${entry}'` };
+  if (entry.endsWith('.py')) {
+    const result = pythonClosure(entry, view, roots);
+    cached.set(cacheKey, result);
+    return result;
+  }
   visit(entry);
   const result = { paths, manifests, whole, reason };
-  cached.set(entry, result);
+  cached.set(cacheKey, result);
   return result;
 }

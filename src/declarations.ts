@@ -11,7 +11,7 @@ export type Input =
   | { path: string; json: string[] }
   | { path: string; 'dotenv-keys': true }
   | { dotenv: string; exclude?: string[] }
-  | { 'imports-of': string }
+  | { 'imports-of': string; 'python-path'?: string[] }
   | { maestro: string };
 export type Provider = { start: string; stop?: string; lane?: string };
 export type Task = {
@@ -67,8 +67,26 @@ function patterns(value: unknown, context: string): Input[] {
       return { maestro: text(projection.maestro, label) };
     }
     if ('imports-of' in projection) {
-      fields(projection, ['imports-of'], label);
-      return { 'imports-of': text(projection['imports-of'], label) };
+      fields(projection, ['imports-of', 'python-path'], label);
+      const entry = text(projection['imports-of'], label);
+      if (!('python-path' in projection)) return { 'imports-of': entry };
+      if (!entry.endsWith('.py')) throw new Error(`${label}: python-path needs a .py entry`);
+      const roots = projection['python-path'];
+      if (
+        !Array.isArray(roots) ||
+        !roots.length ||
+        roots.some(
+          (root) =>
+            typeof root !== 'string' ||
+            !root.trim() ||
+            isAbsolute(root) ||
+            (root !== '.' && root.split('/').some((p) => ['', '.', '..', '.git'].includes(p))),
+        )
+      )
+        throw new Error(
+          `${label}: python-path must be a nonempty list of repo-relative directories`,
+        );
+      return { 'imports-of': entry, 'python-path': roots };
     }
     if ('dotenv' in projection) {
       fields(projection, ['dotenv', 'exclude'], label);

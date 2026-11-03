@@ -63,7 +63,7 @@ export function select(
   for (const pattern of task.inputs) {
     if (typeof pattern !== 'string') {
       if ('imports-of' in pattern) {
-        const found = closure(pattern['imports-of'], view);
+        const found = closure(pattern['imports-of'], view, pattern['python-path']);
         traces.push({ label: `imports-of '${pattern['imports-of']}'`, paths: found.paths });
         for (const path of found.paths) paths.add(path);
         for (const path of found.whole) whole.add(path);
