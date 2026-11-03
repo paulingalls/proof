@@ -32,9 +32,13 @@ export function lint() {
   const selections = new Map<string, Set<string>>();
   const owned = new Set<string>();
   for (const [id, task] of tasks) {
-    const paths = select(task, tree, absentExempt).paths;
+    const { paths, removed } = select(task, tree, absentExempt);
     for (const input of task.inputs) {
       if (typeof input !== 'string' && 'path' in input) paths.add(input.path);
+    }
+    for (const [path, { negation, trace }] of removed) {
+      if (!paths.has(path))
+        findings.push(`task '${id}': '${negation}' removes '${path}' traced by ${trace}`);
     }
     selections.set(id, paths);
     for (const path of paths) owned.add(path);

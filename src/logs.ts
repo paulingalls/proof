@@ -13,6 +13,8 @@ import {
 import { join, relative, resolve } from 'node:path';
 import { statePath } from './config';
 import type { RefTree } from './git';
+import { source } from './imports';
+import { workspaces } from './workspaces';
 
 export type LogIdentity = {
   project: string;
@@ -51,6 +53,21 @@ export function notDelivered(path: string, root: string, tree: RefTree, selected
   }
   const omitted = new Set<string>();
   for (const line of content.split('\n')) {
+    for (const match of line.matchAll(/Cannot find (?:module|package) (['"])(.*?)\1/g)) {
+      const resolver = workspaces(source(tree));
+      for (const kind of ['import', 'require'] as const) {
+        try {
+          const target = resolver.bare(
+            'package.json',
+            { specifier: match[2] ?? '', kind },
+            new Set(),
+          );
+          if (target && tree.files.has(target) && !selected.has(target)) omitted.add(target);
+        } catch {
+          // Resolution is optional diagnostic evidence; the original red remains authoritative.
+        }
+      }
+    }
     const missing = /no such file or directory|ENOENT/i.exec(line);
     if (!missing) continue;
     const field = line.slice(0, missing.index).split(': ').at(-2) ?? '';

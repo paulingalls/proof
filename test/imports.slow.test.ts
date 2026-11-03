@@ -266,7 +266,7 @@ test('named closures own only index-reachable files and respect exclusions', () 
   doc.tasks.owner = { run: 'true', inputs: ['src/lib/x.ts'] };
   r.write('proof.yaml', JSON.stringify(doc));
   r.git('add', 'proof.yaml');
-  expect(r.cli(['lint']).code).toBe(0);
+  expect(r.cli(['lint']).out).not.toContain("unowned 'src/lib/x.ts'");
 });
 
 test('missing entries and malformed adapter declarations fail visibly', () => {
