@@ -76,6 +76,27 @@ task run every time and publish nothing. A dirty declaration prevents every task
 use `proof run --staged` to prove the index instead: its green is reusable after committing those staged bytes, including
 at push or in CI.
 
+## Adopting proof in an existing repo
+
+- **Deliver the whole tree.** Put `delivered: ['**']` at the root on day one. Tests read files
+  imports can't see; without it those reads are false reds. Delivered files don't enter keys, so
+  an edit to an undeclared read waits for the super; `--strict-inputs` lists those reads.
+- **One task per test target**, keyed by `imports-of:` its entry plus globs for fixtures, SQL and
+  spawned scripts. Start with fast unit packages, then services, then acceptance and e2e.
+- **Link ignored files.** `links: [node_modules, apps/web/node_modules, .env]` for each
+  `node_modules` and ignored config a task reads. List the variable names a command needs in `env:`;
+  the sandbox environment otherwise holds only `PATH`, `HOME` and `TMPDIR`. Bun loads `.env`
+  from its working directory even without `--env-file`.
+- **Don't link a Python venv.** `uv run` syncs the venv it finds, so a linked `.venv` is
+  rewritten by concurrent tasks. Run `uv run --frozen --directory <project> pytest ...` and let
+  uv build a sandbox venv from its cache under `HOME`.
+- **Keep paid and live tests out of ordinary runs.** Put the other tasks in sets (`sets: [commit]`)
+  and have hooks run `proof run --set commit`; paid tasks stay out of every set, so only plain
+  `run` and the fresh super execute them. Their keys reach the command only through `env:`.
+- **Check the setup**: `proof plan`, `proof why <task>`, `proof lint` (uncovered files, traced
+  paths a negation drops), `proof check` (state what an edit should run; compare with proof's
+  selection), and `proof run --fresh --strict-inputs` (reads the declarations miss).
+
 ## Declaring tasks
 
 ```yaml
@@ -329,7 +350,7 @@ exempt:
   keeping tuple names distinct from ordinary env and dotenv names. `doctor` is the diagnostic
   exception: it evaluates every declared dimension and prints raw values, continuing through
   failures and exiting 1 if any fail.
-- **`run`** executes in a sandbox holding only the task's inputs, with the environment cleared to
+- **`run`** executes in a sandbox holding the task's inputs and root `delivered` files, with the environment cleared to
   `PATH`, `HOME`, `TMPDIR` and the declared `env`. A missing input fails the task instead of
   passing by luck.
 - **`coverage` and `exempt`**: `proof lint` reports every covered file that no task selects and
