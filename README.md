@@ -34,10 +34,10 @@ The super uses `--fresh` and never `--since`. See [command details](docs/command
 ## Install
 
 `proof` needs [Bun](https://bun.sh) 1.4.4 or later and git. It isn't published to npm; depend on a
-tagged release from GitHub:
+the latest tagged release from GitHub:
 
 ```sh
-bun add -d "git+https://github.com/paulingalls/proof.git#v0.13.3"
+bun add -d "git+https://github.com/paulingalls/proof.git#v0.27.0"
 bunx proof --version
 ```
 
