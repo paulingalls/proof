@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.29.0
+
+- Every strict red with effective root delivery retries once before recording, even
+  without a recognized missing-path diagnostic. Only the retry outcome and time count;
+  a green retry without a named path reports an unidentified declaration gap.
+- Red summaries recognize Bun's importer-relative `Could not resolve` blocks and
+  explain `not a git repository` failures in sandboxes.
+- Python `imports-of` follows literal calls through any `.import_module` receiver;
+  computed arguments make the task undecidable.
+
 ## 0.28.0
 
 - `imports-of` now follows Python imports, including package initializers, relative
