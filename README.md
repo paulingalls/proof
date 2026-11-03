@@ -370,6 +370,8 @@ exempt:
   `**` skips symlinks, but a pattern naming one (or a path through a link) copies its target. Hidden files are included. Artifacts stay on this machine, never enter
   either store, and do not affect keys. Each task keeps ten logs with their artifact
   directories; pruning removes each pair. See [retention and errors](docs/commands.md).
+  The field is per task, with no root default. A generator must emit it on every task it
+  writes, so check the generated `proof.d` file for it rather than waiting for a red.
 - **Dimensions** declare machine values only for tasks that depend on them:
   ```yaml
   dimensions: {tool: 'printf demo'}
