@@ -19,6 +19,8 @@ export async function why(args: string[]) {
         await decide(id, task, view.tree, view.dirty, view.declaration, view.project, store),
       ),
     );
+    for (const [pattern, paths] of task.delivered ?? [])
+      console.log(`delivered pattern ${pattern}: ${paths.length} files`);
     const parts = keyParts(task, new WorkingTree(view.tree, view.dirty));
     for (const [path, mode, blob] of parts.files)
       console.log(`delivered keyed file ${path} ${mode} ${blob}`);
