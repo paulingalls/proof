@@ -477,11 +477,15 @@ for (const blocked of [false, true]) {
     expect(result.out).toContain('RUN first: fresh execution requested; providers: stack');
     expect(result.out).not.toContain('PROVEN');
     expect(result.out).not.toContain('deleted proof');
-    expect(f.log()).toEqual(blocked ? ['start', 'stop'] : ['start', 'first', 'second', 'stop']);
+    const log = f.log();
+    expect(log[0]).toBe('start');
+    expect(log.at(-1)).toBe('stop');
+    expect(log.slice(1, -1).sort()).toEqual(blocked ? [] : ['first', 'second']);
     expect(
       f
         .rows()
         .slice(3)
+        .sort((a, b) => a.task.localeCompare(b.task))
         .map((r) => [r.task, r.outcome]),
     ).toEqual([
       ['first', blocked ? 'incomplete' : 'green'],

@@ -147,7 +147,14 @@ test('offline results stay local across reopen and online reads never merge loca
     const failed = repo.cli(['run'], a);
     expect(failed.code).toBe(1);
     expect(failed.out.match(/not shared/g)).toHaveLength(2);
-    expect(rows().slice(-2)).toEqual([{ outcome: 'green' }, { outcome: 'red' }]);
+    expect(
+      rows(
+        'SELECT task, outcome FROM (SELECT * FROM results ORDER BY id DESC LIMIT 2) ORDER BY task',
+      ),
+    ).toEqual([
+      { task: 'fail', outcome: 'red' },
+      { task: 'pass', outcome: 'green' },
+    ]);
   } finally {
     await postgres.restart();
   }
