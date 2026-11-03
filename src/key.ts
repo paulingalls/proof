@@ -81,7 +81,10 @@ export function select(
     let matched = false;
     for (const path of [
       ...matching(tree, positive),
-      ...(negative ? [...dirty, ...paths] : dirty).filter((path) => glob.match(path)),
+      ...(negative ? [...dirty, ...paths] : dirty).filter(
+        // A tree path that matches is already in matching's list.
+        (path) => (!negative || !tree.files.has(path)) && glob.match(path),
+      ),
     ]) {
       if (linked.has(path)) continue;
       matched = true;

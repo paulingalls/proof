@@ -110,6 +110,33 @@ test('applies negation in order over the complete inventory', () => {
   expect(result.out).toContain('PASS order grows');
 });
 
+test('shared negations match each tree path only once', () => {
+  const r = repo();
+  const task = { run: 'true', inputs: ['src/**', '!src/gen/**'] };
+  const head = r.commit({
+    'proof.yaml': JSON.stringify({ version: 1, project: 'matching', tasks: { a: task, b: task } }),
+    'src/keep.ts': 'keep',
+    'src/gen/x.ts': 'generated',
+  });
+  r.write(
+    '.git/count.ts',
+    `const match = Bun.Glob.prototype.match;
+let count = 0;
+Bun.Glob.prototype.match = function(path) {
+  if (path === 'src/gen/x.ts') count++;
+  return match.call(this, path);
+};
+process.on('exit', () => console.error('matches=' + count));`,
+  );
+  r.write('.git/cases.yaml', JSON.stringify([item('same', head, head)]));
+  const result = r.cli(['check', '.git/cases.yaml'], {
+    BUN_OPTIONS: `--preload ${r.path}/.git/count.ts`,
+  });
+  expect(result.code).toBe(0);
+  expect(result.out).toBe('PASS same\n');
+  expect(result.err).toBe('matches=2\n');
+});
+
 test('an unmatched input runs with its reason, including exclusions', () => {
   const r = repo();
   for (const pattern of ['missing/**', '!absent/**']) {

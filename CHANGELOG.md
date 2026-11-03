@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.24.1
+
+- Negated inputs reuse matching tree paths across tasks instead of matching selected tree
+  paths again. Dirty and untracked paths remain subject to exclusions.
+
 ## 0.24.0
 
 - Plain `plan` ends with RUN, PROVEN and UNREACHED totals, estimated RUN minutes and
