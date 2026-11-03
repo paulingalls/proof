@@ -175,3 +175,47 @@ test('literal dynamic calls follow modules and computed calls are undecidable', 
     }
   }
 });
+
+test('lexical boundaries preserve real imports and suppress import-looking prose', () => {
+  const r = fixture(
+    { a: task('t.py') },
+    {
+      't.py': String.raw`
+"""import decoy
+import_module(name)
+"""
+single = 'import decoy'
+double = "__import__('decoy')"
+escaped = 'it\'s import decoy'
+raw = r'''from decoy import x'''
+# import decoy; import_module(name)
+def test_it():
+    import a as alias, b
+    if True: from p import (
+        n as value,
+    )
+    import c, \
+        d as other
+    __import__('\x65')
+`,
+      'a.py': '',
+      'b.py': '',
+      'c.py': '',
+      'd.py': '',
+      'e.py': '',
+      'p/__init__.py': '',
+      'p/n.py': 'import tail',
+      'tail.py': '',
+      'decoy.py': '',
+    },
+  );
+  expect(plan(r)[0]?.key).toBeDefined();
+  changes(
+    r,
+    Object.fromEntries(
+      ['a.py', 'b.py', 'c.py', 'd.py', 'e.py', 'p/__init__.py', 'p/n.py', 'tail.py']
+        .map((p) => [p, ['a']])
+        .concat([['decoy.py', []]]),
+    ),
+  );
+});
