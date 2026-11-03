@@ -127,3 +127,29 @@ test('packages, relative members, cycles and Python package precedence', () => {
     ),
   );
 });
+
+test('unresolved local and relative imports name the missing edge; external imports are ignored', () => {
+  for (const tracked of ['src/app/__init__.py', 'lib/app.py', 'lib/app/n.py']) {
+    const r = fixture({ a: task('tests/t.py') }, { 'tests/t.py': 'import app', [tracked]: '' });
+    const row = plan(r)[0];
+    expect(row?.key).toBeUndefined();
+    expect(row?.reason).toContain('tests/t.py');
+    expect(row?.reason).toContain("import 'app'");
+    expect(row?.reason).toContain(tracked.replace(/\/__init__.py$|\/n.py$/, ''));
+  }
+  for (const code of [
+    'from . import missing',
+    'from .missing import value',
+    'from ... import missing',
+  ]) {
+    const r = fixture({ a: task('tests/t.py') }, { 'tests/t.py': code });
+    expect(plan(r)[0]?.reason).toContain('tests/t.py: import');
+    expect(plan(r)[0]?.key).toBeUndefined();
+  }
+  const r = fixture(
+    { a: task('t.py') },
+    { 't.py': 'import json\nimport local', 'local.py': '', 'other.py': '' },
+  );
+  expect(plan(r)[0]?.key).toBeDefined();
+  changes(r, { 'local.py': ['a'], 'other.py': [] });
+});
