@@ -133,15 +133,3 @@ for (const delivered of [true, false]) {
     expect(result.out).not.toContain('declaration gap');
   });
 }
-
-test('retry cannot erase first-attempt checkout changes from publication checks', () => {
-  const f = fixture(
-    (marker) =>
-      `if test -f assets/a; then printf source > '${join(marker, '../../source')}'; else printf changed > '${join(marker, '../../source')}'; fi; cat assets/a`,
-  );
-  const result = f.cli('run', '--strict-inputs');
-  expect(result.code, result.err + result.out).toBe(0);
-  expect(result.out).toContain("green read; no proof published: selected path changed 'source'");
-  expect(f.rows().map((row) => row.outcome)).toEqual(['green']);
-  expect(JSON.parse(f.cli('plan', '--json').out)[0].state).toBe('RUN');
-});

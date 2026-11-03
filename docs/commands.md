@@ -371,7 +371,9 @@ files and untracked matches. `--staged` delivers index snapshot bytes. Selected 
 selection's byte, key and publication rules. Delivery skips paths at or under task links.
 Provider input mismatch checks remain selection-only; providers run in the checkout.
 Included/generated lists accumulate, and every reader rejects negations and patterns with
-no tracked match in its judged tree.
+no tracked match in its judged tree. Delivered configuration files such as `bunfig.toml`,
+`pytest.ini` or `conftest.py` can change what a task does, not only what it can read: a
+preload that a task never saw before now runs.
 
 A fresh red over unchanged selected inputs immediately deletes that key's stored green and
 records a `super` contradiction. The summary lists every red and each confirmed deletion as

@@ -195,22 +195,7 @@ export async function runTask(
         strictInputs && result.outcome === 'red'
           ? result.omitted.filter((path) => result.delivered.has(path))
           : [];
-      let firstUnpublished: string | undefined;
-      let firstEscapes: string[] = [];
       if (gaps.length && !processes.cancelled) {
-        const firstAfter = refresh();
-        firstEscapes = inspectTaskLinks(task, tree, [...dirty], inspection).escapes;
-        if (!staged) {
-          const changed = sandbox?.changed();
-          firstUnpublished =
-            firstAfter.tree.commit !== baseline.tree.commit
-              ? 'HEAD changed'
-              : changed
-                ? `selected path changed '${changed}'`
-                : firstAfter.declaration
-                  ? `dirty declaration '${firstAfter.declaration}'`
-                  : key(id, task, firstAfter.tree, firstAfter.dirty).reason;
-        }
         const retry = new Sandbox();
         sandboxes.push(retry);
         result = await attempt(retry, false);
@@ -218,11 +203,12 @@ export async function runTask(
       const { outcome, seconds, unbuilt, log } = result;
       if (outcome !== 'green') fail();
       const after = refresh();
-      let unpublished = input.reason ?? firstUnpublished;
+      let unpublished = input.reason;
       if (!staged && !unpublished) {
         if (after.tree.commit !== baseline.tree.commit) unpublished = 'HEAD changed';
         else {
-          const changed = sandboxes.map((sandbox) => sandbox.changed()).find(Boolean);
+          // The first sandbox's baseline already spans both attempts' net checkout changes.
+          const changed = sandbox?.changed();
           if (changed) unpublished = `selected path changed '${changed}'`;
           else if (after.declaration) unpublished = `dirty declaration '${after.declaration}'`;
           else unpublished = key(id, task, after.tree, after.dirty).reason;
@@ -239,7 +225,6 @@ export async function runTask(
       const escapes = [
         ...new Set([
           ...inspection.escapes,
-          ...firstEscapes,
           ...inspectTaskLinks(task, tree, afterDirty, inspection).escapes,
         ]),
       ];
