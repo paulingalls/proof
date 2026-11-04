@@ -82,6 +82,10 @@ at push or in CI.
   an edit to an undeclared read waits for the super; `--strict-inputs` lists those reads.
 - **One task per test target**, keyed by `imports-of:` its entry plus globs for fixtures, SQL and
   spawned scripts. Start with fast unit packages, then services, then acceptance and e2e.
+- **Key what a test reaches out of process.** An acceptance test that calls a service over HTTP
+  imports none of its source, so that source is delivered but not keyed and an edit reuses the old
+  green. Declare the service's source globs as inputs of the task that builds or starts it, or of
+  each test task that uses it.
 - **Link ignored files.** `links: [node_modules, apps/web/node_modules, .env]` for each
   `node_modules` and ignored config a task reads. List the variable names a command needs in `env:`;
   the sandbox environment otherwise holds only `PATH`, `HOME` and `TMPDIR`. Bun loads `.env`
