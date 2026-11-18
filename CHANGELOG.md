@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.34.1
+
+- Staged provider checks skip individual blob reads for status-clean selected paths
+  whose current index blob and mode still match the captured tree. Dirty paths,
+  paths absent from the tree, and entries changed after capture retain comparison.
+
 ## 0.34.0
 
 - Tasks accept `artifacts: [globs]` to retain post-exit diagnostics beside red and
