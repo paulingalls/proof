@@ -327,6 +327,28 @@ test('a provider reading unstaged bytes neither earns a proof nor contests one',
   expect(f.rows('proofs')).toHaveLength(1);
 });
 
+test('a provider restoring the index cannot publish against the captured inputs', () => {
+  const f = fixture();
+  const gate = {
+    run: `test "$(cat '${f.control}/served')" = good`,
+    inputs: ['input'],
+    needs: ['service'],
+  };
+  const extra = {
+    providers: {
+      service: {
+        start: `cp input '${f.control}/served'; git restore --source=HEAD --staged --worktree input`,
+      },
+    },
+  };
+  f.repo.commit({ 'proof.yaml': f.document({ gate }, extra), input: 'bad' });
+  f.stage({ input: 'good' });
+  const result = f.cli('run', '--staged');
+  expect(result.code, result.err + result.out).toBe(0);
+  expect(result.out).toContain("green gate; no proof published: provider can see unstaged 'input'");
+  expect(f.rows('proofs')).toEqual([]);
+});
+
 test('provider checkout-only unignored glob matches cannot publish or contest', () => {
   const f = fixture();
   const gate = {

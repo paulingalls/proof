@@ -33,6 +33,20 @@ function calls(trace: string, pattern: RegExp) {
 const ignored = /git ls-files .*--ignored/g;
 const status = /git status --porcelain=v1/g;
 
+test('staged provider checks read no blobs for clean selected paths', () => {
+  const { repo, trace, env } = fixture(
+    { a: { run: 'true', inputs: ['data/*.txt'], needs: ['setup'] } },
+    { providers: { setup: { start: 'true' } } },
+  );
+  repo.commit({ 'data/a.txt': 'first', 'data/b.txt': 'second', 'data/c.txt': 'third' });
+  const ids = ['a', 'b', 'c'].map((name) => repo.git('rev-parse', `HEAD:data/${name}.txt`));
+  const result = repo.cli(['run', '--staged', '--jobs', '1'], env);
+  expect(result.code, result.err + result.out).toBe(0);
+  expect(result.out).toContain('green a; proof published');
+  const text = readFileSync(trace, 'utf8');
+  for (const id of ids) expect(text).not.toContain(`git cat-file blob ${id}`);
+});
+
 for (const jobs of [1, 2]) {
   test(`run never lists ignored paths and checks status per executed task, jobs=${jobs}`, () => {
     const { repo, trace, env } = fixture({
