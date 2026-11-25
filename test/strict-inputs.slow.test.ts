@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite';
 import { afterEach, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { Repo } from './support/repo';
 
@@ -26,10 +26,12 @@ function fixture(command: (marker: string) => string, delivered: string[] = ['as
   });
   const env = { PROOF_STATE_DIR: join(repo.path, '.git/state') };
   const cli = (...args: string[]) => repo.cli(args, env);
-  const rows = (table = 'results') => {
+  const rows = <T = { id: number; outcome: string; task: string; key: string; seconds: number }>(
+    table = 'results',
+  ) => {
     const db = new Database(join(env.PROOF_STATE_DIR, 'proof.db'));
     try {
-      return db.query(`SELECT * FROM ${table} ORDER BY rowid`).all() as { outcome: string }[];
+      return db.query(`SELECT * FROM ${table} ORDER BY rowid`).all() as T[];
     } finally {
       db.close();
     }
@@ -81,6 +83,66 @@ for (const [fresh, recognized] of [
     expect(JSON.parse(f.cli('plan', '--json').out)[0].state).toBe('PROVEN');
   });
 }
+
+for (const fresh of [false, true])
+  test(`strict verification identifies a flake (${fresh ? 'fresh proven' : 'unproven'})`, () => {
+    const f = fixture(
+      (marker) =>
+        `echo attempt >> '${marker}'; if test ! -e '${marker}.once'; then touch '${marker}.once'; sleep 0.5; exit 1; fi`,
+    );
+    if (fresh) {
+      f.repo.write('.git/attempts.once', 'ready');
+      expect(f.cli('run').code).toBe(0);
+      unlinkSync(`${f.marker}.once`);
+    }
+    const result = f.cli('run', ...(fresh ? ['--fresh'] : []), '--strict-inputs');
+    expect(result.code, result.err + result.out).toBe(0);
+    expect(readFileSync(f.marker, 'utf8').trim().split('\n')).toHaveLength(fresh ? 4 : 3);
+    const rows = f.rows();
+    expect(rows.map((row) => row.outcome)).toEqual(
+      fresh ? ['green', 'red', 'green'] : ['red', 'green'],
+    );
+    const [red, green] = rows.slice(-2);
+    expect(rows.every((row) => row.task === 'read' && row.key === green?.key)).toBe(true);
+    expect(red?.seconds).toBeGreaterThanOrEqual(0.5);
+    expect(green?.seconds).toBeLessThan(red?.seconds ?? 0);
+    expect(f.rows<{ result_id: number }>('proofs')).toMatchObject([{ result_id: green?.id }]);
+    expect(result.out).not.toContain('declaration gap');
+    expect(result.out.match(/^(green|red) read;/gm)).toEqual(['green read;']);
+    expect(result.out.match(/^progress:/gm)).toHaveLength(1);
+    expect(result.out).toContain('summary: green 1, red 0');
+    expect(f.rows('contradictions')).toHaveLength(fresh ? 1 : 0);
+    if (fresh) {
+      expect(f.rows('contradictions')).toMatchObject([
+        { kind: 'super', deleted_proof: 1, green_result: rows[0]?.id, red_result: red?.id },
+      ]);
+      expect(result.out.match(/^deleted proof local /gm)).toHaveLength(1);
+      expect(f.cli('flakes').out).toBe('ordinary task super\n0 read 1\n');
+      const proven = f.cli('run');
+      expect(proven.code, proven.err + proven.out).toBe(0);
+      expect(proven.out).toContain('PROVEN read');
+      expect(readFileSync(f.marker, 'utf8').trim().split('\n')).toHaveLength(4);
+      expect(f.rows()).toHaveLength(3);
+    }
+  });
+
+test('incomplete strict verification preserves the retry green without contesting proof', () => {
+  const f = fixture(
+    (marker) =>
+      `echo attempt >> '${marker}'; if test ! -e '${marker}.once'; then touch '${marker}.once'; exit 1; fi; test -f assets/a || kill -TERM $$`,
+  );
+  f.repo.write('.git/attempts.once', 'ready');
+  expect(f.cli('run').code).toBe(0);
+  unlinkSync(`${f.marker}.once`);
+  const result = f.cli('run', '--fresh', '--strict-inputs');
+  expect(result.code, result.err + result.out).toBe(0);
+  expect(readFileSync(f.marker, 'utf8').trim().split('\n')).toHaveLength(4);
+  expect(f.rows().map((row) => row.outcome)).toEqual(['green', 'green']);
+  expect(f.rows('contradictions')).toHaveLength(0);
+  expect(result.out).not.toContain('deleted proof');
+  expect(result.out.trim().split('\n').at(-1)).toBe('declaration gap read: unidentified');
+  expect(JSON.parse(f.cli('plan', '--json').out)[0].state).toBe('PROVEN');
+});
 
 for (const recognized of [true, false])
   test(`strict retry records one final red and one fresh contradiction (recognized ${recognized})`, () => {
