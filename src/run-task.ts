@@ -193,7 +193,9 @@ export async function runTask(
           live,
           logFailed,
         });
-      let result = await attempt(sandbox, strictInputs);
+      const first = await attempt(sandbox, strictInputs);
+      let result = first;
+      let flake: typeof first | undefined;
       const gaps =
         strictInputs && result.outcome === 'red'
           ? result.omitted.filter((path) => result.delivered.has(path))
@@ -206,17 +208,25 @@ export async function runTask(
           const retry = new Sandbox();
           sandboxes.push(retry);
           result = await attempt(retry, false);
-          if (result.outcome === 'green' && !gaps.length) gaps.push('unidentified');
+          if (result.outcome === 'green' && !gaps.length) {
+            if (!processes.cancelled) {
+              const verification = new Sandbox();
+              sandboxes.push(verification);
+              const checked = await attempt(verification, true);
+              if (checked.outcome === 'green') flake = first;
+            }
+            if (!flake) gaps.push('unidentified');
+          }
         }
       }
-      const { outcome, seconds, unbuilt, log } = result;
+      const { outcome, unbuilt, log } = result;
       if (outcome !== 'green') fail();
       const after = refresh();
       let unpublished = input.reason;
       if (!staged && !unpublished) {
         if (after.tree.commit !== baseline.tree.commit) unpublished = 'HEAD changed';
         else {
-          // The first sandbox's baseline already spans both attempts' net checkout changes.
+          // The first sandbox's baseline already spans all attempts' net checkout changes.
           const changed = sandbox?.changed();
           if (changed) unpublished = `selected path changed '${changed}'`;
           else if (after.declaration) unpublished = `dirty declaration '${after.declaration}'`;
@@ -239,24 +249,28 @@ export async function runTask(
       ];
       if (escapes.length) unpublished = [unpublished, ...escapes].filter(Boolean).join('; ');
       if (current.key !== undefined) {
-        const { sharing, deletedLocal, deletedShared } = await store.record(
-          project,
-          id,
-          current.key,
-          outcome,
-          seconds,
-          hostname(),
-          staged ? `${parent}${STAGED_SUFFIX}` : tree.commit,
-          unpublished !== undefined,
-          dirtyInputs ||
-            unstaged !== undefined ||
-            key(id, task, tree, afterDirty).key === undefined,
-          current.env,
-          current.dimensionValues,
-          fresh ? 'super' : 'ordinary',
-        );
-        if (deletedLocal) summary.push(`deleted proof local ${id} ${current.key}`);
-        if (deletedShared) summary.push(`deleted proof shared ${id} ${current.key}`);
+        let sharing = 'local';
+        for (const recorded of flake ? [flake, result] : [result]) {
+          const stored = await store.record(
+            project,
+            id,
+            current.key,
+            recorded.outcome,
+            recorded.seconds,
+            hostname(),
+            staged ? `${parent}${STAGED_SUFFIX}` : tree.commit,
+            unpublished !== undefined,
+            dirtyInputs ||
+              unstaged !== undefined ||
+              key(id, task, tree, afterDirty).key === undefined,
+            current.env,
+            current.dimensionValues,
+            fresh ? 'super' : 'ordinary',
+          );
+          sharing = stored.sharing;
+          if (stored.deletedLocal) summary.push(`deleted proof local ${id} ${current.key}`);
+          if (stored.deletedShared) summary.push(`deleted proof shared ${id} ${current.key}`);
+        }
         summary.push(
           `${outcome} ${id}${exhausted ? `; ${exhausted}` : unbuilt ? `; sandbox failed: ${unbuilt}` : unpublished ? `; no proof published: ${unpublished}` : outcome === 'green' ? '; proof published' : ''}${providerReason}${sharing === 'local' ? '' : `; ${sharing}`}${log}`,
         );

@@ -179,12 +179,26 @@ proof run --fresh --strict-inputs
 
 When that first attempt is red and root delivery supplies tracked paths outside selection
 and task links, the task retries once in a fresh sandbox with normal delivery, even when
-the log identifies no missing path. The retry determines the recorded outcome, stored seconds,
-progress, tally and exit status. The first attempt records nothing and cannot contest or
-delete a proof; its diagnostic log may remain locally. Providers and lane slots remain
-held across both attempts, each with its own timeout. Cancellation prevents a retry and
-records/counts incomplete with no stored seconds, so the strict red contests nothing.
-Publication still checks checkout changes across both attempts.
+the log identifies no missing path. The retry determines the final task outcome, progress,
+tally and exit status, and supplies its stored seconds and log. A green
+retry with a named gap records only that green; no third attempt runs.
+
+A green retry with no eligible named path triggers a third attempt with selection only
+in another fresh sandbox:
+
+- A red verification confirms a deterministic gap: print `declaration gap read: unidentified`
+  and record only the retry green.
+- A green verification identifies the first red as a flake: record the first red with its
+  own seconds, then the retry green, with no declaration gap. These use ordinary recording:
+  an existing proof is contested, or deleted with a super contradiction under `--fresh`,
+  then the green republishes proof.
+
+Providers and lane slots remain held across all attempts, each with its own timeout.
+Cancellation before the normal-delivery retry records/counts incomplete with no stored
+seconds, so the strict red contests nothing. Cancellation before verification, or an
+incomplete verification, keeps the retry green and the unidentified gap, leaving the
+first red unrecorded. A verification killed by its timeout counts as red.
+Publication still checks checkout changes across all attempts.
 
 After the tally, stdout lists each affected task once in declaration order, with all
 eligible detected paths deduplicated in diagnostic order, without the hint's three-path limit:
@@ -193,7 +207,6 @@ eligible detected paths deduplicated in diagnostic order, without the hint's thr
 declaration gap read: assets/a, assets/b
 ```
 
-A green retry with no eligible named path prints `declaration gap read: unidentified`.
 A red or incomplete retry adds no unidentified gap; detected named gaps still print.
 Gaps add no store state and do not change the exit code. When root `delivered` is absent
 or every matched path is already selected or under task links, a strict red records

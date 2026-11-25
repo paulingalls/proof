@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.35.1
+
+- A `--strict-inputs` red whose normal-delivery retry is green with no named path now
+  runs one more strict attempt. Red again keeps `declaration gap read: unidentified`;
+  green records the first red and then the green, so the flake contests the proof and
+  reaches `proof flakes` like two ordinary runs (#78).
+
 ## 0.35.0
 
 - `run` admits every `solo` task first, alone, in declared order, so a solo no longer
