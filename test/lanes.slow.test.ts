@@ -171,7 +171,12 @@ function concurrent(lanes: Record<string, number>, roster: [string, string?, str
   const events = (): Event[] => (f.has('events') ? JSON.parse(f.read('events')) : []);
   const entered = (...ids: string[]) =>
     until(() => ids.every((id) => events().some(([who, kind]) => who === id && kind === 'enter')));
-  return { ...f, events, entered };
+  return {
+    ...f,
+    events,
+    entered,
+    solos: roster.filter(([, lane]) => lane === 'solo').map(([id]) => id),
+  };
 }
 async function finish(f: ReturnType<typeof concurrent>, running: ReturnType<typeof spawn>) {
   await until(() => running.child.exitCode !== null);
@@ -187,7 +192,7 @@ async function finish(f: ReturnType<typeof concurrent>, running: ReturnType<type
     } else {
       expect(active.delete(id)).toBe(true);
     }
-    expect(active.has('solo') && active.size > 1).toBe(false);
+    expect(f.solos.some((solo) => active.has(solo)) && active.size > 1).toBe(false);
     peak = Math.max(peak, active.size);
     iosPeak = Math.max(iosPeak, [...active].filter((id) => 'abc'.includes(id)).length);
   }
@@ -245,59 +250,45 @@ for (const bypass of [false, true]) {
   });
 }
 
-for (const saturated of [false, true]) {
-  test(`solo drains earlier tasks and blocks every later admission, saturated=${saturated}`, async () => {
-    const f = concurrent(saturated ? { ios: 1 } : {}, [
-      ['a', saturated ? 'ios' : undefined, 'release-a'],
-      ['b', saturated ? 'ios' : undefined, 'release-b'],
-      ['solo', 'solo', 'release-solo'],
+for (const solos of [['s'], ['s1', 's2']]) {
+  test(`solos ${solos} run first in order, then admission stays continuous`, async () => {
+    const f = concurrent({}, [
+      ['a', undefined, 'release-a'],
+      ['b', undefined, 'release-b'],
+      ...solos.map((id): [string, string, string] => [id, 'solo', `release-${id}`]),
+      ['c'],
       ['d'],
-      ['e'],
-      ['f'],
     ]);
-    const running = spawn(f, '--jobs', '3');
+    const jobs = solos.length === 1 ? 2 : 3;
+    const running = spawn(f, '--jobs', String(jobs));
     try {
-      await f.entered('a', ...(saturated ? [] : ['b']));
-      await Bun.sleep(300);
-      expect(
-        f
-          .events()
-          .map(([id]) => id)
-          .sort(),
-      ).toEqual(saturated ? ['a'] : ['a', 'b']);
+      for (const [index, id] of solos.entries()) {
+        await until(() => f.events().length >= index * 2 + 1);
+        expect(f.events()).toEqual([
+          ...solos.slice(0, index).flatMap((solo): Event[] => [
+            [solo, 'enter'],
+            [solo, 'exit'],
+          ]),
+          [id, 'enter'],
+        ]);
+        f.mark(`release-${id}`);
+      }
+      await f.entered('a', 'b');
+      expect(f.events().slice(0, solos.length * 2)).toEqual(
+        solos.flatMap((id): Event[] => [
+          [id, 'enter'],
+          [id, 'exit'],
+        ]),
+      );
       f.mark('release-a');
-      await f.entered('b');
-      await until(() => f.events().some(([id, kind]) => id === 'a' && kind === 'exit'));
-      await Bun.sleep(300);
-      expect(
-        f
-          .events()
-          .filter(([, kind]) => kind === 'enter')
-          .map(([id]) => id)
-          .sort(),
-      ).toEqual(['a', 'b']);
+      await f.entered('c');
+      expect(f.events()).not.toContainEqual(['b', 'exit']);
       f.mark('release-b');
-      await f.entered('solo');
-      await Bun.sleep(300);
-      expect(f.events().slice(-2)).toEqual([
-        ['b', 'exit'],
-        ['solo', 'enter'],
-      ]);
-      f.mark('release-solo');
-      await f.entered('d', 'e', 'f');
-      const events = f.events();
-      const soloExit = events.findIndex(([id, kind]) => id === 'solo' && kind === 'exit');
-      expect(soloExit).toBeGreaterThan(0);
-      expect(
-        events
-          .slice(soloExit + 1)
-          .map(([id]) => id)
-          .sort(),
-      ).toEqual(['d', 'e', 'f']);
       f.mark('release');
-      expect((await finish(f, running)).ids).toEqual(['a', 'b', 'd', 'e', 'f', 'solo']);
+      expect((await finish(f, running)).peak).toBeLessThanOrEqual(jobs);
     } finally {
-      for (const name of ['release-a', 'release-b', 'release-solo', 'release']) f.mark(name);
+      for (const name of ['a', 'b', ...solos]) f.mark(`release-${name}`);
+      f.mark('release');
       await stop(running.child);
     }
   });
