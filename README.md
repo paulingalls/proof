@@ -245,10 +245,12 @@ exempt:
   To audit already proven tasks, run `bunx proof run --fresh --strict-inputs`.
   Each task first receives selection only (plus declared links). Every red retries once
   in a fresh sandbox when root delivery supplies paths outside selection and links.
-  Only the retry outcome and time are recorded and counted; the strict attempt cannot
-  contest a green. After the summary, `declaration gap read: assets/a, assets/b` lists
-  detected paths, or `declaration gap read: unidentified` reports a green retry without
-  a named path. Named gaps also print after a red retry; gaps do not change the exit code.
+  The retry outcome and time are counted. A green retry without a named path runs a third
+  selection-only attempt: red keeps only the retry green recorded, green records the first
+  red then the retry green, contesting a proof as ordinary runs would. After the summary,
+  `declaration gap read: assets/a, assets/b` lists detected paths, or
+  `declaration gap read: unidentified` reports a gap the third attempt confirmed.
+  Named gaps also print after a red retry; gaps do not change the exit code.
   With no effective delivery, a strict red records normally. Cancellation prevents retry
   and records incomplete. Red summaries also explain missing git checkout metadata and
   recognize Bun's importer-relative `Could not resolve` blocks; see [commands](docs/commands.md).
