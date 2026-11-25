@@ -1,4 +1,5 @@
 import { availableParallelism } from 'node:os';
+import { admission } from './admission';
 import { declarations, selectTasks } from './declarations';
 import { RefTree, resolveRef } from './git';
 import { key } from './key';
@@ -231,16 +232,7 @@ export async function run(args: string[]) {
         ![...active.values()].some(({ lane }) => lane === 'solo') &&
         !(processes.interrupted && !providers.live())
       ) {
-        const solo = pending.findIndex(({ lane }) => lane === 'solo');
-        const next = pending.findIndex(({ lane }, index) => {
-          if (solo >= 0 && index > solo) return false;
-          if (lane === 'solo') return active.size === 0;
-          return (
-            lane === undefined ||
-            [...active.values()].filter((entry) => entry.lane === lane).length <
-              lanes.capacity(lane)
-          );
-        });
+        const next = admission(pending, [...active.values()], lanes);
         if (next < 0) break;
         const entry = pending.splice(next, 1)[0] as (typeof pending)[number];
         const done = execute(entry.index, entry.id, entry.lane).finally(() =>
