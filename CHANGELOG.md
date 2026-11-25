@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.35.0
+
+- `run` admits every `solo` task first, alone, in declared order, so a solo no longer
+  drains the pipeline at its position. Other tasks then start by lane pressure (pending
+  medians divided by lane capacity; unlaned tasks divided by `--jobs`), then longest
+  median, then declared order. Medians are `plan`'s; with no history, declared order holds.
+
 ## 0.34.1
 
 - Staged provider checks skip individual blob reads for status-clean selected paths
