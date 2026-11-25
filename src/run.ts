@@ -1,4 +1,5 @@
 import { availableParallelism } from 'node:os';
+import { admission } from './admission';
 import { declarations, selectTasks } from './declarations';
 import { RefTree, resolveRef } from './git';
 import { key } from './key';
@@ -7,7 +8,8 @@ import { currentTree, decide, renderDecision, Since } from './plan';
 import { Providers } from './providers';
 import { RunProcesses } from './run-process';
 import { runTask, type TaskResult } from './run-task';
-import { Store } from './store';
+import { localDay, Store } from './store';
+import { pricesFor } from './timing';
 
 export const runUsage =
   'usage: proof run [--fresh | --staged | --since <ref>] [--strict-inputs] [--jobs N] [--tasks <id> ... | --set <name>]';
@@ -158,6 +160,9 @@ export async function run(args: string[]) {
           `warning: ${refusals.length} ${refusals.length === 1 ? 'task cannot' : 'tasks cannot'} publish: ${refusals[0]}`,
         );
     }
+    const today = localDay(new Date());
+    const prices = pricesFor((await store.history(initial.project, today, today)).results);
+    const longest = Math.max(0, ...prices.values());
     const unfinished = new Set(ids);
     const runningNeeds = new Map<string, Set<string>>();
     const summaries: string[][] = [];
@@ -228,19 +233,9 @@ export async function run(args: string[]) {
         pending.length &&
         active.size < jobs &&
         !processes.aborted &&
-        ![...active.values()].some(({ lane }) => lane === 'solo') &&
         !(processes.interrupted && !providers.live())
       ) {
-        const solo = pending.findIndex(({ lane }) => lane === 'solo');
-        const next = pending.findIndex(({ lane }, index) => {
-          if (solo >= 0 && index > solo) return false;
-          if (lane === 'solo') return active.size === 0;
-          return (
-            lane === undefined ||
-            [...active.values()].filter((entry) => entry.lane === lane).length <
-              lanes.capacity(lane)
-          );
-        });
+        const next = admission(pending, [...active.values()], jobs, lanes, prices, longest);
         if (next < 0) break;
         const entry = pending.splice(next, 1)[0] as (typeof pending)[number];
         const done = execute(entry.index, entry.id, entry.lane).finally(() =>

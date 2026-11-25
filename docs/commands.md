@@ -308,11 +308,20 @@ tasks:
   exclusive: {run: echo exclusive, inputs: [input], lane: solo}
 ```
 
-Commit the declaration and input, then run `proof run --jobs 3`. At most two `ios` tasks
-can occupy the run at once; a task without `lane` is bound only by `--jobs`. Tasks are
-admitted in declared order, skipping lanes at capacity. A waiting `solo` stops admission
-of later tasks until earlier tasks drain, then occupies the run alone. `solo` is reserved
-and needs no declaration. Declaring it in root `lanes`, naming an undeclared lane, or
+Commit the declaration and input, then run `proof run --jobs 3`. `exclusive` finishes before
+either simulator starts. At most two `ios` tasks can occupy the run at once; a task without
+`lane` is bound only by `--jobs`.
+
+Every pending `solo` task runs first, alone, in declared order. Non-solo admission then
+recomputes lane pressure at each admission: the sum of the lane's pending task medians
+divided by its current capacity. Unlaned tasks form one group divided by `--jobs`.
+Highest pressure goes first, then longest task median, then declared order; lanes at
+capacity are skipped. Prices are frozen at run start and use the same all-time, all-host
+timed-green medians as `plan`. A task without a median counts as the longest known median
+across the project, or zero with no history. With no history, non-solo tasks retain declared
+order. RUN previews remain in declared order.
+
+`solo` is reserved and needs no declaration. Declaring it in root `lanes`, naming an undeclared lane, or
 using a limit other than a positive safe integer is a declaration error (exit 2).
 
 Only RUN tasks take slots: each receives the lowest free nonretired index, starting at 0,
