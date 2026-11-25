@@ -233,7 +233,6 @@ export async function run(args: string[]) {
         pending.length &&
         active.size < jobs &&
         !processes.aborted &&
-        ![...active.values()].some(({ lane }) => lane === 'solo') &&
         !(processes.interrupted && !providers.live())
       ) {
         const next = admission(pending, [...active.values()], jobs, lanes, prices, longest);
