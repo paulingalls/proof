@@ -206,7 +206,14 @@ export async function runTask(
           const retry = new Sandbox();
           sandboxes.push(retry);
           result = await attempt(retry, false);
-          if (result.outcome === 'green' && !gaps.length) gaps.push('unidentified');
+          if (result.outcome === 'green' && !gaps.length) {
+            if (!processes.cancelled) {
+              const verification = new Sandbox();
+              sandboxes.push(verification);
+              await attempt(verification, true);
+            }
+            gaps.push('unidentified');
+          }
         }
       }
       const { outcome, seconds, unbuilt, log } = result;
@@ -216,7 +223,7 @@ export async function runTask(
       if (!staged && !unpublished) {
         if (after.tree.commit !== baseline.tree.commit) unpublished = 'HEAD changed';
         else {
-          // The first sandbox's baseline already spans both attempts' net checkout changes.
+          // The first sandbox's baseline already spans all attempts' net checkout changes.
           const changed = sandbox?.changed();
           if (changed) unpublished = `selected path changed '${changed}'`;
           else if (after.declaration) unpublished = `dirty declaration '${after.declaration}'`;

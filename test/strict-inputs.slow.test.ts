@@ -55,7 +55,7 @@ for (const [fresh, recognized] of [
   test(`strict retry records only its green outcome (${fresh ? 'fresh proven' : 'unproven'}, recognized ${recognized})`, () => {
     const f = fixture(
       (marker) =>
-        `echo attempt >> '${marker}'; test ! -e leftover || exit 9; touch leftover; ${recognized ? 'cat assets/a' : 'test -f assets/a'}`,
+        `echo attempt >> '${marker}'; test ! -e leftover || echo reused >> '${marker}'; touch leftover; ${recognized ? 'cat assets/a' : 'test -f assets/a'}`,
     );
     if (fresh) expect(f.cli('run').code).toBe(0);
     const before = fresh ? f.rows().length : 0;
@@ -69,7 +69,9 @@ for (const [fresh, recognized] of [
       contradictions: f.rows('contradictions').length,
       deleted: result.out.includes('deleted proof'),
     }).toEqual({ code: 0, rows: ['green'], contradictions: 0, deleted: false });
-    expect(readFileSync(f.marker, 'utf8').trim().split('\n')).toHaveLength(fresh ? 3 : 2);
+    expect(readFileSync(f.marker, 'utf8').trim().split('\n')).toHaveLength(
+      (fresh ? 1 : 0) + (recognized ? 2 : 3),
+    );
     expect(result.out.match(/^(green|red) read;/gm)).toEqual(['green read;']);
     expect(result.out.match(/^progress:/gm)).toHaveLength(1);
     expect(result.out).toContain('summary: green 1, red 0');
