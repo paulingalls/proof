@@ -4,12 +4,12 @@ import { fixture, task } from './support/jobs';
 test('admission uses frozen plan medians and recomputes pending lane pressure', () => {
   const cases: {
     ids: string[];
-    seconds: Record<string, number>;
+    seconds: Record<string, number | number[]>;
     expected: string[];
     ios?: number;
     jobs?: number;
   }[] = [
-    { ids: ['x', 'y', 'z'], seconds: { x: 1, y: 5, z: 3 }, expected: ['y', 'z', 'x'] },
+    { ids: ['x', 'y', 'z'], seconds: { x: [1, 1, 9], y: 5, z: 3 }, expected: ['y', 'z', 'x'] },
     {
       ids: ['i1', 'i2', 'u1', 'u2', 'u3'],
       seconds: { i1: 10, i2: 10, u1: 6, u2: 6, u3: 6 },
@@ -49,11 +49,13 @@ test('admission uses frozen plan medians and recomputes pending lane pressure', 
         'proof.yaml': JSON.stringify({ version: 1, project: 'jobs', lanes: { ios }, tasks }),
       });
     for (const [id, value] of Object.entries(seconds)) {
-      const recorded = f.repo.cli(
-        ['record', id, '--outcome', 'green', '--seconds', String(value)],
-        f.env,
-      );
-      expect(recorded.code, recorded.err).toBe(0);
+      for (const sample of Array.isArray(value) ? value : [value]) {
+        const recorded = f.repo.cli(
+          ['record', id, '--outcome', 'green', '--seconds', String(sample)],
+          f.env,
+        );
+        expect(recorded.code, recorded.err).toBe(0);
+      }
     }
     const result = f.run(
       '--jobs',
