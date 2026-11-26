@@ -241,7 +241,7 @@ test('failed start preserves dependent proofs while unrelated dirt permits indep
   f.repo.write('dirty', 'working');
   const result = f.cli('run');
   expect(result.code).toBe(1);
-  expect(result.out).toContain("provider 'stack' start failed");
+  expect(result.out).toContain("provider 'stack' start failed:");
   expect(result.out).toContain('incomplete noKey; not recorded:');
   expect(f.log().filter((entry) => entry !== 'independent')).toEqual(['start', 'stop']);
   expect(f.log().filter((entry) => entry === 'independent')).toHaveLength(1);
@@ -280,7 +280,7 @@ test('stop failure names provider, attempts other stops and preserves task proof
   );
   const result = f.cli('run');
   expect(result.code).toBe(1);
-  expect(result.out).toContain("provider 'stack' stop failed");
+  expect(result.out).toMatch(/^provider 'stack' stop failed$/m);
   expect(f.log()).toEqual(['stop', 'other-stop']);
   expect(f.rows('proofs')).toHaveLength(1);
 });

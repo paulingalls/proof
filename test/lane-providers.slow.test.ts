@@ -88,8 +88,13 @@ for (const jobs of [1, 2]) {
       expect(f.read('b').trim()).toBe(jobs === 1 ? '0' : '1');
       expect(f.has('stop-0') || f.has('stop-1')).toBe(false);
       f.mark('release');
-      await finish(running);
+      const out = await finish(running);
+      expect(out.match(/^provider 'stack\[\d+\]' start ready .*$/gm)).toHaveLength(jobs);
       for (let slot = 0; slot < jobs; slot++) {
+        for (const phase of ['start ready', 'stop done'])
+          expect(
+            out.match(new RegExp(`^provider 'stack\\[${slot}\\]' ${phase} .*$`, 'gm')),
+          ).toHaveLength(1);
         expect(f.read(`start-${slot}`)).toBe('start\n');
         expect(f.read(`stop-${slot}`)).toBe('stop\n');
       }
@@ -166,7 +171,7 @@ test('failed slot retires capacity while healthy slot serves later tasks', async
     expect(f.read('start-1')).toBe('start\n');
     f.mark('release');
     const out = await finish(running, 1);
-    expect(out).toContain("provider 'stack[1]' start failed");
+    expect(out).toContain("provider 'stack[1]' start failed:");
     expect(out).toContain("provider 'stack': 1 tasks blocked");
     expect(out).toContain("incomplete b; blocked by provider 'stack[1]'");
     expect(f.read('c').trim()).toBe('0');

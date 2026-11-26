@@ -90,6 +90,7 @@ export async function run(args: string[]) {
   const processes = new RunProcesses();
   const providers = new Providers(
     async (command, stopping, name, environment) => {
+      const start = new Date();
       const result = await processes.execute(
         command,
         process.cwd(),
@@ -104,16 +105,27 @@ export async function run(args: string[]) {
               live: jobs === 1,
             },
       );
+      const end = new Date();
       if (!stopping) {
         refresh();
       }
       const problem = result.code === 0 && !result.signal ? environment?.accept() : undefined;
       const ready = result.code === 0 && !result.signal && !problem;
+      const outcome = ready
+        ? 'ready'
+        : processes.cancelled || result.signal
+          ? 'incomplete'
+          : 'failed';
       const log =
         result.capture?.finish(
-          ready ? 'green' : processes.cancelled || result.signal ? 'incomplete' : 'red',
+          outcome === 'ready' ? 'green' : outcome === 'failed' ? 'red' : 'incomplete',
         ) ?? {};
       if (log.error) logFailed = true;
+      const phase = stopping ? `stop ${ready ? 'done' : 'failed'}` : `start ${outcome}`;
+      const seconds = ((end.getTime() - start.getTime()) / 1000).toFixed(1);
+      console.log(
+        `provider '${name}' ${phase} ${seconds}s, ${start.toISOString()}..${end.toISOString()}`,
+      );
       return { ready, code: result.code, problem, ...log };
     },
     (message) => {
