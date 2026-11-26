@@ -112,7 +112,7 @@ export class Repo {
       'HOME',
     ])
       delete env[name];
-    return { ...env, ...overrides };
+    return { ...env, PROOF_CPUS: '9007199254740991', ...overrides };
   }
 
   spawnCli(args: string[], overrides: Record<string, string | undefined> = {}, cwd = this.path) {

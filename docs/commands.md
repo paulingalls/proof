@@ -48,6 +48,27 @@ and unknown arguments exit 2 with usage. For example, with a declared `commit` s
 proof run --fresh --set commit --jobs 1
 ```
 
+Above one job, a host CPU gate also limits admissions. It samples the whole host once per
+second. Busy cores B is the sum of each core's non-idle fraction over that interval;
+capacity C defaults to `os.availableParallelism()`. `PROOF_CPUS` overrides C with a positive
+safe integer in decimal notation (no leading zeros, whitespace or exponent notation).
+An invalid override exits 2 before any task starts, even with `--jobs 1` or no selected tasks.
+It changes neither the job limit nor lane capacities.
+
+With tasks active, admissions wait for the first reading, then follow these bands:
+
+- B >= C: admit nothing.
+- C/2 < B < C: admit one task only when the reading's interval began at or after the last
+  admission. Admissions are at least one sampling interval apart, and each authorizing
+  interval includes the last-admitted task's load.
+- B <= C/2: fill available jobs and lane capacity as usual.
+
+An empty run always admits a task immediately. A preview decision of PROVEN bypasses the
+gate without waiting or updating admission spacing. While gated, the loop wakes on the
+next reading or a task finishing. Jobs and lanes remain upper bounds; running tasks are
+never throttled or stopped by the gate. Separate proof invocations observe the same host
+activity but do not reserve capacity atomically. `--jobs 1` starts no sampler.
+
 `proof run --jobs 1` streams each task's combined stdout and stderr live to proof's stdout
 in declared execution order (also the default on a single-job machine). Task stdout and
 stderr see no TTY. Above 1, each task's stdout and stderr appear together on stdout when it finishes, under `--- <task>`; summaries stay in declared
@@ -323,7 +344,7 @@ tasks:
 
 Commit the declaration and input, then run `proof run --jobs 3`. `exclusive` finishes before
 either simulator starts. At most two `ios` tasks can occupy the run at once; a task without
-`lane` is bound only by `--jobs`.
+`lane` is bound by `--jobs` and the host CPU gate.
 
 Every pending `solo` task runs first, alone, in declared order. Non-solo admission then
 recomputes lane pressure at each admission: the sum of the lane's pending task medians
