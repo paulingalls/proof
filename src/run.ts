@@ -270,6 +270,7 @@ export async function run(args: string[]) {
       ]);
     }
     if (jobs > 1) summary.push(...summaries.flat());
+    cpu?.close();
     if (fatal) throw fatal.error;
     cpu?.check();
     await store.skip(initial.project, skipped);
@@ -286,7 +287,6 @@ export async function run(args: string[]) {
           .map((id) => `declaration gap ${id}: ${gaps.get(id)?.join(', ')}`),
       ].join('\n'),
     );
-    cpu?.check();
     return processes.interrupted
       ? processes.interrupted === 'SIGINT'
         ? 130
