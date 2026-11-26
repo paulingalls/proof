@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.37.0
+
+- `run` prints one line as each provider start or stop command finishes, in every jobs
+  mode: `provider '<name>' start ready|failed|incomplete <s>s, <ISO start>..<ISO end>` and
+  `provider '<name>' stop done|failed ...`. Laned instances carry their `[slot]`. Exit codes,
+  failure lines and the summary are unchanged (#74).
+
 ## 0.36.0
 
 - Above one job, `run` gates admissions on whole-host CPU activity, sampled each second.

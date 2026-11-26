@@ -195,6 +195,12 @@ for (const jobs of [1, 2]) {
     const result = f.run('--jobs', String(jobs), '--tasks', 'a', 'b', 'independent');
     expect(result.code).toBe(1);
     const paths = [...result.out.matchAll(/provider 'stack' start failed: exit 7; log: (.*)\n/g)];
+    expect(result.out.match(/^provider 'stack' start failed \d+\.\ds, .*Z\.\..*Z$/gm)).toHaveLength(
+      1,
+    );
+    expect(result.out.indexOf("provider 'stack' start failed ")).toBeLessThan(
+      result.out.indexOf("provider 'stack':"),
+    );
     expect(paths).toHaveLength(1);
     const path = paths[0]?.[1] as string;
     expect(isAbsolute(path)).toBe(true);

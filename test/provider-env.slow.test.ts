@@ -246,7 +246,8 @@ for (const { kind, payload, expected, write, edit, env } of rejections) {
       URL: 'declared-caller',
     });
     expect(result.code).toBe(1);
-    expect(result.out).toContain("provider 'stack' start failed");
+    expect(result.out).toContain("provider 'stack' start failed:");
+    expect(result.out).toMatch(/^provider 'stack' start failed \d+\.\ds, .*Z\.\..*Z$/m);
     expect(result.out).toContain(expected);
     const events = readFileSync(join(f.control, 'events'), 'utf8');
     expect(events).not.toContain('ran-dependent');
@@ -327,7 +328,7 @@ for (const interrupted of [false, true]) {
       { gate: f.task('gate') },
       {
         stack: {
-          start: `${f.start}; ${interrupted ? 'touch "$CONTROL/waiting"; exec sleep 30' : 'exit 1'}`,
+          start: `${f.start}; ${interrupted ? 'touch "$CONTROL/waiting"; exec sleep 30' : 'exit 7'}`,
           stop: f.mark('stop'),
         },
       },
@@ -340,6 +341,14 @@ for (const interrupted of [false, true]) {
     }
     const result = await resultPromise;
     expect(result.code).toBe(interrupted ? 143 : 1);
+    expect(result.out).toMatch(
+      new RegExp(
+        `^provider 'stack' start ${interrupted ? 'incomplete' : 'failed'} \\d+\\.\\ds, .*Z\\.\\..*Z$`,
+        'm',
+      ),
+    );
+    if (interrupted)
+      expect(result.out).toMatch(/^provider 'stack' stop done \d+\.\ds, .*Z\.\..*Z$/m);
     expect(f.rows()[0]?.outcome).toBe('incomplete');
     expect(readFileSync(join(f.control, 'events'), 'utf8')).toContain('stop');
     f.clean(result, value);

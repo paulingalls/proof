@@ -262,6 +262,20 @@ Provider-blocked `incomplete` lines name the failed providers, including allocat
 Counts include exhausted-lane dependents needing that provider, even keyless tasks, and
 exclude PROVEN and unselected tasks. Each task counts once per provider across failed slots.
 
+Each provider start and each configured stop command prints a timing line to stdout
+when it finishes, in every `--jobs` mode, before the final summary:
+
+```text
+provider 'p' start ready 1.0s, 2026-11-26T22:00:00.000Z..2026-11-26T22:00:01.000Z
+provider 'p' stop done 0.0s, 2026-11-26T22:00:01.100Z..2026-11-26T22:00:01.103Z
+```
+
+Seconds have one decimal place; endpoints are UTC ISO-8601 timestamps with milliseconds.
+Start outcomes are `ready`, `failed`, or `incomplete` (cancelled or signalled);
+readiness takes precedence over cancellation. Stop outcomes are `done` or `failed`.
+Laned instances include their slot, such as `p[0]` and `p[1]`. Providers without a
+stop command emit no stop line.
+
 For example, a start that exits 7 after printing diagnostics ends the run with:
 
 ```text
