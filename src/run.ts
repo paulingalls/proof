@@ -2,6 +2,7 @@ import { availableParallelism } from 'node:os';
 import { admission } from './admission';
 import { declarations, selectTasks } from './declarations';
 import { RefTree, resolveRef } from './git';
+import { HostCpu, hostCapacity } from './host-cpu';
 import { key } from './key';
 import { Lanes } from './lanes';
 import { currentTree, decide, renderDecision, Since } from './plan';
@@ -49,6 +50,7 @@ export async function run(args: string[]) {
       break;
     } else throw new Error(runUsage);
   }
+  const capacity = hostCapacity();
   const fresh = mode === '--fresh';
   const staged = mode === '--staged';
   const since = sinceRef === undefined ? undefined : new Since(sinceRef);
@@ -122,7 +124,9 @@ export async function run(args: string[]) {
     selected.providers,
   );
   const providerMismatches = new Map<string, string>();
+  let cpu: HostCpu | undefined;
   try {
+    if (jobs > 1) cpu = new HostCpu(capacity);
     console.log(`run: ${ids.length} tasks, jobs ${jobs}`);
     const preview = new Map<string, string>();
     const initial = selected;
@@ -141,6 +145,7 @@ export async function run(args: string[]) {
         fresh,
         since,
       );
+      cpu?.check();
       preview.set(id, renderDecision(row));
       console.log(renderDecision(row));
     }
@@ -229,6 +234,13 @@ export async function run(args: string[]) {
       }
     }
     while (pending.length || active.size) {
+      try {
+        cpu?.check();
+      } catch (error) {
+        fatal ??= { error };
+        processes.abort();
+      }
+      let gated = false;
       while (
         pending.length &&
         active.size < jobs &&
@@ -237,17 +249,30 @@ export async function run(args: string[]) {
       ) {
         const next = admission(pending, [...active.values()], jobs, lanes, prices, longest);
         if (next < 0) break;
+        const candidate = pending[next] as (typeof pending)[number];
+        const proven = preview.get(candidate.id)?.startsWith('PROVEN ');
+        if (!proven && cpu && !cpu.permits(active.size)) {
+          gated = true;
+          break;
+        }
         const entry = pending.splice(next, 1)[0] as (typeof pending)[number];
+        if (!proven) cpu?.admitted();
         const done = execute(entry.index, entry.id, entry.lane).finally(() =>
           active.delete(entry.index),
         );
         active.set(entry.index, { lane: entry.lane, done });
       }
       if (!active.size) break;
-      await Promise.race([...active.values()].map((entry) => entry.done));
+      await Promise.race([
+        ...[...active.values()].map((entry) => entry.done),
+        ...(gated && cpu ? [cpu.next] : []),
+        ...(cpu && !fatal ? [cpu.failure] : []),
+      ]);
     }
     if (jobs > 1) summary.push(...summaries.flat());
+    cpu?.close();
     if (fatal) throw fatal.error;
+    cpu?.check();
     await store.skip(initial.project, skipped);
     await providers.stopExcept(new Set());
     const failures = providers.failures();
@@ -281,6 +306,7 @@ export async function run(args: string[]) {
     }
     throw error;
   } finally {
+    cpu?.close();
     processes.close();
     await store.close();
   }

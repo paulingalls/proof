@@ -120,6 +120,7 @@ for (const cwd of [repo.path, outside]) {
       'XDG_STATE_HOME',
       'HOME',
       'PROOF_LANES',
+      'PROOF_CPUS',
       'PROOF_LANE_SLOT',
       'PROOF_PROVIDER_ENV',
       'PROOF_DECLARATIONS',
@@ -204,4 +205,11 @@ test('rekey help describes permanent opt-in carry', () => {
 test('plan and stats help describe totals and never-green inventory', () => {
   expect(repo.cli(['help', 'plan']).out).toContain('totals');
   expect(repo.cli(['help', 'stats']).out).toContain('never-green');
+});
+
+test('run help describes host CPU admission above one job', () => {
+  const out = repo.cli(['help', 'run']).out;
+  expect(out).toContain('host CPU');
+  expect(out).toContain('Above 1');
+  expect(out).toContain('PROOF_CPUS');
 });

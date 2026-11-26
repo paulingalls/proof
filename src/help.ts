@@ -26,7 +26,7 @@ const commands: Record<string, [string, string]> = {
   doctor: [doctorUsage, 'Check store health and declared dimension values.'],
   run: [
     runUsage,
-    'Run selected tasks with machine parallelism by default; --jobs 1 streams live. --strict-inputs audits undeclared reads.',
+    'Run selected tasks with machine parallelism by default; --jobs 1 streams live. Above 1, host CPU admission gating uses PROOF_CPUS capacity. --strict-inputs audits undeclared reads.',
   ],
   record: [recordUsage, 'Record an externally obtained task result.'],
   rekey: [
@@ -104,6 +104,7 @@ Configuration environment:
     otherwise HOME/.local/state/proof. Contains proof.db, retained logs and generate-events.jsonl.
     Deleting generate-events.jsonl resets local generation figures.
   HOME: fallback base for configuration and state paths.
+  PROOF_CPUS: host CPU gate capacity; positive safe integer, default os.availableParallelism().
   PROOF_LANES=name=N,...: override declared lane limits for a run.
 
 Supplied environment (not configuration switches):
