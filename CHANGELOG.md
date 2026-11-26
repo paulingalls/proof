@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.36.0
+
+- Above one job, `run` gates admissions on whole-host CPU activity, sampled each second.
+  With busy cores B and capacity C (`os.availableParallelism()`, or `PROOF_CPUS`): B >= C
+  admits only into an empty run; above C/2 admits one task per fresh reading; at or below
+  C/2 admits as before. PROVEN tasks bypass the gate. An invalid `PROOF_CPUS` fails before
+  any task starts. The gate reads the whole host, so separate proof runs share it (#74).
+
 ## 0.35.1
 
 - A `--strict-inputs` red whose normal-delivery retry is green with no named path now
