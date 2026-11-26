@@ -73,5 +73,5 @@ test('admission uses frozen plan medians and recomputes pending lane pressure', 
         .map((line) => line.split(':')[0]),
     ).toEqual(ids.map((id) => `RUN ${id}`));
   }
-  // Seven sequential CLI runs take about 3 s alone; under host load they pass the 5 s default.
+  // Seven sequential CLI runs take about 3 s alone; under host load they exceed the 5 s default.
 }, 20000);
