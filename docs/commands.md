@@ -55,7 +55,8 @@ safe integer in decimal notation (no leading zeros, whitespace or exponent notat
 An invalid override exits 2 before any task starts, even with `--jobs 1` or no selected tasks.
 It changes neither the job limit nor lane capacities.
 
-With tasks active, admissions wait for the first reading, then follow these bands:
+Sampling starts before planning. Until the first reading, admissions are bounded only by jobs
+and lanes; then they follow these bands:
 
 - B >= C: admit nothing.
 - C/2 < B < C: admit one task only when the reading's interval began at or after the last

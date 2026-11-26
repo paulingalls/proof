@@ -83,7 +83,9 @@ export class HostCpu {
   permits(active: number) {
     this.check();
     if (!active) return true;
-    if (!this.reading) return false;
+    // Before the first reading, admit as without a gate: a wait here reorders work around
+    // providers (bug-fd365994), and a large repo's planning outlasts the first interval.
+    if (!this.reading) return true;
     const { busy, start } = this.reading;
     return busy <= this.capacity / 2 || (busy < this.capacity && start >= this.lastAdmission);
   }
