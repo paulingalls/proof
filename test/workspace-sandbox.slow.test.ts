@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Repo } from './support/repo';
@@ -97,6 +97,30 @@ for (const [name, scopeLink] of [
     expect(plan().state).toBe('RUN');
   });
 }
+
+test('workspace link targets use the canonical sandbox root through an aliased TMPDIR', () => {
+  const { repo } = fixture('shared');
+  const parent = mkdtempSync(join(tmpdir(), 'proof-workspace-alias-'));
+  states.push(parent);
+  const actual = join(parent, 'actual');
+  const alias = join(parent, 'alias');
+  mkdirSync(actual);
+  symlinkSync(realpathSync(actual), alias);
+  const state = mkdtempSync(join(tmpdir(), 'proof-workspace-state-'));
+  states.push(state);
+  repo.commit({
+    'main.ts': `import value from 'shared';
+import { strictEqual } from 'node:assert';
+import { readlinkSync, realpathSync } from 'node:fs';
+import { join } from 'node:path';
+strictEqual(readlinkSync('node_modules/shared'), join(realpathSync('.'), 'packages/shared'));
+console.log('canonical workspace target', value);`,
+  });
+  const result = repo.cli(['run'], { PROOF_STATE_DIR: state, TMPDIR: alias });
+  expect(result.code, result.out + result.err).toBe(0);
+  expect(result.out).toContain('canonical workspace target workspace-one');
+  expect(result.out).toContain('green linked; proof published');
+});
 
 for (const dependency of ['dependencies', 'peerDependencies', 'optionalDependencies']) {
   test(`installed package declaring workspace ${dependency} runs unpublished`, () => {

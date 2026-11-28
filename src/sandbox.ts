@@ -304,7 +304,7 @@ export class Sandbox {
           for (const scope of layout.scopes) mkdirSync(join(this.path, scope));
           for (const entry of layout.entries) {
             symlinkSync(
-              entry.redirect === undefined ? resolve(entry.path) : join(this.path, entry.redirect),
+              entry.redirect === undefined ? resolve(entry.path) : join(this.root, entry.redirect),
               join(this.path, entry.path),
             );
           }
