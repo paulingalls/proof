@@ -142,7 +142,10 @@ function resolvedFile(view: Source, path: string): ResolvedFile {
 }
 const closures = new WeakMap<
   Source,
-  Map<string, { paths: Set<string>; manifests: Set<string>; whole: Set<string>; reason?: string }>
+  Map<
+    string,
+    { paths: Set<string>; manifests: Set<string>; metadata: Set<string>; reason?: string }
+  >
 >();
 export function closure(entry: string, view: Source, roots?: string[]) {
   let cached = closures.get(view);
@@ -155,11 +158,12 @@ export function closure(entry: string, view: Source, roots?: string[]) {
   if (prior) return prior;
   const paths = new Set<string>();
   const manifests = new Set<string>();
-  const whole = new Set<string>();
+  const metadata = new Set<string>();
   let reason: string | undefined;
-  function visit(path: string, metadata = false) {
-    if (!metadata) whole.add(path);
+  function visit(path: string, asMetadata = false) {
+    if (!asMetadata) metadata.delete(path);
     if (paths.has(path)) return;
+    if (asMetadata) metadata.add(path);
     paths.add(path);
     const file = resolvedFile(view, path);
     reason ??= file.reason;
@@ -177,14 +181,14 @@ export function closure(entry: string, view: Source, roots?: string[]) {
     }
   }
   if (entry.startsWith('/') || entry.split('/').some((part) => ['..', '.git'].includes(part)))
-    return { paths, manifests, whole, reason: `unsafe entry '${entry}'` };
+    return { paths, manifests, metadata, reason: `unsafe entry '${entry}'` };
   if (entry.endsWith('.py')) {
     const result = pythonClosure(entry, view, roots);
     cached.set(cacheKey, result);
     return result;
   }
   visit(entry);
-  const result = { paths, manifests, whole, reason };
+  const result = { paths, manifests, metadata, reason };
   cached.set(cacheKey, result);
   return result;
 }

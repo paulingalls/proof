@@ -59,7 +59,9 @@ export function resolveUnkeyed(
         throw new Error(`${context} task '${id}' keyed: '${path}' is outside unkeyed`);
       if (received.has(path)) covered.add(path);
     }
-    task.unkeyed = new Set([...omitted, ...superPaths].filter((path) => !keyed.has(path)));
+    task.unkeyed = {
+      has: (path) => (omitted.has(path) || superPaths.has(path)) && !keyed.has(path),
+    };
     task.superOnly = superPaths;
   }
   for (const path of omitted)
