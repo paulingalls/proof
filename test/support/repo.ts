@@ -124,16 +124,25 @@ export class Repo {
     });
   }
 
-  cli(args: string[], overrides: Record<string, string | undefined> = {}, cwd = this.path) {
+  cli(
+    args: string[],
+    overrides: Record<string, string | undefined> = {},
+    cwd = this.path,
+  ): { code: number; out: string; err: string; maxRSS?: number } {
     const result = Bun.spawnSync([process.execPath, cli, ...args], {
       cwd,
       env: this.cliEnv(overrides),
     });
-    return {
-      code: result.exitCode,
-      out: result.stdout.toString(),
-      err: result.stderr.toString(),
-    };
+    // Non-enumerable so existing toEqual comparisons of cli() results stay exact.
+    return Object.defineProperty(
+      {
+        code: result.exitCode,
+        out: result.stdout.toString(),
+        err: result.stderr.toString(),
+      },
+      'maxRSS',
+      { value: result.resourceUsage.maxRSS },
+    );
   }
 
   close() {

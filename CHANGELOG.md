@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.38.1
+
+- Sandbox materialization reads and writes committed files in batches of 64 paths and
+  copies the bytes it keeps, so a sandbox no longer holds the whole delivered snapshot for
+  its life. With root `delivered: ['**']`, the runner's peak memory no longer grows with
+  `--jobs`; it still grows by about one snapshot of allocator-retained memory.
+
 ## 0.38.0
 
 - Above one job, a task waiting on a provider start gives up its job slot until the

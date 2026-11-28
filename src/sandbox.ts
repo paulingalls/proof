@@ -244,40 +244,48 @@ export class Sandbox {
     delivered = new Set<string>(),
   ) {
     const paths = new Set([...selected, ...delivered]);
-    const ids = new Set<string>();
-    for (const path of paths) {
-      const { mode, blob } = tree.entry(path);
-      if (
-        blob &&
-        (mode === '100644' || mode === '100755' || mode === '120000') &&
-        (snapshotOnly || !selected.has(path) || !dirty.includes(path))
-      )
-        ids.add(blob);
-    }
-    const blobs = ids.size ? new Map(readBlobs(ids)) : new Map<string, Buffer>();
-    for (const path of paths) {
-      const target = join(this.path, path);
-      if (relative(this.path, target).startsWith('..') || path.split('/').includes('.git'))
-        throw new Error(`unsafe selected path '${path}'`);
-      const mode = tree.modes.get(path);
-      const file =
-        snapshotOnly || !selected.has(path)
-          ? mode === undefined
-            ? undefined
-            : this.committedFile(path, mode, blobs.get(tree.files.get(path) ?? ''), paths)
-          : dirty.includes(path) || mode === undefined
-            ? workingFile(path)
-            : this.committedFile(path, mode, blobs.get(tree.files.get(path) ?? ''), paths);
-      if (file && 'link' in file) {
-        mkdirSync(dirname(target), { recursive: true });
-        symlinkSync(file.link, target);
-        continue;
+    const ordered = [...paths];
+    for (let offset = 0; offset < ordered.length; offset += 64) {
+      const batch = ordered.slice(offset, offset + 64);
+      const ids = new Set<string>();
+      for (const path of batch) {
+        const { mode, blob } = tree.entry(path);
+        if (
+          blob &&
+          (mode === '100644' || mode === '100755' || mode === '120000') &&
+          (snapshotOnly || !selected.has(path) || !dirty.includes(path))
+        )
+          ids.add(blob);
       }
-      if (selected.has(path)) this.files.set(path, file);
-      if (!file) continue;
-      mkdirSync(dirname(target), { recursive: true });
-      writeFileSync(target, file.bytes);
-      chmodSync(target, file.executable ? 0o755 : 0o644);
+      const blobs = ids.size ? new Map(readBlobs(ids)) : new Map<string, Buffer>();
+      for (const path of batch) {
+        const target = join(this.path, path);
+        if (relative(this.path, target).startsWith('..') || path.split('/').includes('.git'))
+          throw new Error(`unsafe selected path '${path}'`);
+        const mode = tree.modes.get(path);
+        const file =
+          snapshotOnly || !selected.has(path)
+            ? mode === undefined
+              ? undefined
+              : this.committedFile(path, mode, blobs.get(tree.files.get(path) ?? ''), paths)
+            : dirty.includes(path) || mode === undefined
+              ? workingFile(path)
+              : this.committedFile(path, mode, blobs.get(tree.files.get(path) ?? ''), paths);
+        if (file && 'link' in file) {
+          mkdirSync(dirname(target), { recursive: true });
+          symlinkSync(file.link, target);
+          continue;
+        }
+        if (selected.has(path))
+          this.files.set(
+            path,
+            file ? { bytes: Buffer.from(file.bytes), executable: file.executable } : undefined,
+          );
+        if (!file) continue;
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, file.bytes);
+        chmodSync(target, file.executable ? 0o755 : 0o644);
+      }
     }
   }
 
