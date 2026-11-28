@@ -109,7 +109,6 @@ export async function runTask(
     let started = false;
     if (decision.state === 'RUN' && !processes.cancelled) {
       ({ slot, exhausted } = lanes.allocate(lane));
-      if (!exhausted && task.needs?.length) suspend();
       for (const name of exhausted ? [] : (task.needs ?? [])) {
         if (processes.cancelled) break;
         const provider = view.providers.get(name);
@@ -124,6 +123,7 @@ export async function runTask(
           }
         }
         started = true;
+        if (!providers.attemptedInstance(name, slot) || !providers.ready(name, slot)) suspend();
         const ready = await providers.start(name, provider, slot);
         const providerLane = providers.lane(name);
         if (!ready && providerLane !== undefined && slot !== undefined)

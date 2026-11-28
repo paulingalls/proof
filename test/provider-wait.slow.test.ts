@@ -145,3 +145,30 @@ test('provider wait retains the lane slot and reuses its instance', async () => 
     await stop(running.child);
   }
 }, 15000);
+
+test('a task whose provider is already ready keeps its job slot', async () => {
+  const f = fixture(
+    {
+      a: command('a', '', 0, ['p']),
+      b: command('b', 'release'),
+      c: command('c', 'release-c'),
+      d: command('d', '', 0, ['p']),
+      e: command('e', 'release'),
+    },
+    { p: { start: 'true' } },
+    files,
+  );
+  const running = spawn(f, '--jobs', '2');
+  try {
+    await until(() => f.has('b') && f.has('c'));
+    f.mark('release-c');
+    await until(() => f.has('end-a'));
+    await until(() => f.has('d'));
+    expect(f.has('end-b')).toBe(false);
+    f.mark('release');
+    expect(await finish(running)).toContain('summary: green 5');
+  } finally {
+    for (const marker of ['release', 'release-c']) f.mark(marker);
+    await stop(running.child);
+  }
+}, 15000);
