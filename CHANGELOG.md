@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.38.0
+
+- Above one job, a task waiting on a provider start gives up its job slot until the
+  provider is ready, so other tasks run during a long start. It keeps its lane slot, and it
+  takes a job slot back before running its command, so at most `--jobs` task commands run
+  at once. A task whose providers are already ready keeps its slot. `--jobs 1` is
+  unchanged (#74).
+
 ## 0.37.1
 
 - Sandbox workspace links now target the sandbox's canonical (realpath) root, not the
