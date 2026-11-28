@@ -19,7 +19,7 @@ export type Task = {
   inputs: Input[];
   env?: string[];
   keyed?: string[];
-  unkeyed?: Set<string>;
+  unkeyed?: { has(path: string): boolean };
   superOnly?: Set<string>;
   delivered?: Map<string, string[]>;
   dimensions?: [string, string][];

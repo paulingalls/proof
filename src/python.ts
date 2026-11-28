@@ -283,5 +283,5 @@ export function pythonClosure(entry: string, view: Source, roots = [posix.dirnam
     }
   }
   visit(entry);
-  return { paths, whole: new Set(paths), manifests: new Set<string>(), reason };
+  return { paths, metadata: new Set<string>(), manifests: new Set<string>(), reason };
 }
