@@ -45,6 +45,8 @@ type Context = {
   fail: () => void;
   skipped: (id: string) => void;
   retain: (needs: string[]) => void;
+  suspend: () => void;
+  resume: () => Promise<void>;
 };
 export async function runTask(
   id: string,
@@ -70,6 +72,8 @@ export async function runTask(
     fail,
     skipped,
     retain,
+    suspend,
+    resume,
   }: Context,
 ): Promise<TaskResult | undefined> {
   const initialPreview = preview.get(id);
@@ -119,6 +123,7 @@ export async function runTask(
           }
         }
         started = true;
+        if (!providers.attemptedInstance(name, slot) || !providers.ready(name, slot)) suspend();
         const ready = await providers.start(name, provider, slot);
         const providerLane = providers.lane(name);
         if (!ready && providerLane !== undefined && slot !== undefined)
@@ -156,10 +161,14 @@ export async function runTask(
       if (!quiet) summary.push(`PROVEN ${id}: ${decision.reason}`);
       return { outcome: 'proven', notRecorded: false, quiet };
     }
-    const blocked =
+    let blocked =
       processes.cancelled ||
       exhausted !== undefined ||
       (task.needs ?? []).map((name) => providers.ready(name, slot)).some((ready) => !ready);
+    if (!blocked) {
+      await resume();
+      blocked = processes.cancelled;
+    }
     const providerReason = blocked
       ? providers.blockedReason(id, task.needs ?? [], slot, exhausted !== undefined)
       : '';

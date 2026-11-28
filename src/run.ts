@@ -184,7 +184,19 @@ export async function run(args: string[]) {
     const runningNeeds = new Map<string, Set<string>>();
     const summaries: string[][] = [];
     const pending = ids.map((id, index) => ({ index, id, lane: initial.tasks.get(id)?.lane }));
-    const active = new Map<number, { lane?: string; done: Promise<void> }>();
+    const active = new Map<
+      number,
+      {
+        lane?: string;
+        done: Promise<void>;
+        ownsJob: boolean;
+        resume?: () => void;
+      }
+    >();
+    const jobCount = () => [...active.values()].filter((entry) => entry.ownsJob).length;
+    let wake = () => {};
+    let changed: Promise<void>;
+    const notify = () => wake();
     let fatal: { error: unknown } | undefined;
     async function execute(index: number, id: string, lane?: string) {
       const taskSummary: string[] = [];
@@ -212,6 +224,22 @@ export async function run(args: string[]) {
           providerMismatches,
           processes,
           providers,
+          suspend: () => {
+            if (jobs === 1) return;
+            const entry = active.get(index);
+            if (!entry) throw new Error(`missing active task '${id}'`);
+            entry.ownsJob = false;
+            notify();
+          },
+          resume: async () => {
+            const entry = active.get(index);
+            if (!entry) throw new Error(`missing active task '${id}'`);
+            if (entry.ownsJob) return;
+            await new Promise<void>((resolve) => {
+              entry.resume = resolve;
+              notify();
+            });
+          },
           retain: (needs) => {
             const retained = runningNeeds.get(id) ?? new Set<string>();
             for (const name of needs) retained.add(name);
@@ -246,16 +274,27 @@ export async function run(args: string[]) {
       }
     }
     while (pending.length || active.size) {
+      changed = new Promise<void>((resolve) => {
+        wake = resolve;
+      });
       try {
         cpu?.check();
       } catch (error) {
         fatal ??= { error };
         processes.abort();
       }
+      for (const [, entry] of [...active].sort(([a], [b]) => a - b)) {
+        if (!entry.resume) continue;
+        if (jobCount() >= jobs && !processes.cancelled) break;
+        entry.ownsJob = true;
+        const resume = entry.resume;
+        entry.resume = undefined;
+        resume();
+      }
       let gated = false;
       while (
         pending.length &&
-        active.size < jobs &&
+        jobCount() < jobs &&
         !processes.aborted &&
         !(processes.interrupted && !providers.live())
       ) {
@@ -269,13 +308,16 @@ export async function run(args: string[]) {
         }
         const entry = pending.splice(next, 1)[0] as (typeof pending)[number];
         if (!proven) cpu?.admitted();
-        const done = execute(entry.index, entry.id, entry.lane).finally(() =>
-          active.delete(entry.index),
-        );
-        active.set(entry.index, { lane: entry.lane, done });
+        const running = { lane: entry.lane, ownsJob: true, done: Promise.resolve() };
+        active.set(entry.index, running);
+        running.done = execute(entry.index, entry.id, entry.lane).finally(() => {
+          active.delete(entry.index);
+          notify();
+        });
       }
       if (!active.size) break;
       await Promise.race([
+        changed,
         ...[...active.values()].map((entry) => entry.done),
         ...(gated && cpu ? [cpu.next] : []),
         ...(cpu && !fatal ? [cpu.failure] : []),

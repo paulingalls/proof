@@ -111,16 +111,23 @@ writeFileSync('scratch/ended', 'yes');`,
       const [out, err] = await output;
       expect(await child.exited, err + out).toBe(fresh ? 1 : 2);
       expect(f.has('stopped')).toBe(true);
-      expect(f.has('later')).toBe(fresh);
-      expect(f.rows().sort((a, b) => a.task.localeCompare(b.task))).toMatchObject(
-        fresh
-          ? [
-              { task: 'a', outcome: 'green' },
-              { task: 'broken', outcome: 'incomplete' },
-              { task: 'later', outcome: 'green' },
-            ]
-          : [{ task: 'a', outcome: 'incomplete' }],
-      );
+      const rows = f.rows().sort((a, b) => a.task.localeCompare(b.task));
+      if (fresh) {
+        expect(f.has('later')).toBe(true);
+        expect(rows).toMatchObject([
+          { task: 'a', outcome: 'green' },
+          { task: 'broken', outcome: 'incomplete' },
+          { task: 'later', outcome: 'green' },
+        ]);
+      } else {
+        // Whether `later` runs before the fatal error surfaces depends on timing; either is correct.
+        expect(rows.filter((r) => r.task !== 'later')).toMatchObject([
+          { task: 'a', outcome: 'incomplete' },
+        ]);
+        expect(rows.filter((r) => r.task === 'later').map((r) => r.outcome)).toEqual(
+          f.has('later') ? ['green'] : [],
+        );
+      }
       expect(fresh ? out : err).toContain("selected path 'link': symlink");
       await until(() => !alive(pid as number));
       expect(readdirSync(f.env.TMPDIR)).toEqual([]);
