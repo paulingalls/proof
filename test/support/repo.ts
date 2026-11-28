@@ -133,6 +133,7 @@ export class Repo {
       cwd,
       env: this.cliEnv(overrides),
     });
+    // Non-enumerable so existing toEqual comparisons of cli() results stay exact.
     return Object.defineProperty(
       {
         code: result.exitCode,
