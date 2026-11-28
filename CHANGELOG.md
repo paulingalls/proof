@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.38.2
+
+- Planning holds less memory. Each task's unkeyed set is a view over the shared unkeyed and
+  super-only sets instead of its own copy. Cached import closures keep only their
+  metadata-only paths instead of a second near-copy of every path. On a 13,500-file repo
+  with 498 tasks, live heap after planning fell from about 750 MB to 378 MB. Keys are
+  unchanged.
+
 ## 0.38.1
 
 - Sandbox materialization reads and writes committed files in batches of 64 paths and
