@@ -38,6 +38,11 @@ and running `bun install` if they differ.
 
 `proof run` defaults to `os.availableParallelism()` concurrent tasks on this machine.
 `proof run --jobs 2` overrides that limit to two; resource lane limits still apply within it.
+Above one job, a task waiting on provider startup releases its job slot while retaining its
+lane slot. When its providers are ready, it reacquires a job slot before running its command.
+Reacquisition bypasses the CPU gate: the task already passed it on admission. At most N task
+commands run concurrently with `--jobs N`. A `solo` task remains exclusive during startup.
+`--jobs 1` preserves serial execution and live output.
 `--jobs` accepts a positive safe integer. The mode (`--fresh`, `--staged` or `--since <ref>`),
 `--strict-inputs`, `--jobs N` and `--set <name>` may appear in any order.
 `--tasks <id> ...` consumes the remaining task IDs and must come last; `--strict-inputs`

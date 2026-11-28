@@ -111,7 +111,7 @@ writeFileSync('scratch/ended', 'yes');`,
       const [out, err] = await output;
       expect(await child.exited, err + out).toBe(fresh ? 1 : 2);
       expect(f.has('stopped')).toBe(true);
-      expect(f.has('later')).toBe(fresh);
+      expect(f.has('later')).toBe(true);
       expect(f.rows().sort((a, b) => a.task.localeCompare(b.task))).toMatchObject(
         fresh
           ? [
@@ -119,7 +119,10 @@ writeFileSync('scratch/ended', 'yes');`,
               { task: 'broken', outcome: 'incomplete' },
               { task: 'later', outcome: 'green' },
             ]
-          : [{ task: 'a', outcome: 'incomplete' }],
+          : [
+              { task: 'a', outcome: 'incomplete' },
+              { task: 'later', outcome: 'green' },
+            ],
       );
       expect(fresh ? out : err).toContain("selected path 'link': symlink");
       await until(() => !alive(pid as number));
