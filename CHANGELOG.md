@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.37.1
+
+- Sandbox workspace links now target the sandbox's canonical (realpath) root, not the
+  tmpdir path through a symlink such as macOS `/var`. Metro 0.87 could not resolve a
+  package-exports subpath through the non-canonical link (#82).
+
 ## 0.37.0
 
 - `run` prints one line as each provider start or stop command finishes, in every jobs
